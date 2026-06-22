@@ -508,7 +508,7 @@ export default function PitcherDashboard() {
                   <span style={{fontSize:12,color:C.textMuted}}>Standards Met</span>
                   <span style={{fontSize:12,fontWeight:700,color:armPassed===ARM_STANDARDS.length?C.teal:armPassed>ARM_STANDARDS.length/2?C.gold:C.red}}>{armPassed} / {ARM_STANDARDS.length}</span>
                 </div>
-                <div style={{height:6,background:C.bg4||'#21262d',borderRadius:3,overflow:'hidden'}}>
+                <div style={{height:6,background:'#21262d',borderRadius:3,overflow:'hidden'}}>
                   <div style={{height:'100%',width:`${(armPassed/ARM_STANDARDS.length)*100}%`,background:armPassed===ARM_STANDARDS.length?C.teal:armPassed>ARM_STANDARDS.length/2?C.gold:C.red,borderRadius:3}}/>
                 </div>
               </div>
