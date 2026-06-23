@@ -11,7 +11,12 @@ const C = {
   text:'#e6edf3',textMuted:'#7d8590',textDim:'#484f58',white:'#ffffff',
 }
 
-const SORENESS = ['Shoulder','Elbow','Forearm','Wrist','Back','Hip','Knee','Hamstring','Quad','Other']
+const SORENESS = [
+  'Front Shoulder','Side Shoulder','Back Shoulder',
+  'Inside Elbow (Medial)','Outside Elbow (Lateral)',
+  'Forearm','Wrist','Back','Hip','Knee','Hamstring','Quad','Other'
+]
+
 const DAYS = ['Monday','Tuesday','Wednesday','Thursday','Friday','Saturday','Sunday']
 const CATS = ['Throwing','Lifting','Conditioning','Recovery']
 
@@ -47,6 +52,25 @@ const FV_ZONES = [
 
 const getZone = (pct:number) => FV_ZONES.find(z=>pct>=z.pctMin&&pct<=z.pctMax)||FV_ZONES[4]
 
+// Parse exercises from program text — format: "Exercise Name SxR @ X%"
+const parseExercises = (text:string) => {
+  if (!text) return []
+  const lines = text.split('\n').map(l=>l.trim()).filter(Boolean)
+  return lines.map(line => {
+    const match = line.match(/^(.+?)\s+(\d+)x(\d+)(?:\s*@\s*(\d+(?:\.\d+)?%?))?/)
+    if (match) {
+      return {
+        name: match[1].trim(),
+        sets: parseInt(match[2]),
+        reps: parseInt(match[3]),
+        prescribed: match[4]||'',
+        line
+      }
+    }
+    return { name: line, sets: 0, reps: 0, prescribed: '', line }
+  })
+}
+
 const calcCMJ = ({startFrame,takeoffFrame,landingFrame,fps,massKg}:{startFrame:number,takeoffFrame:number,landingFrame:number,fps:number,massKg:number}) => {
   const ft=(landingFrame-takeoffFrame)/fps,ttt=(takeoffFrame-startFrame)/fps
   const jh=(9.81*ft*ft)/8,jhc=jh*100,jhi=jh*39.3701
@@ -56,6 +80,9 @@ const calcCMJ = ({startFrame,takeoffFrame,landingFrame,fps,massKg}:{startFrame:n
 }
 
 const cmjTier = (v:number) => v>=95?{l:'Elite / Pro',c:C.teal}:v>=90?{l:'High D1 / Pro Fringe',c:C.gold}:v>=85?{l:'D1 Range',c:C.blue}:v>=80?{l:'D2/D3 Range',c:C.textMuted}:{l:'Development',c:C.red}
+
+// Default empty set log
+const emptySetLog = (numSets:number) => Array.from({length:numSets||1},(_,i)=>({set:i+1,load:'',reps:''}))
 
 export default function PitcherDashboard() {
   const [profile, setProfile] = useState<any>(null)
@@ -74,17 +101,24 @@ export default function PitcherDashboard() {
   const [armScores, setArmScores] = useState<any>({})
   const [armLevel, setArmLevel] = useState('College')
   const [armSaved, setArmSaved] = useState(false)
-  const [logForm, setLogForm] = useState({
-    date:new Date().toISOString().split('T')[0],
-    velocity:'',weightLifted:'',sprintTime:'',
-    pitchCount:'',highEffortThrows:'',
-    feeling:7,soreness:[] as string[],notes:''
-  })
-  const [cmjForm, setCmjForm] = useState({
-    date:new Date().toISOString().split('T')[0],
-    bodyweight:'',weightUnit:'lbs',fps:'240',
-    startFrame:'',takeoffFrame:'',landingFrame:'',notes:''
-  })
+
+  // Log state
+  const today = new Date().toLocaleDateString('en-US',{weekday:'long'}) as string
+  const [logDate, setLogDate] = useState(new Date().toISOString().split('T')[0])
+  const [logDay, setLogDay] = useState(today)
+  const [feeling, setFeeling] = useState(7)
+  const [soreness, setSoreness] = useState<string[]>([])
+  const [generalNotes, setGeneralNotes] = useState('')
+  const [velocity, setVelocity] = useState('')
+  const [sprintTime, setSprintTime] = useState('')
+  const [pitchCount, setPitchCount] = useState('')
+  const [highEffort, setHighEffort] = useState('')
+  // Exercise logs: {cat: {exerciseName: {sets:[{set,load,reps}], rpe:number, notes:string}}}
+  const [exerciseLogs, setExerciseLogs] = useState<any>({})
+  // Free-form extra exercises
+  const [extraExercises, setExtraExercises] = useState<any[]>([])
+
+  const [cmjForm, setCmjForm] = useState({date:new Date().toISOString().split('T')[0],bodyweight:'',weightUnit:'lbs',fps:'240',startFrame:'',takeoffFrame:'',landingFrame:'',notes:''})
   const [cmjResult, setCmjResult] = useState<any>(null)
   const [cmjErr, setCmjErr] = useState('')
   const router = useRouter()
@@ -118,25 +152,6 @@ export default function PitcherDashboard() {
   },[])
 
   const signOut = async () => {await supabase.auth.signOut();router.push('/auth/login')}
-
-  const submitLog = async () => {
-    if (!profile) return
-    await supabase.from('session_logs').insert({
-      pitcher_id:profile.id,log_date:logForm.date,
-      velocity:parseFloat(logForm.velocity)||null,
-      weight_lifted:parseFloat(logForm.weightLifted)||null,
-      sprint_time:parseFloat(logForm.sprintTime)||null,
-      pitch_count:parseInt(logForm.pitchCount)||null,
-      high_effort_throws:parseInt(logForm.highEffortThrows)||null,
-      feeling:logForm.feeling,soreness:logForm.soreness,
-      notes:logForm.notes||null
-    })
-    const {data} = await supabase.from('session_logs').select('*').eq('pitcher_id',profile.id).order('log_date',{ascending:false}).limit(20)
-    setLogs(data||[])
-    setLogForm({date:new Date().toISOString().split('T')[0],velocity:'',weightLifted:'',sprintTime:'',pitchCount:'',highEffortThrows:'',feeling:7,soreness:[],notes:''})
-    setLogSaved(true)
-    setTimeout(()=>setLogSaved(false),2000)
-  }
 
   const sendMessage = async () => {
     if (!msgText.trim()||!profile) return
@@ -182,7 +197,76 @@ export default function PitcherDashboard() {
     setCmjForm({date:new Date().toISOString().split('T')[0],bodyweight:'',weightUnit:'lbs',fps:'240',startFrame:'',takeoffFrame:'',landingFrame:'',notes:''})
   }
 
-  const toggleSoreness = (a:string) => setLogForm(f=>({...f,soreness:f.soreness.includes(a)?f.soreness.filter(x=>x!==a):[...f.soreness,a]}))
+  const toggleSoreness = (a:string) => setSoreness(s=>s.includes(a)?s.filter(x=>x!==a):[...s,a])
+
+  const updateSetLog = (cat:string, exName:string, setIdx:number, field:string, val:string) => {
+    setExerciseLogs((prev:any)=>{
+      const catLogs = prev[cat]||{}
+      const exLog = catLogs[exName]||{sets:[{set:1,load:'',reps:''}],rpe:5,notes:''}
+      const sets = [...(exLog.sets||[])]
+      sets[setIdx] = {...sets[setIdx],[field]:val}
+      return {...prev,[cat]:{...catLogs,[exName]:{...exLog,sets}}}
+    })
+  }
+
+  const updateExRPE = (cat:string, exName:string, val:number) => {
+    setExerciseLogs((prev:any)=>{
+      const catLogs = prev[cat]||{}
+      const exLog = catLogs[exName]||{sets:[{set:1,load:'',reps:''}],rpe:5,notes:''}
+      return {...prev,[cat]:{...catLogs,[exName]:{...exLog,rpe:val}}}
+    })
+  }
+
+  const updateExNotes = (cat:string, exName:string, val:string) => {
+    setExerciseLogs((prev:any)=>{
+      const catLogs = prev[cat]||{}
+      const exLog = catLogs[exName]||{sets:[{set:1,load:'',reps:''}],rpe:5,notes:''}
+      return {...prev,[cat]:{...catLogs,[exName]:{...exLog,notes:val}}}
+    })
+  }
+
+  const initExerciseSets = (cat:string, exName:string, numSets:number) => {
+    setExerciseLogs((prev:any)=>{
+      const catLogs = prev[cat]||{}
+      if (catLogs[exName]) return prev
+      return {...prev,[cat]:{...catLogs,[exName]:{sets:emptySetLog(numSets),rpe:7,notes:''}}}
+    })
+  }
+
+  const submitLog = async () => {
+    if (!profile) return
+    // Build a comprehensive notes string from exercise logs
+    const exLogSummary = Object.entries(exerciseLogs).map(([cat,exs]:any)=>{
+      const exLines = Object.entries(exs).map(([name,data]:any)=>{
+        const setStr = data.sets.map((s:any)=>`Set ${s.set}: ${s.load||'—'}lbs x ${s.reps||'—'}`).join(', ')
+        return `${name}: ${setStr} | RPE ${data.rpe}/10${data.notes?` | ${data.notes}`:''}`
+      }).join('\n')
+      return `[${cat}]\n${exLines}`
+    }).join('\n\n')
+
+    const fullNotes = [exLogSummary, generalNotes].filter(Boolean).join('\n\n---\n')
+
+    await supabase.from('session_logs').insert({
+      pitcher_id:profile.id,
+      log_date:logDate,
+      velocity:parseFloat(velocity)||null,
+      sprint_time:parseFloat(sprintTime)||null,
+      pitch_count:parseInt(pitchCount)||null,
+      high_effort_throws:parseInt(highEffort)||null,
+      feeling,
+      soreness,
+      notes:fullNotes||null,
+      exercise_logs:exerciseLogs,
+    })
+    const {data} = await supabase.from('session_logs').select('*').eq('pitcher_id',profile.id).order('log_date',{ascending:false}).limit(20)
+    setLogs(data||[])
+    // Reset
+    setFeeling(7); setSoreness([]); setGeneralNotes(''); setVelocity('')
+    setSprintTime(''); setPitchCount(''); setHighEffort('')
+    setExerciseLogs({}); setExtraExercises([])
+    setLogSaved(true)
+    setTimeout(()=>setLogSaved(false),2000)
+  }
 
   const getArmTarget = (ex:any) => {
     const t = armLevel==='High School'?ex.hs:armLevel==='Professional'?ex.pro:ex.col
@@ -224,11 +308,6 @@ export default function PitcherDashboard() {
           const pct = parseFloat(pctMatch[1])
           hits.push({day,cat,line:line.trim(),liftKey,pct,zone:getZone(pct)})
         }
-        const lbsMatch = line.match(/(\d+(?:\.\d+)?)\s*lbs?/i)
-        if (lbsMatch&&liftKey&&oneRMs[liftKey]) {
-          const pct = Math.round((parseFloat(lbsMatch[1])/oneRMs[liftKey])*100)
-          hits.push({day,cat,line:line.trim(),liftKey,pct,zone:getZone(pct)})
-        }
       })
     }))
     return hits
@@ -236,13 +315,17 @@ export default function PitcherDashboard() {
 
   if (loading) return <div style={{minHeight:'100vh',background:C.bg,display:'flex',alignItems:'center',justifyContent:'center',color:C.textMuted,fontFamily:'system-ui'}}>Loading...</div>
 
-  const inp = {width:'100%',background:C.bg3,border:`1px solid ${C.border}`,borderRadius:8,padding:'12px 14px',fontSize:15,color:C.text,boxSizing:'border-box' as const,outline:'none',marginBottom:4}
+  const inp = {width:'100%',background:C.bg3,border:`1px solid ${C.border}`,borderRadius:8,padding:'12px 14px',fontSize:15,color:C.text,boxSizing:'border-box' as const,outline:'none'}
+  const smlInp = {background:C.bg3,border:`1px solid ${C.border}`,borderRadius:6,padding:'8px 10px',fontSize:13,color:C.text,boxSizing:'border-box' as const,outline:'none'}
   const lbl = {fontSize:11,color:C.textMuted,fontWeight:600 as const,marginBottom:6,display:'block',textTransform:'uppercase' as const,letterSpacing:'0.5px',marginTop:14 as const}
   const card = {background:C.bg2,border:`1px solid ${C.border}`,borderRadius:12,padding:'16px',marginBottom:12}
   const btn = (v='primary') => ({background:v==='gold'?C.gold:C.bg3,color:v==='gold'?C.bg:C.text,border:`1px solid ${v==='gold'?C.gold:C.border}`,borderRadius:8,padding:'12px 20px',fontSize:14,fontWeight:v==='gold'?700:500 as const,cursor:'pointer',width:'100%',marginTop:8})
 
   const fvHits = getFVHits()
   const armPassed = ARM_STANDARDS.filter(ex=>getArmStatus(ex,armScores[ex.name])==='green').length
+
+  // Get today's program exercises
+  const todayProgram = program?.days?.[logDay]||{}
 
   return (
     <div style={{fontFamily:'system-ui,-apple-system,sans-serif',background:C.bg,minHeight:'100vh',color:C.text,maxWidth:480,margin:'0 auto'}}>
@@ -306,18 +389,183 @@ export default function PitcherDashboard() {
           </div>
         )}
 
+        {/* LOG TAB */}
+        {tab==='log'&&(
+          <div>
+            <div style={{fontSize:18,fontWeight:700,color:C.white,marginBottom:4}}>Log Session</div>
+            <div style={{fontSize:12,color:C.textMuted,marginBottom:16}}>Log your actual work for each exercise.</div>
+
+            {/* Date & Day */}
+            <div style={card}>
+              <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10}}>
+                <div>
+                  <label style={lbl}>Date</label>
+                  <input type="date" style={inp} value={logDate} onChange={e=>setLogDate(e.target.value)}/>
+                </div>
+                <div>
+                  <label style={lbl}>Day</label>
+                  <select style={inp} value={logDay} onChange={e=>setLogDay(e.target.value)}>
+                    {DAYS.map(d=><option key={d}>{d}</option>)}
+                  </select>
+                </div>
+              </div>
+            </div>
+
+            {/* Throwing metrics */}
+            <div style={card}>
+              <div style={{fontSize:12,fontWeight:700,color:C.teal,textTransform:'uppercase' as const,letterSpacing:'1px',marginBottom:12}}>⚡ Throwing Metrics</div>
+              <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10}}>
+                <div>
+                  <label style={lbl}>Velocity (mph)</label>
+                  <input type="number" style={inp} placeholder="e.g. 91" value={velocity} onChange={e=>setVelocity(e.target.value)}/>
+                </div>
+                <div>
+                  <label style={lbl}>Pitch Count</label>
+                  <input type="number" style={inp} placeholder="e.g. 45" value={pitchCount} onChange={e=>setPitchCount(e.target.value)}/>
+                </div>
+                <div>
+                  <label style={lbl}>HE Throws</label>
+                  <input type="number" style={inp} placeholder="e.g. 20" value={highEffort} onChange={e=>setHighEffort(e.target.value)}/>
+                </div>
+                <div>
+                  <label style={lbl}>Sprint Time (sec)</label>
+                  <input type="number" step="0.1" style={inp} placeholder="e.g. 6.8" value={sprintTime} onChange={e=>setSprintTime(e.target.value)}/>
+                </div>
+              </div>
+            </div>
+
+            {/* Exercise logs by category */}
+            {CATS.map(cat=>{
+              const catText = todayProgram[cat]||''
+              const exercises = parseExercises(catText)
+              if (exercises.length===0&&cat!=='Lifting'&&cat!=='Conditioning') return null
+              return (
+                <div key={cat} style={card}>
+                  <div style={{fontSize:12,fontWeight:700,color:cat==='Throwing'?C.teal:cat==='Lifting'?C.gold:cat==='Conditioning'?C.blue:C.purple,textTransform:'uppercase' as const,letterSpacing:'1px',marginBottom:12}}>{cat}</div>
+
+                  {exercises.length===0&&(
+                    <div style={{fontSize:12,color:C.textDim,marginBottom:10}}>No exercises prescribed. Log anything you did below.</div>
+                  )}
+
+                  {exercises.map((ex,ei)=>{
+                    // Initialize sets if not yet
+                    if (ex.sets>0) {
+                      const existing = exerciseLogs[cat]?.[ex.name]
+                      if (!existing) {
+                        setTimeout(()=>initExerciseSets(cat,ex.name,ex.sets),0)
+                      }
+                    }
+                    const exLog = exerciseLogs[cat]?.[ex.name]||{sets:emptySetLog(ex.sets||1),rpe:7,notes:''}
+
+                    return (
+                      <div key={ei} style={{marginBottom:16,paddingBottom:16,borderBottom:`1px solid ${C.border}`}}>
+                        <div style={{fontSize:13,fontWeight:600,color:C.white,marginBottom:2}}>{ex.name}</div>
+                        {ex.prescribed&&<div style={{fontSize:11,color:C.textMuted,marginBottom:8}}>Prescribed: <span style={{color:C.gold}}>{ex.sets}x{ex.reps} @ {ex.prescribed}</span></div>}
+
+                        {/* Sets */}
+                        <div style={{marginBottom:8}}>
+                          <div style={{display:'grid',gridTemplateColumns:'40px 1fr 1fr',gap:6,marginBottom:4}}>
+                            <div style={{fontSize:10,color:C.textDim}}>Set</div>
+                            <div style={{fontSize:10,color:C.textDim}}>Load (lbs)</div>
+                            <div style={{fontSize:10,color:C.textDim}}>Reps</div>
+                          </div>
+                          {exLog.sets.map((s:any,si:number)=>(
+                            <div key={si} style={{display:'grid',gridTemplateColumns:'40px 1fr 1fr',gap:6,marginBottom:6}}>
+                              <div style={{fontSize:13,color:C.textMuted,display:'flex',alignItems:'center'}}>{s.set}</div>
+                              <input type="number" style={{...smlInp,width:'100%'}} placeholder="lbs" value={s.load} onChange={e=>updateSetLog(cat,ex.name,si,'load',e.target.value)}/>
+                              <input type="number" style={{...smlInp,width:'100%'}} placeholder="reps" value={s.reps} onChange={e=>updateSetLog(cat,ex.name,si,'reps',e.target.value)}/>
+                            </div>
+                          ))}
+                          {/* Add set button */}
+                          <button onClick={()=>{
+                            setExerciseLogs((prev:any)=>{
+                              const catLogs = prev[cat]||{}
+                              const exL = catLogs[ex.name]||{sets:emptySetLog(1),rpe:7,notes:''}
+                              const newSets = [...exL.sets,{set:exL.sets.length+1,load:'',reps:''}]
+                              return {...prev,[cat]:{...catLogs,[ex.name]:{...exL,sets:newSets}}}
+                            })
+                          }} style={{background:'transparent',border:`1px dashed ${C.border}`,borderRadius:6,padding:'4px 10px',fontSize:11,color:C.textMuted,cursor:'pointer',marginTop:2}}>+ Add Set</button>
+                        </div>
+
+                        {/* RPE */}
+                        <div>
+                          <label style={{...lbl,marginTop:8}}>RPE — <span style={{color:C.gold,fontWeight:700}}>{exLog.rpe}/10</span></label>
+                          <input type="range" min="1" max="10" style={{width:'100%',accentColor:C.gold}} value={exLog.rpe} onChange={e=>updateExRPE(cat,ex.name,parseInt(e.target.value))}/>
+                          <div style={{display:'flex',justifyContent:'space-between',fontSize:10,color:C.textDim}}><span>Easy</span><span>Moderate</span><span>Max</span></div>
+                        </div>
+
+                        {/* Exercise notes */}
+                        <div style={{marginTop:8}}>
+                          <input style={{...inp,fontSize:13}} placeholder="Notes for this exercise..." value={exLog.notes||''} onChange={e=>updateExNotes(cat,ex.name,e.target.value)}/>
+                        </div>
+                      </div>
+                    )
+                  })}
+
+                  {/* Add extra exercise */}
+                  <button onClick={()=>{
+                    const name = prompt('Exercise name:')
+                    if (name) initExerciseSets(cat,name,3)
+                  }} style={{background:'transparent',border:`1px dashed ${C.border}`,borderRadius:8,padding:'8px 14px',fontSize:12,color:C.textMuted,cursor:'pointer',width:'100%',marginTop:4}}>+ Add Exercise</button>
+                </div>
+              )
+            })}
+
+            {/* Overall feeling */}
+            <div style={card}>
+              <div style={{fontSize:12,fontWeight:700,color:C.textMuted,textTransform:'uppercase' as const,letterSpacing:'1px',marginBottom:12}}>Overall Session</div>
+              <label style={lbl}>Feeling — <span style={{color:C.gold,fontSize:16,fontWeight:700}}>{feeling}/10</span></label>
+              <input type="range" min="1" max="10" style={{width:'100%',accentColor:C.gold,marginBottom:4}} value={feeling} onChange={e=>setFeeling(parseInt(e.target.value))}/>
+              <div style={{display:'flex',justifyContent:'space-between',fontSize:11,color:C.textDim,marginBottom:16}}><span>Poor</span><span>Great</span></div>
+
+              <label style={lbl}>Soreness</label>
+              <div style={{display:'flex',flexWrap:'wrap' as const,gap:8,marginBottom:14}}>
+                {SORENESS.map(a=>(
+                  <button key={a} onClick={()=>toggleSoreness(a)} style={{background:soreness.includes(a)?'rgba(248,81,73,0.15)':'transparent',color:soreness.includes(a)?C.red:C.textMuted,border:`1px solid ${soreness.includes(a)?C.red:C.border}`,borderRadius:20,padding:'6px 12px',fontSize:12,cursor:'pointer'}}>{a}</button>
+                ))}
+              </div>
+
+              <label style={lbl}>General Notes</label>
+              <textarea style={{...inp,minHeight:80,resize:'vertical' as const}} placeholder="Anything else to note about today..." value={generalNotes} onChange={e=>setGeneralNotes(e.target.value)}/>
+            </div>
+
+            <button style={btn('gold')} onClick={submitLog}>Save Session</button>
+            {logSaved&&<div style={{textAlign:'center',color:C.teal,fontSize:14,fontWeight:600,marginTop:8}}>✓ Session Saved!</div>}
+
+            {/* Recent logs */}
+            {logs.length>0&&(
+              <div style={{marginTop:16}}>
+                <div style={{fontSize:14,fontWeight:700,color:C.white,marginBottom:10}}>Recent Sessions</div>
+                {logs.slice(0,5).map((log:any,i:number)=>(
+                  <div key={i} style={card}>
+                    <div style={{display:'flex',justifyContent:'space-between',marginBottom:8}}>
+                      <span style={{fontSize:13,fontWeight:600,color:C.white}}>{log.log_date}</span>
+                      <span style={{fontSize:12,fontWeight:700,color:log.feeling>=7?C.teal:log.feeling>=4?C.gold:C.red}}>{log.feeling}/10</span>
+                    </div>
+                    <div style={{display:'flex',gap:12,flexWrap:'wrap' as const}}>
+                      {log.velocity&&<span style={{fontSize:12,color:C.gold}}>⚡ {log.velocity} mph</span>}
+                      {log.sprint_time&&<span style={{fontSize:12,color:C.blue}}>🏃 {log.sprint_time}s</span>}
+                      {log.soreness?.length>0&&<span style={{fontSize:12,color:C.red}}>🩺 {log.soreness.join(', ')}</span>}
+                    </div>
+                    {log.notes&&<div style={{fontSize:11,color:C.textMuted,marginTop:6,whiteSpace:'pre-wrap',maxHeight:80,overflow:'hidden'}}>{log.notes}</div>}
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+
         {/* STRENGTH TAB */}
         {tab==='strength'&&(
           <div>
             <div style={{fontSize:18,fontWeight:700,color:C.white,marginBottom:4}}>Strength Profile</div>
             <div style={{fontSize:12,color:C.textMuted,marginBottom:16}}>Enter your 1 rep maxes to map training loads onto the force-velocity curve.</div>
-
             <div style={card}>
               <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:14}}>
                 <div style={{fontSize:12,fontWeight:700,color:C.textMuted,textTransform:'uppercase' as const,letterSpacing:'1px'}}>1 Rep Max</div>
                 {!oneRMsEditing
-                  ?<button onClick={()=>setOneRMsEditing(true)} style={{...btn(),width:'auto',marginTop:0,padding:'6px 14px',fontSize:12}}>Edit</button>
-                  :<div style={{display:'flex',gap:8}}><button onClick={saveOneRMs} style={{...btn('gold'),width:'auto',marginTop:0,padding:'6px 14px',fontSize:12}}>Save</button><button onClick={()=>setOneRMsEditing(false)} style={{...btn(),width:'auto',marginTop:0,padding:'6px 14px',fontSize:12}}>Cancel</button></div>
+                  ?<button onClick={()=>setOneRMsEditing(true)} style={{background:C.bg3,color:C.text,border:`1px solid ${C.border}`,borderRadius:6,padding:'6px 14px',fontSize:12,cursor:'pointer'}}>Edit</button>
+                  :<div style={{display:'flex',gap:8}}><button onClick={saveOneRMs} style={{background:C.gold,color:C.bg,border:`1px solid ${C.gold}`,borderRadius:6,padding:'6px 14px',fontSize:12,fontWeight:700,cursor:'pointer'}}>Save</button><button onClick={()=>setOneRMsEditing(false)} style={{background:C.bg3,color:C.text,border:`1px solid ${C.border}`,borderRadius:6,padding:'6px 14px',fontSize:12,cursor:'pointer'}}>Cancel</button></div>
                 }
               </div>
               {oneRMsSaved&&<div style={{color:C.teal,fontSize:13,fontWeight:600,marginBottom:8}}>✓ Saved</div>}
@@ -326,7 +574,7 @@ export default function PitcherDashboard() {
                   <div style={{fontSize:11,color:l.color,fontWeight:600,textTransform:'uppercase' as const,letterSpacing:'0.5px',marginBottom:4}}>{l.label}</div>
                   <div style={{fontSize:11,color:C.textDim,marginBottom:6}}>{l.example}</div>
                   {oneRMsEditing
-                    ?<input type="number" placeholder="lbs" style={{...inp,marginBottom:0,fontSize:14}} value={oneRMs[l.key]||''} onChange={e=>setOneRMs((r:any)=>({...r,[l.key]:parseFloat(e.target.value)||0}))}/>
+                    ?<input type="number" placeholder="lbs" style={{...inp,fontSize:14}} value={oneRMs[l.key]||''} onChange={e=>setOneRMs((r:any)=>({...r,[l.key]:parseFloat(e.target.value)||0}))}/>
                     :<div style={{fontSize:24,fontWeight:700,color:l.color}}>{oneRMs[l.key]||'—'}<span style={{fontSize:12,color:C.textMuted,marginLeft:4}}>lbs</span></div>
                   }
                   {!oneRMsEditing&&oneRMs[l.key]>0&&(
@@ -341,10 +589,9 @@ export default function PitcherDashboard() {
               ))}
             </div>
 
-            {/* F-V Curve */}
             <div style={card}>
               <div style={{fontSize:12,fontWeight:700,color:C.textMuted,textTransform:'uppercase' as const,letterSpacing:'1px',marginBottom:12}}>⚡ Force-Velocity Curve — This Week</div>
-              {fvHits.length===0&&<div style={{color:C.textDim,fontSize:13,lineHeight:1.6}}>No loads detected in your current program. Your coach needs to include loads like <span style={{color:C.gold,fontFamily:'monospace'}}>"Back Squat 4x4 @ 80%"</span> for this to populate.</div>}
+              {fvHits.length===0&&<div style={{color:C.textDim,fontSize:13,lineHeight:1.6}}>No loads detected. Your coach needs to include loads like <span style={{color:C.gold,fontFamily:'monospace'}}>"Back Squat 4x4 @ 80%"</span>.</div>}
               {fvHits.length>0&&(
                 <div>
                   {fvHits.map((h,i)=>(
@@ -354,73 +601,9 @@ export default function PitcherDashboard() {
                       <div style={{fontSize:10,background:`${h.zone.color}18`,color:h.zone.color,border:`1px solid ${h.zone.color}40`,borderRadius:4,padding:'2px 6px'}}>{h.zone.label}</div>
                     </div>
                   ))}
-                  <div style={{marginTop:14}}>
-                    <div style={{fontSize:11,color:C.textMuted,marginBottom:8,fontWeight:600,textTransform:'uppercase' as const,letterSpacing:'0.5px'}}>Zone Guide</div>
-                    {FV_ZONES.map(z=>(
-                      <div key={z.label} style={{display:'flex',alignItems:'center',gap:8,marginBottom:4}}>
-                        <div style={{width:8,height:8,borderRadius:'50%',background:z.color,flexShrink:0}}/>
-                        <span style={{fontSize:12,color:z.color,fontWeight:600}}>{z.label}</span>
-                        <span style={{fontSize:11,color:C.textDim}}>{z.pctMin}–{z.pctMax}%</span>
-                      </div>
-                    ))}
-                  </div>
                 </div>
               )}
             </div>
-          </div>
-        )}
-
-        {/* LOG TAB */}
-        {tab==='log'&&(
-          <div>
-            <div style={{fontSize:18,fontWeight:700,color:C.white,marginBottom:16}}>Log Session</div>
-            <div style={card}>
-              <label style={lbl}>Date</label>
-              <input type="date" style={inp} value={logForm.date} onChange={e=>setLogForm(f=>({...f,date:e.target.value}))}/>
-              <label style={lbl}>Velocity (mph)</label>
-              <input type="number" style={inp} placeholder="e.g. 91" value={logForm.velocity} onChange={e=>setLogForm(f=>({...f,velocity:e.target.value}))}/>
-              <label style={lbl}>Weight Lifted (lbs)</label>
-              <input type="number" style={inp} placeholder="e.g. 225" value={logForm.weightLifted} onChange={e=>setLogForm(f=>({...f,weightLifted:e.target.value}))}/>
-              <label style={lbl}>Sprint Time (sec)</label>
-              <input type="number" step="0.1" style={inp} placeholder="e.g. 6.8" value={logForm.sprintTime} onChange={e=>setLogForm(f=>({...f,sprintTime:e.target.value}))}/>
-              <label style={lbl}>Pitch Count</label>
-              <input type="number" style={inp} placeholder="e.g. 45" value={logForm.pitchCount} onChange={e=>setLogForm(f=>({...f,pitchCount:e.target.value}))}/>
-              <label style={lbl}>High Effort Throws</label>
-              <input type="number" style={inp} placeholder="e.g. 20" value={logForm.highEffortThrows} onChange={e=>setLogForm(f=>({...f,highEffortThrows:e.target.value}))}/>
-              <label style={lbl}>Overall Feeling — <span style={{color:C.gold,fontSize:16,fontWeight:700}}>{logForm.feeling}/10</span></label>
-              <input type="range" min="1" max="10" style={{width:'100%',accentColor:C.gold,marginBottom:4}} value={logForm.feeling} onChange={e=>setLogForm(f=>({...f,feeling:parseInt(e.target.value)}))}/>
-              <div style={{display:'flex',justifyContent:'space-between',fontSize:11,color:C.textDim,marginBottom:14}}><span>Poor</span><span>Great</span></div>
-              <label style={lbl}>Soreness</label>
-              <div style={{display:'flex',flexWrap:'wrap' as const,gap:8,marginBottom:14}}>
-                {SORENESS.map(a=>(
-                  <button key={a} onClick={()=>toggleSoreness(a)} style={{background:logForm.soreness.includes(a)?'rgba(248,81,73,0.15)':'transparent',color:logForm.soreness.includes(a)?C.red:C.textMuted,border:`1px solid ${logForm.soreness.includes(a)?C.red:C.border}`,borderRadius:20,padding:'6px 12px',fontSize:12,cursor:'pointer'}}>{a}</button>
-                ))}
-              </div>
-              <label style={lbl}>Notes</label>
-              <textarea style={{...inp,minHeight:80,resize:'vertical' as const}} placeholder="How did the session feel?" value={logForm.notes} onChange={e=>setLogForm(f=>({...f,notes:e.target.value}))}/>
-              <button style={btn('gold')} onClick={submitLog}>Save Entry</button>
-              {logSaved&&<div style={{textAlign:'center',color:C.teal,fontSize:14,fontWeight:600,marginTop:8}}>✓ Saved!</div>}
-            </div>
-            {logs.length>0&&(
-              <div>
-                <div style={{fontSize:14,fontWeight:700,color:C.white,marginBottom:10}}>Recent Sessions</div>
-                {logs.slice(0,10).map((log:any,i:number)=>(
-                  <div key={i} style={card}>
-                    <div style={{display:'flex',justifyContent:'space-between',marginBottom:8}}>
-                      <span style={{fontSize:13,fontWeight:600,color:C.white}}>{log.log_date}</span>
-                      <span style={{fontSize:12,fontWeight:700,color:log.feeling>=7?C.teal:log.feeling>=4?C.gold:C.red}}>{log.feeling}/10</span>
-                    </div>
-                    <div style={{display:'flex',gap:12,flexWrap:'wrap' as const}}>
-                      {log.velocity&&<span style={{fontSize:12,color:C.gold}}>⚡ {log.velocity} mph</span>}
-                      {log.weight_lifted&&<span style={{fontSize:12,color:C.teal}}>🏋 {log.weight_lifted} lbs</span>}
-                      {log.sprint_time&&<span style={{fontSize:12,color:C.blue}}>🏃 {log.sprint_time}s</span>}
-                      {log.soreness?.length>0&&<span style={{fontSize:12,color:C.red}}>🩺 {log.soreness.join(', ')}</span>}
-                    </div>
-                    {log.notes&&<div style={{fontSize:12,color:C.textMuted,marginTop:6,fontStyle:'italic'}}>{log.notes}</div>}
-                  </div>
-                ))}
-              </div>
-            )}
           </div>
         )}
 
@@ -428,7 +611,7 @@ export default function PitcherDashboard() {
         {tab==='cmj'&&(
           <div>
             <div style={{fontSize:18,fontWeight:700,color:C.white,marginBottom:4}}>CMJ Calculator</div>
-            <div style={{fontSize:12,color:C.textMuted,marginBottom:16}}>Film at 240 FPS · Open in Photos · Edit · Find times in seconds · Multiply by FPS for frame numbers</div>
+            <div style={{fontSize:12,color:C.textMuted,marginBottom:16}}>Film at 240 FPS · Open in Photos · Edit · Find times in seconds · Multiply by FPS</div>
             <div style={card}>
               <label style={lbl}>Date</label>
               <input type="date" style={inp} value={cmjForm.date} onChange={e=>setCmjForm(f=>({...f,date:e.target.value}))}/>
@@ -439,7 +622,7 @@ export default function PitcherDashboard() {
               </div>
               <label style={lbl}>FPS</label>
               <select style={inp} value={cmjForm.fps} onChange={e=>setCmjForm(f=>({...f,fps:e.target.value}))}><option value="240">240 FPS (iPhone)</option><option value="120">120 FPS</option><option value="480">480 FPS</option></select>
-              <label style={lbl}>Start Frame <span style={{color:C.textDim,fontWeight:400}}>(time × {cmjForm.fps})</span></label>
+              <label style={lbl}>Start Frame</label>
               <input type="number" style={inp} placeholder="e.g. 3168" value={cmjForm.startFrame} onChange={e=>setCmjForm(f=>({...f,startFrame:e.target.value}))}/>
               <label style={lbl}>Takeoff Frame</label>
               <input type="number" style={inp} placeholder="e.g. 3379" value={cmjForm.takeoffFrame} onChange={e=>setCmjForm(f=>({...f,takeoffFrame:e.target.value}))}/>
@@ -493,7 +676,6 @@ export default function PitcherDashboard() {
           <div>
             <div style={{fontSize:18,fontWeight:700,color:C.white,marginBottom:4}}>Arm Care Standards</div>
             <div style={{fontSize:12,color:C.textMuted,marginBottom:16}}>Track your performance against Salzman Baseball standards.</div>
-
             <div style={card}>
               <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:12}}>
                 <div style={{fontSize:12,fontWeight:700,color:C.textMuted,textTransform:'uppercase' as const,letterSpacing:'1px'}}>Level</div>
@@ -513,7 +695,6 @@ export default function PitcherDashboard() {
                 </div>
               </div>
             </div>
-
             {ARM_STANDARDS.map(ex=>{
               const status = getArmStatus(ex,armScores[ex.name])
               return (
@@ -521,13 +702,12 @@ export default function PitcherDashboard() {
                   <div style={{fontSize:13,fontWeight:600,color:C.white,marginBottom:2}}>{ex.name}</div>
                   <div style={{fontSize:11,color:C.textMuted,marginBottom:8}}>{ex.reps}{ex.note?` · ${ex.note}`:''} · Target: <span style={{color:C.gold}}>{getArmTarget(ex)}</span></div>
                   <div style={{display:'flex',gap:8,alignItems:'center'}}>
-                    <input type="number" style={{...inp,flex:1,marginBottom:0,fontSize:14}} placeholder={`e.g. ${ex.hs}`} value={armScores[ex.name]||''} onChange={e=>setArmScores((s:any)=>({...s,[ex.name]:e.target.value}))}/>
+                    <input type="number" style={{...inp,flex:1,fontSize:14}} placeholder={`e.g. ${ex.hs}`} value={armScores[ex.name]||''} onChange={e=>setArmScores((s:any)=>({...s,[ex.name]:e.target.value}))}/>
                     {status&&<span style={{fontSize:11,fontWeight:700,color:status==='green'?C.teal:status==='gold'?C.gold:C.red,flexShrink:0}}>{status==='green'?'✓ Met':status==='gold'?'Close':'Below'}</span>}
                   </div>
                 </div>
               )
             })}
-
             <button style={btn('gold')} onClick={saveArmScores}>Save Scores</button>
             {armSaved&&<div style={{textAlign:'center',color:C.teal,fontSize:14,fontWeight:600,marginTop:8}}>✓ Saved!</div>}
           </div>
@@ -548,7 +728,7 @@ export default function PitcherDashboard() {
                 ))}
               </div>
               <div style={{display:'flex',gap:8}}>
-                <input style={{...inp,flex:1,marginBottom:0}} placeholder="Message Coach Salzman..." value={msgText} onChange={e=>setMsgText(e.target.value)} onKeyDown={e=>e.key==='Enter'&&sendMessage()}/>
+                <input style={{...inp,flex:1}} placeholder="Message Coach Salzman..." value={msgText} onChange={e=>setMsgText(e.target.value)} onKeyDown={e=>e.key==='Enter'&&sendMessage()}/>
                 <button onClick={sendMessage} style={{background:C.gold,color:C.bg,border:'none',borderRadius:8,padding:'0 16px',fontSize:14,fontWeight:700,cursor:'pointer',flexShrink:0}}>Send</button>
               </div>
             </div>
