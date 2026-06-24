@@ -35,6 +35,59 @@ const CNS_COLORS:Record<string,{bg:string,border:string,text:string,dot:string}>
 
 const DAYS = ['Monday','Tuesday','Wednesday','Thursday','Friday','Saturday','Sunday']
 
+// CMJ Classification thresholds based on Salzman database
+const CMJ_THRESHOLDS = {
+  jumpHeight: { aboveAverage:21, good:18, developing:15 },
+  ppKg:       { aboveAverage:70, good:62, developing:55 },
+  rsi:        { aboveAverage:0.86, good:0.64, developing:0.45 },
+}
+
+function classifyCMJ(cmj:any):{classification:string,jumpTier:string,ppTier:string,rsiTier:string}{
+  if (!cmj) return {classification:'No Data',jumpTier:'No Data',ppTier:'No Data',rsiTier:'No Data'}
+
+  const getTier = (val:number, thresholds:{aboveAverage:number,good:number,developing:number}) => {
+    if (!val) return 'No Data'
+    if (val >= thresholds.aboveAverage) return 'Above Average'
+    if (val >= thresholds.good) return 'Good'
+    if (val >= thresholds.developing) return 'Developing'
+    return 'Limited'
+  }
+
+  const jumpTier = getTier(cmj.jump_height_in, CMJ_THRESHOLDS.jumpHeight)
+  const ppTier = getTier(cmj.peak_power_per_kg, CMJ_THRESHOLDS.ppKg)
+  const rsiTier = getTier(cmj.rsi_mod, CMJ_THRESHOLDS.rsi)
+
+  const isRateLimited = cmj.rsi_mod < CMJ_THRESHOLDS.rsi.developing && cmj.peak_power_per_kg >= CMJ_THRESHOLDS.ppKg.good
+  const isMagnitudeLimited = cmj.peak_power_per_kg < CMJ_THRESHOLDS.ppKg.developing && cmj.rsi_mod >= CMJ_THRESHOLDS.rsi.developing
+  const isBothLimited = cmj.rsi_mod < CMJ_THRESHOLDS.rsi.developing && cmj.peak_power_per_kg < CMJ_THRESHOLDS.ppKg.developing
+  const isWellDeveloped = cmj.rsi_mod >= CMJ_THRESHOLDS.rsi.good && cmj.peak_power_per_kg >= CMJ_THRESHOLDS.ppKg.good
+
+  let classification = 'Developing'
+  if (isBothLimited) classification = 'Both Limited'
+  else if (isRateLimited) classification = 'Rate Limiter'
+  else if (isMagnitudeLimited) classification = 'Magnitude Limiter'
+  else if (isWellDeveloped) classification = 'Well Developed'
+
+  return {classification,jumpTier,ppTier,rsiTier}
+}
+
+const TIER_COLORS:Record<string,{bg:string,border:string,text:string}> = {
+  'Above Average': {bg:'rgba(57,211,83,0.12)',  border:'rgba(57,211,83,0.4)',  text:'#39d353'},
+  'Good':          {bg:'rgba(88,166,255,0.12)', border:'rgba(88,166,255,0.4)', text:'#58a6ff'},
+  'Developing':    {bg:'rgba(232,184,75,0.12)', border:'rgba(232,184,75,0.4)', text:'#e8b84b'},
+  'Limited':       {bg:'rgba(248,81,73,0.12)',  border:'rgba(248,81,73,0.4)',  text:'#f85149'},
+  'No Data':       {bg:'rgba(72,79,88,0.12)',   border:'rgba(72,79,88,0.4)',   text:'#484f58'},
+}
+
+const CLASS_COLORS:Record<string,{bg:string,border:string,text:string}> = {
+  'Well Developed':    {bg:'rgba(57,211,83,0.1)',   border:'rgba(57,211,83,0.35)',   text:'#39d353'},
+  'Rate Limiter':      {bg:'rgba(88,166,255,0.1)',  border:'rgba(88,166,255,0.35)',  text:'#58a6ff'},
+  'Magnitude Limiter': {bg:'rgba(232,184,75,0.1)',  border:'rgba(232,184,75,0.35)',  text:'#e8b84b'},
+  'Both Limited':      {bg:'rgba(248,81,73,0.1)',   border:'rgba(248,81,73,0.35)',   text:'#f85149'},
+  'Developing':        {bg:'rgba(163,113,247,0.1)', border:'rgba(163,113,247,0.35)', text:'#a371f7'},
+  'No Data':           {bg:'rgba(72,79,88,0.1)',    border:'rgba(72,79,88,0.35)',    text:'#7d8590'},
+}
+
 const BUILT_IN_EXERCISES = [
   {id:'ex_001',name:'Barbell Back Squat',pattern:'Squat',category:'Main Exercises',cns:'High',description:'Stand with bar on upper traps, feet shoulder-width. Brace core, push knees out, descend until thighs parallel or below.'},
   {id:'ex_002',name:'Goblet Squat',pattern:'Squat',category:'Accessory',cns:'Moderate',description:'Hold KB at chest, feet slightly wider than shoulder-width. Squat deep, elbows track inside knees.'},
@@ -148,6 +201,11 @@ function CNSDot({cns}:{cns:string}){
   return <span title={`CNS: ${cns}`} style={{display:'inline-block',width:7,height:7,borderRadius:'50%',background:col.dot,flexShrink:0,marginTop:1}}/>
 }
 
+function TierBadge({tier}:{tier:string}){
+  const col = TIER_COLORS[tier]||TIER_COLORS['No Data']
+  return <span style={{background:col.bg,border:`1px solid ${col.border}`,color:col.text,fontSize:9,fontWeight:700,padding:'2px 7px',borderRadius:4,textTransform:'uppercase' as const,letterSpacing:'0.5px'}}>{tier}</span>
+}
+
 const BLANK_CUSTOM = {name:'',pattern:'',category:'Main Exercises',cns:'Moderate',description:''}
 
 export default function CoachDashboard(){
@@ -189,6 +247,7 @@ export default function CoachDashboard(){
   const [editSaving,setEditSaving]=useState(false)
   const [libSearch,setLibSearch]=useState('')
   const [libCat,setLibCat]=useState('All')
+  const [recommendationRules,setRecommendationRules]=useState<any[]>([])
 
   const router=useRouter()
   const supabase=createClient()
@@ -219,6 +278,8 @@ export default function CoachDashboard(){
       if (custom){setCustomExercises(custom.map((c:any)=>({...c,id:c.exercise_id})))}
       const {data:ovs}=await supabase.from('exercise_overrides').select('*')
       if (ovs){const om:Record<string,any>={};ovs.forEach((o:any)=>{om[o.exercise_id]={name:o.name,category:o.category,cns:o.cns,pattern:o.pattern,description:o.description}});setOverrides(om)}
+      const {data:rules}=await supabase.from('recommendation_rules').select('*')
+      if (rules){setRecommendationRules(rules)}
       setLoading(false)
     }
     init()
@@ -353,13 +414,18 @@ export default function CoachDashboard(){
   const buildPrompt=()=>{
     const jiP=armCare(selected?.weekly_pitches||0,selected?.avg_velocity||0)
     const lastCMJ=cmjResults[0];const recentLogs=logs.slice(0,7)
+    const {classification}=classifyCMJ(lastCMJ)
+    const rule=recommendationRules.find(r=>r.classification===classification)
     const prompt=`You are helping Coach Salzman write a weekly training program for pitcher ${selected?.full_name}.
 
 PITCHER DATA:
 - Avg Velocity: ${selected?.avg_velocity||'—'} mph
 - Weekly Pitches: ${selected?.weekly_pitches||'—'} | HE Throws: ${selected?.weekly_high_effort||'—'}
 - Arm Care Min: ${jiP.toLocaleString()} ft·lb
-${lastCMJ?`- CMJ Velo Capacity: ${lastCMJ.estimated_velocity?.toFixed(1)} mph | Jump: ${lastCMJ.jump_height_in?.toFixed(1)}in | RSI: ${lastCMJ.rsi_mod?.toFixed(2)}`:'- No CMJ data'}
+${lastCMJ?`- CMJ: Jump ${lastCMJ.jump_height_in?.toFixed(1)}in | RSI ${lastCMJ.rsi_mod?.toFixed(2)} | PP/kg ${lastCMJ.peak_power_per_kg?.toFixed(1)} W/kg`:'- No CMJ data'}
+- Neuro Classification: ${classification}
+${rule?`- Training Emphasis: ${rule.emphasis} | Load Range: ${rule.load_range}`:''}
+${rule?.notes?`- Notes: ${rule.notes}`:''}
 
 RECENT LOGS:
 ${recentLogs.map((l:any)=>`  ${l.log_date}: vel=${l.velocity||'—'}mph, feeling=${l.feeling||'—'}/10, soreness=[${(l.soreness||[]).join(',')||'none'}]`).join('\n')||'  None.'}
@@ -371,6 +437,17 @@ Write next week's program by day and category (Pre-Throwing, Throwing, Post-Thro
     navigator.clipboard.writeText(prompt).catch(()=>{})
     window.open('https://claude.ai','_blank')
     alert('Prompt copied! Paste into Claude.')
+  }
+
+  // Get recommended exercises based on classification
+  const getRecommendedExercises = (classification:string) => {
+    const rule = recommendationRules.find(r=>r.classification===classification)
+    if (!rule) return []
+    const preferredCats:string[] = rule.preferred_categories||[]
+    const preferredPatterns:string[] = rule.preferred_patterns||[]
+    return EXERCISE_DB.filter(ex=>
+      preferredCats.includes(ex.category) || preferredPatterns.includes(ex.pattern)
+    ).slice(0,6)
   }
 
   const filteredExercises=useMemo(()=>EXERCISE_DB.filter(ex=>{
@@ -442,7 +519,14 @@ Write next week's program by day and category (Pre-Throwing, Throwing, Post-Thro
             </div>
           )}
 
-          {view==='roster'&&selected&&(
+          {view==='roster'&&selected&&(()=>{
+            const latestCMJ = cmjResults[0]||null
+            const {classification,jumpTier,ppTier,rsiTier} = classifyCMJ(latestCMJ)
+            const classCol = CLASS_COLORS[classification]||CLASS_COLORS['No Data']
+            const rule = recommendationRules.find(r=>r.classification===classification)
+            const recommendedExercises = getRecommendedExercises(classification)
+
+            return(
             <div>
               <div style={{display:'flex',alignItems:'center',gap:16,marginBottom:20,paddingBottom:16,borderBottom:`1px solid ${C.border}`}}>
                 <Avatar name={selected.full_name||'?'} size={48}/>
@@ -470,6 +554,7 @@ Write next week's program by day and category (Pre-Throwing, Throwing, Post-Thro
 
               {tab==='overview'&&(
                 <div>
+                  {/* Quick stats */}
                   <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:12,marginBottom:12}}>
                     {[{label:'Pitches/Wk',val:selected.weekly_pitches||'—'},{label:'HE Throws/Wk',val:selected.weekly_high_effort||'—'},{label:'CMJ Tests',val:cmjResults.length}].map(m=>(
                       <div key={m.label} style={{background:C.bg3,border:`1px solid ${C.border}`,borderRadius:8,padding:'12px 14px'}}>
@@ -478,19 +563,80 @@ Write next week's program by day and category (Pre-Throwing, Throwing, Post-Thro
                       </div>
                     ))}
                   </div>
-                  {cmjResults[0]&&(
-                    <div style={{...S.card,border:'1px solid rgba(163,113,247,0.3)',background:'rgba(163,113,247,0.05)'}}>
-                      <div style={{fontSize:11,color:C.purple,fontWeight:700,textTransform:'uppercase' as const,letterSpacing:'1px',marginBottom:10}}>Latest CMJ</div>
-                      <div style={{display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:8}}>
-                        {[{l:'Velo Capacity',v:`${cmjResults[0].estimated_velocity?.toFixed(1)} mph`},{l:'Jump Height',v:`${cmjResults[0].jump_height_in?.toFixed(1)} in`},{l:'RSI',v:cmjResults[0].rsi_mod?.toFixed(2)},{l:'PP/kg',v:`${cmjResults[0].peak_power_per_kg?.toFixed(1)} W/kg`}].map(m=>(
-                          <div key={m.l} style={{textAlign:'center'}}>
-                            <div style={{fontSize:10,color:C.purple,marginBottom:3}}>{m.l}</div>
-                            <div style={{fontSize:15,fontWeight:700,color:C.white}}>{m.v}</div>
+
+                  {/* Neuro Classification Card */}
+                  {latestCMJ?(
+                    <div style={{...S.card,border:`1px solid ${classCol.border}`,background:classCol.bg,marginBottom:12}}>
+                      <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',marginBottom:12}}>
+                        <div>
+                          <div style={{fontSize:10,color:classCol.text,fontWeight:700,textTransform:'uppercase' as const,letterSpacing:'1px',marginBottom:4}}>Neuro Classification</div>
+                          <div style={{fontSize:20,fontWeight:700,color:classCol.text}}>{classification}</div>
+                          {rule&&<div style={{fontSize:12,color:C.textMuted,marginTop:4}}>{rule.emphasis}</div>}
+                        </div>
+                        <div style={{textAlign:'right'}}>
+                          <div style={{fontSize:10,color:C.textMuted,marginBottom:4}}>Load Range</div>
+                          <div style={{fontSize:16,fontWeight:700,color:C.white}}>{rule?.load_range||'—'}</div>
+                        </div>
+                      </div>
+
+                      {/* CMJ Metric Tiers */}
+                      <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:8,marginBottom:12}}>
+                        {[
+                          {label:'Jump Height',val:`${latestCMJ.jump_height_in?.toFixed(1)} in`,tier:jumpTier},
+                          {label:'PP/kg (Magnitude)',val:`${latestCMJ.peak_power_per_kg?.toFixed(1)} W/kg`,tier:ppTier},
+                          {label:'RSI (Rate)',val:latestCMJ.rsi_mod?.toFixed(2),tier:rsiTier},
+                        ].map(m=>(
+                          <div key={m.label} style={{background:'rgba(0,0,0,0.2)',borderRadius:8,padding:'10px 12px'}}>
+                            <div style={{fontSize:10,color:C.textMuted,marginBottom:4}}>{m.label}</div>
+                            <div style={{fontSize:15,fontWeight:700,color:C.white,marginBottom:4}}>{m.val}</div>
+                            <TierBadge tier={m.tier}/>
                           </div>
                         ))}
                       </div>
+
+                      {/* Rule notes */}
+                      {rule?.notes&&(
+                        <div style={{fontSize:11,color:C.textMuted,padding:'8px 10px',background:'rgba(0,0,0,0.2)',borderRadius:6,marginBottom:12}}>
+                          {rule.notes}
+                        </div>
+                      )}
+
+                      {/* Recommended exercises */}
+                      {recommendedExercises.length>0&&(
+                        <div>
+                          <div style={{fontSize:10,color:classCol.text,fontWeight:700,textTransform:'uppercase' as const,letterSpacing:'1px',marginBottom:8}}>Recommended Exercises</div>
+                          <div style={{display:'flex',flexDirection:'column' as const,gap:6}}>
+                            {recommendedExercises.map((ex:any)=>{
+                              const catCol=CAT_MAP[ex.category]
+                              const cnsCol=CNS_COLORS[ex.cns]||CNS_COLORS['Low']
+                              const prescription=lookupPrescription(ex.name,parsedPrinciples)
+                              return(
+                                <div key={ex.id} style={{background:'rgba(0,0,0,0.2)',borderRadius:6,padding:'8px 12px',display:'flex',alignItems:'center',gap:10}}>
+                                  <div style={{width:3,height:24,borderRadius:2,background:catCol?.color||C.textMuted,flexShrink:0}}/>
+                                  <div style={{flex:1}}>
+                                    <div style={{fontSize:12,fontWeight:600,color:C.white}}>{ex.name}</div>
+                                    <div style={{display:'flex',gap:6,marginTop:2,alignItems:'center'}}>
+                                      <span style={{fontSize:10,color:cnsCol.text}}>{ex.cns} CNS</span>
+                                      <span style={{fontSize:10,color:catCol?.color||C.textMuted}}>{ex.category}</span>
+                                      {prescription&&<span style={{fontSize:10,color:C.gold,fontWeight:600}}>{prescription.sets}x{prescription.reps}{prescription.load?` @ ${prescription.load}%`:''}</span>}
+                                    </div>
+                                  </div>
+                                  {exerciseVideos[ex.id]&&<a href={exerciseVideos[ex.id]} target="_blank" rel="noopener noreferrer" style={{fontSize:10,color:C.blue}}>Video</a>}
+                                </div>
+                              )
+                            })}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  ):(
+                    <div style={{...S.card,border:'1px solid rgba(163,113,247,0.2)',background:'rgba(163,113,247,0.04)',marginBottom:12}}>
+                      <div style={{fontSize:11,color:C.purple,fontWeight:700,textTransform:'uppercase' as const,letterSpacing:'1px',marginBottom:6}}>Neuro Classification</div>
+                      <div style={{fontSize:13,color:C.textDim}}>No CMJ data yet. Have the pitcher complete a CMJ test to see their classification and recommendations.</div>
                     </div>
                   )}
+
+                  {/* Recent logs */}
                   {logs.length>0&&(
                     <div style={S.card}>
                       <div style={{fontSize:11,color:C.textMuted,fontWeight:700,textTransform:'uppercase' as const,letterSpacing:'1px',marginBottom:12}}>Recent Sessions</div>
@@ -642,9 +788,9 @@ Write next week's program by day and category (Pre-Throwing, Throwing, Post-Thro
                 </div>
               )}
             </div>
-          )}
+            )
+          })()}
 
-          {/* LIBRARY VIEW */}
           {view==='library'&&(
             <div>
               <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:16}}>
@@ -655,7 +801,6 @@ Write next week's program by day and category (Pre-Throwing, Throwing, Post-Thro
                 <button onClick={()=>{setShowCustomForm(true);setCustomForm(BLANK_CUSTOM)}} style={{...S.btn('gold'),padding:'9px 16px'}}>+ New Exercise</button>
               </div>
 
-              {/* Add custom form inline */}
               {showCustomForm&&(
                 <div style={{...S.card,border:'1px solid rgba(232,184,75,0.3)',marginBottom:16}}>
                   <div style={{fontSize:13,fontWeight:700,color:C.white,marginBottom:12}}>New Exercise</div>
@@ -696,7 +841,6 @@ Write next week's program by day and category (Pre-Throwing, Throwing, Post-Thro
                 </div>
               )}
 
-              {/* Edit form */}
               {editingExercise&&editForm&&(
                 <div style={{...S.card,border:`1px solid ${CAT_MAP[editingExercise.category]?.border||C.border}`,marginBottom:16}}>
                   <div style={{fontSize:13,fontWeight:700,color:C.white,marginBottom:12}}>Editing: {editingExercise.name}</div>
@@ -737,7 +881,6 @@ Write next week's program by day and category (Pre-Throwing, Throwing, Post-Thro
                 </div>
               )}
 
-              {/* Search and filter */}
               <div style={{display:'flex',gap:8,marginBottom:12}}>
                 <input style={{...S.input,flex:1}} placeholder="Search exercises..." value={libSearch} onChange={e=>setLibSearch(e.target.value)}/>
                 <select style={{...S.input,width:'auto'}} value={libCat} onChange={e=>setLibCat(e.target.value)}>
@@ -746,7 +889,6 @@ Write next week's program by day and category (Pre-Throwing, Throwing, Post-Thro
                 </select>
               </div>
 
-              {/* Exercise table */}
               <div style={{...S.card,padding:0,overflow:'hidden'}}>
                 <table style={{width:'100%',borderCollapse:'collapse' as const,fontSize:12}}>
                   <thead>
@@ -796,7 +938,7 @@ Write next week's program by day and category (Pre-Throwing, Throwing, Post-Thro
                           <td style={{padding:'10px 12px'}}>
                             <div style={{display:'flex',gap:6}}>
                               <button onClick={()=>startEdit(ex)} style={{...S.btn(),fontSize:10,padding:'4px 8px'}}>Edit</button>
-                              {isCustom&&<button onClick={()=>deleteCustomExercise(ex.id)} style={{...S.btn('danger'),fontSize:10,padding:'4px 8px',background:'rgba(248,81,73,0.1)',color:C.red,border:`1px solid rgba(248,81,73,0.3)`}}>Delete</button>}
+                              {isCustom&&<button onClick={()=>deleteCustomExercise(ex.id)} style={{...S.btn(),fontSize:10,padding:'4px 8px',background:'rgba(248,81,73,0.1)',color:C.red,border:'1px solid rgba(248,81,73,0.3)'}}>Delete</button>}
                             </div>
                           </td>
                         </tr>
