@@ -17,101 +17,101 @@ const C = {
 const armCare = (n:number,v:number) => (!n||!v)?0:Math.round(n*Math.pow(v,2)*0.01*1.25*1.25)
 
 const CATEGORIES = [
-  { key:'Pre-Throwing',    color:'#38bdf8', bg:'rgba(56,189,248,0.10)',  border:'rgba(56,189,248,0.35)'  },
-  { key:'Throwing',        color:'#39d353', bg:'rgba(57,211,83,0.10)',   border:'rgba(57,211,83,0.35)'   },
-  { key:'Post-Throwing',   color:'#34d399', bg:'rgba(52,211,153,0.10)',  border:'rgba(52,211,153,0.35)'  },
-  { key:'Main Exercises',  color:'#e8b84b', bg:'rgba(232,184,75,0.10)', border:'rgba(232,184,75,0.35)'  },
-  { key:'Accessory',       color:'#a371f7', bg:'rgba(163,113,247,0.10)',border:'rgba(163,113,247,0.35)' },
-  { key:'Conditioning',    color:'#58a6ff', bg:'rgba(88,166,255,0.10)', border:'rgba(88,166,255,0.35)'  },
-  { key:'Recovery',        color:'#f97316', bg:'rgba(249,115,22,0.10)', border:'rgba(249,115,22,0.35)'  },
+  { key:'Pre-Throwing',   color:'#38bdf8', bg:'rgba(56,189,248,0.10)',  border:'rgba(56,189,248,0.35)'  },
+  { key:'Throwing',       color:'#39d353', bg:'rgba(57,211,83,0.10)',   border:'rgba(57,211,83,0.35)'   },
+  { key:'Post-Throwing',  color:'#34d399', bg:'rgba(52,211,153,0.10)',  border:'rgba(52,211,153,0.35)'  },
+  { key:'Main Exercises', color:'#e8b84b', bg:'rgba(232,184,75,0.10)', border:'rgba(232,184,75,0.35)'  },
+  { key:'Accessory',      color:'#a371f7', bg:'rgba(163,113,247,0.10)',border:'rgba(163,113,247,0.35)' },
+  { key:'Conditioning',   color:'#58a6ff', bg:'rgba(88,166,255,0.10)', border:'rgba(88,166,255,0.35)'  },
+  { key:'Recovery',       color:'#f97316', bg:'rgba(249,115,22,0.10)', border:'rgba(249,115,22,0.35)'  },
 ]
 const CAT_MAP:Record<string,typeof CATEGORIES[0]> = Object.fromEntries(CATEGORIES.map(c=>[c.key,c]))
 
 const CNS_COLORS:Record<string,{bg:string,border:string,text:string,dot:string}> = {
-  'High':     { bg:'rgba(248,81,73,0.12)',   border:'rgba(248,81,73,0.5)',   text:'#f85149', dot:'#f85149' },
-  'Moderate': { bg:'rgba(232,184,75,0.12)',  border:'rgba(232,184,75,0.5)',  text:'#e8b84b', dot:'#e8b84b' },
-  'Low':      { bg:'rgba(57,211,83,0.12)',   border:'rgba(57,211,83,0.5)',   text:'#39d353', dot:'#39d353' },
+  'High':     { bg:'rgba(248,81,73,0.12)',  border:'rgba(248,81,73,0.5)',  text:'#f85149', dot:'#f85149' },
+  'Moderate': { bg:'rgba(232,184,75,0.12)', border:'rgba(232,184,75,0.5)', text:'#e8b84b', dot:'#e8b84b' },
+  'Low':      { bg:'rgba(57,211,83,0.12)',  border:'rgba(57,211,83,0.5)',  text:'#39d353', dot:'#39d353' },
 }
 
 const DAYS = ['Monday','Tuesday','Wednesday','Thursday','Friday','Saturday','Sunday']
 
 const EXERCISE_DB = [
-  {id:'ex_001',name:'Barbell Back Squat',pattern:'Squat',category:'Main Exercises',cns:'High',equipment:['Barbell'],description:'Stand with bar on upper traps, feet shoulder-width. Brace core, push knees out, descend until thighs parallel or below.',cues:['Chest up, eyes forward','Push knees out over toes','Big breath into belly before descent','Drive the floor away on the way up']},
-  {id:'ex_002',name:'Goblet Squat',pattern:'Squat',category:'Accessory',cns:'Moderate',equipment:['Kettlebell'],description:'Hold KB at chest, feet slightly wider than shoulder-width. Squat deep, elbows track inside knees.',cues:['Tall chest, elbows inside knees','Sit between your heels','Push the floor apart']},
-  {id:'ex_003',name:'Rear Foot Elevated Split Squat',pattern:'Lunge',category:'Main Exercises',cns:'Moderate',equipment:['Barbell','Dumbbell'],description:'Rear foot elevated on bench, front foot far enough forward so shin stays vertical.',cues:['Front shin vertical at bottom','Hips square','Strong glute squeeze at the top']},
-  {id:'ex_004',name:'Lateral Lunge',pattern:'Lunge',category:'Accessory',cns:'Moderate',equipment:['Bodyweight','Dumbbell'],description:'Step wide to one side, push hips back and sit into the stepping leg.',cues:['Push hips back, not knees forward','Chest stays tall','Control the return']},
-  {id:'ex_005',name:'Barbell Conventional Deadlift',pattern:'Hinge',category:'Main Exercises',cns:'High',equipment:['Barbell'],description:'Bar over mid-foot, hip-width stance. Hinge to grip, set back flat, drive floor away.',cues:['Bar over mid-foot at setup','Lats locked','Push the floor not pull the bar','Squeeze glutes hard at lockout']},
-  {id:'ex_006',name:'Romanian Deadlift',pattern:'Hinge',category:'Main Exercises',cns:'Moderate',equipment:['Barbell','Dumbbell'],description:'Soft knee bend, push hips straight back maintaining flat back. Bar stays close.',cues:['Soft knees this is a hip hinge','Push hips back not down','Bar drags down your legs','Feel the hamstring stretch']},
-  {id:'ex_007',name:'Single Leg RDL',pattern:'Hinge',category:'Accessory',cns:'Moderate',equipment:['Dumbbell','Kettlebell'],description:'Hinge on one leg, rear leg floats back as counterbalance.',cues:['Hip shoulder and rear heel stay in one line','Square your hips','Squeeze glute to stand']},
-  {id:'ex_008',name:'Sumo Deadlift',pattern:'Hinge',category:'Main Exercises',cns:'High',equipment:['Barbell'],description:'Wide stance deadlift emphasizing inner thigh and hip strength.',cues:['Push knees out hard at the start','Chest up back flat','Drive the floor apart as you pull']},
-  {id:'ex_009',name:'Trap Bar Deadlift',pattern:'Hinge',category:'Main Exercises',cns:'High',equipment:['Barbell'],description:'Stand in center of trap bar. More upright than conventional, easier to learn.',cues:['Stand in the center of the bar','Sit back into the start position','Drive knees out','Tall finish full hip extension']},
-  {id:'ex_010',name:'Kettlebell Swing',pattern:'Hinge',category:'Conditioning',cns:'High',equipment:['Kettlebell'],description:'Ballistic hip hinge. Bell driven by hips not arms.',cues:['Hips generate the power arms just guide','Snap hips through at the top','Catch the bell on the way back']},
-  {id:'ex_011',name:'Barbell Bench Press',pattern:'Horizontal Push',category:'Main Exercises',cns:'High',equipment:['Barbell'],description:'Lie flat, grip slightly wider than shoulder-width. Lower bar to lower chest.',cues:['Retract and depress shoulder blades','Drive feet into floor','Bar to lower chest','Squeeze the bar hard throughout']},
-  {id:'ex_012',name:'1-Arm DB Bench Press',pattern:'Horizontal Push',category:'Accessory',cns:'Moderate',equipment:['Dumbbell'],description:'Unilateral pressing that challenges rotational stability.',cues:['Do not let your torso rotate','Press straight up','Squeeze glutes for stability']},
-  {id:'ex_013',name:'Landmine Press',pattern:'Horizontal Push',category:'Accessory',cns:'Moderate',equipment:['Landmine'],description:'Shoulder-friendly pressing variation with a natural arc.',cues:['Lead with your elbow at the bottom','Press through and slightly out at the top','Keep ribs down']},
-  {id:'ex_014',name:'Incline Dumbbell Press',pattern:'Horizontal Push',category:'Accessory',cns:'Moderate',equipment:['Dumbbell'],description:'Set bench to 30-45 degrees. Elbows at 45 degrees.',cues:['Retract shoulder blades before pressing','Elbows at 45 degrees','3-second controlled lowering']},
-  {id:'ex_015',name:'Push-Up',pattern:'Horizontal Push',category:'Accessory',cns:'Low',equipment:['Bodyweight'],description:'Hands slightly wider than shoulders, body in one rigid plank.',cues:['Rigid plank from head to heels','Scapulae should move','Elbows at 45 degrees']},
-  {id:'ex_016',name:'Barbell Row',pattern:'Horizontal Pull',category:'Main Exercises',cns:'High',equipment:['Barbell'],description:'Hinge to roughly 45 degrees. Pull bar to lower sternum, lead with elbows.',cues:['Hinge position','Lead with elbows not hands','Retract scapulae at the top','Bar to lower sternum']},
-  {id:'ex_017',name:'Pendlay Row',pattern:'Horizontal Pull',category:'Main Exercises',cns:'High',equipment:['Barbell'],description:'Strict horizontal row from the floor each rep.',cues:['Torso stays parallel to floor','Explosive pull from a dead stop','Elbows drive back hard','Reset position each rep']},
-  {id:'ex_018',name:'Single Arm DB Row',pattern:'Horizontal Pull',category:'Accessory',cns:'Moderate',equipment:['Dumbbell'],description:'Supported unilateral row. Pull DB to hip, lead with elbow.',cues:['Do not rotate your torso','Elbow drives back past your hip','Full stretch at the bottom','Controlled lowering']},
-  {id:'ex_019',name:'Pull-Up',pattern:'Vertical Pull',category:'Main Exercises',cns:'Moderate',equipment:['Bodyweight'],description:'Dead hang start. Pull until chin clears bar.',cues:['Start from a full dead hang','Pull elbows to your pockets','Chest to the bar','Full lockout at the bottom each rep']},
-  {id:'ex_020',name:'Lat Pulldown',pattern:'Vertical Pull',category:'Accessory',cns:'Low',equipment:['Cable'],description:'Slight lean back, pull bar to upper chest.',cues:['Pull to upper chest','Elbows drive down and back','Controlled return']},
-  {id:'ex_021',name:'DB Shoulder Press',pattern:'Vertical Push',category:'Main Exercises',cns:'Moderate',equipment:['Dumbbell'],description:'Press dumbbells from shoulder height to full lockout overhead.',cues:['Brace core before pressing','Keep ribs down','Full lockout at the top']},
-  {id:'ex_022',name:'Power Clean',pattern:'Hinge',category:'Main Exercises',cns:'High',equipment:['Barbell'],description:'Pull bar from floor, triple extend, catch in front rack.',cues:['Bar stays close to body','Triple extension hips knees ankles','Elbows shoot through fast on the catch']},
-  {id:'ex_023',name:'Hang Clean',pattern:'Hinge',category:'Main Exercises',cns:'High',equipment:['Barbell'],description:'Power clean starting from hang position at mid-thigh.',cues:['Load the hamstrings in hang','Explosively drive hips through','Elbows fast on the catch']},
-  {id:'ex_024',name:'Med Ball Scoop Toss',pattern:'Rotation',category:'Conditioning',cns:'High',equipment:['Medicine Ball'],description:'Load into back hip, drive hips through, scoop ball upward and forward.',cues:['Hips lead arms follow','Load into the trail leg first','Drive off the back foot','Let hips clear before arms move']},
-  {id:'ex_025',name:'Med Ball Rotational Chest Pass',pattern:'Rotation',category:'Conditioning',cns:'High',equipment:['Medicine Ball'],description:'Explosive rotational throw from parallel stance into wall.',cues:['Load the back hip','Explode through the hips','Front foot stays planted']},
-  {id:'ex_026',name:'Med Ball Overhead Slam',pattern:'Rotation',category:'Conditioning',cns:'High',equipment:['Medicine Ball'],description:'Reach overhead then slam into ground using entire body.',cues:['Reach tall full extension','Slam through the floor','Use your lats to accelerate']},
-  {id:'ex_027',name:'Med Ball Side Slam',pattern:'Rotation',category:'Conditioning',cns:'High',equipment:['Medicine Ball'],description:'Lateral rotational slam training same pattern as pitching.',cues:['Load into the back hip','Hips clear before arms swing','Follow through to the other side']},
-  {id:'ex_028',name:'Landmine Rotational Press',pattern:'Rotation',category:'Conditioning',cns:'Moderate',equipment:['Landmine'],description:'Rotational pressing from parallel stance.',cues:['Load the hip','Hips drive the rotation','Full hip extension at the top']},
-  {id:'ex_029',name:'Broad Jump',pattern:'Locomotion',category:'Conditioning',cns:'High',equipment:['Bodyweight'],description:'Horizontal plyometric training explosive hip extension.',cues:['Arm swing adds distance','Load hips not just knees','Stick and hold before resetting']},
-  {id:'ex_030',name:'Triple Broad Jump',pattern:'Locomotion',category:'Conditioning',cns:'High',equipment:['Bodyweight'],description:'Three consecutive broad jumps for maximum distance.',cues:['Land soft jump immediately','Same arm swing each jump','Last jump stick hard']},
-  {id:'ex_031',name:'Depth Jump',pattern:'Locomotion',category:'Conditioning',cns:'High',equipment:['Bodyweight'],description:'Step off box, land and immediately jump as high as possible.',cues:['Step off do not jump off the box','Ground contact must be explosive','Jump immediately upon landing']},
-  {id:'ex_032',name:'Lateral Bound',pattern:'Locomotion',category:'Conditioning',cns:'High',equipment:['Bodyweight'],description:'Jump from one foot to the other laterally.',cues:['Push hard off inside edge of foot','Land on single leg absorb','Stick each landing before next bound']},
-  {id:'ex_033',name:'Skater Jump',pattern:'Locomotion',category:'Conditioning',cns:'High',equipment:['Bodyweight'],description:'Continuous lateral bounds with brief hold on each landing.',cues:['Lean into the bound','Land on ball of foot','Absorb with hip knee and ankle']},
-  {id:'ex_034',name:'Pogo Hops',pattern:'Locomotion',category:'Conditioning',cns:'High',equipment:['Bodyweight'],description:'Rapid low-amplitude bilateral hops. Minimal knee bend.',cues:['Stiff ankles like springs','Get off ground as fast as possible','Stay on balls of feet entire time']},
-  {id:'ex_035',name:'30-Yard Sprint',pattern:'Locomotion',category:'Conditioning',cns:'High',equipment:['Bodyweight'],description:'Short acceleration sprint. Drive phase first 10 yards.',cues:['Drive at 45 degree angle first 10 yards','Arms drive hard','Rest 2-3 min between reps']},
-  {id:'ex_036',name:'Dead Bug',pattern:'Core',category:'Accessory',cns:'Low',equipment:['Bodyweight'],description:'Lie on back, arms up, knees at 90 degrees. Extend opposite arm and leg.',cues:['Lower back stays on floor entire time','Move slowly','Exhale as you extend']},
-  {id:'ex_037',name:'Plank',pattern:'Core',category:'Accessory',cns:'Low',equipment:['Bodyweight'],description:'Static anti-extension hold. Body in one rigid line.',cues:['Squeeze glutes hard','Brace abs','Push floor away with forearms']},
-  {id:'ex_038',name:'Side Plank',pattern:'Core',category:'Accessory',cns:'Low',equipment:['Bodyweight'],description:'Lateral anti-flexion hold.',cues:['Drive hips up','Stacked feet or staggered','Breathe steadily']},
-  {id:'ex_039',name:'Ab Wheel Rollout',pattern:'Core',category:'Accessory',cns:'Low',equipment:['Bodyweight'],description:'Dynamic anti-extension. Roll forward until fully extended, pull back using lats and abs.',cues:['Brace before you move','Lats pull you back','Hips stay in line']},
-  {id:'ex_040',name:'Half-Kneeling Pallof Press',pattern:'Anti-Rotation',category:'Accessory',cns:'Low',equipment:['Cable','Band'],description:'Anti-rotation press from split stance.',cues:['Down knee drives into floor','Press out slowly','Keep hips and shoulders square']},
-  {id:'ex_041',name:'Copenhagen Plank',pattern:'Anti-Rotation',category:'Accessory',cns:'Low',equipment:['Bodyweight'],description:'Side plank with top leg elevated on bench.',cues:['Top ankle or knee on bench','Drive top leg into bench','Keep hips stacked']},
-  {id:'ex_042',name:'Bear Crawl',pattern:'Locomotion',category:'Pre-Throwing',cns:'Low',equipment:['Bodyweight'],description:'Contralateral crawling. Knees hover 1 inch off floor.',cues:['Knees hover','Opposite arm and leg move together','Slow and controlled']},
-  {id:'ex_043',name:'Lateral Ape Crawl',pattern:'Locomotion',category:'Pre-Throwing',cns:'Low',equipment:['Bodyweight'],description:'Lateral crawling developing frontal plane stability.',cues:['Stay low','Lead with hand then foot on same side','Move smoothly']},
-  {id:'ex_044',name:'Spiderman Crawl',pattern:'Locomotion',category:'Pre-Throwing',cns:'Low',equipment:['Bodyweight'],description:'Forward crawl where knee drives to outside elbow with each step.',cues:['Bring knee to outside of same-side elbow','Rotate torso with each step','Move slowly to get the stretch']},
-  {id:'ex_045',name:'Crab Walk',pattern:'Locomotion',category:'Pre-Throwing',cns:'Low',equipment:['Bodyweight'],description:'Posterior movement with hands and feet on floor, hips lifted.',cues:['Hips stay high','Fingers point away from body','Alternate hand and foot']},
-  {id:'ex_046',name:'Band Pull-Apart',pattern:'Arm Care',category:'Pre-Throwing',cns:'Low',equipment:['Band'],description:'Hold band at shoulder width, pull apart to chest while squeezing shoulder blades.',cues:['Arms stay straight','Squeeze shoulder blades at end','Control the return']},
-  {id:'ex_047',name:'Face Pull',pattern:'Arm Care',category:'Pre-Throwing',cns:'Low',equipment:['Cable','Band'],description:'Pull rope to face while rotating elbows up and out.',cues:['Pull to your nose','Elbows end up high and wide','Externally rotate at finish','Slow and controlled']},
-  {id:'ex_048',name:'External Rotation at 90',pattern:'Arm Care',category:'Post-Throwing',cns:'Low',equipment:['Band','Cable','Dumbbell'],description:'Isolated rotator cuff with arm abducted to 90 degrees.',cues:['Upper arm stays parallel to floor','Move only at the shoulder','Slow and controlled both directions']},
-  {id:'ex_049',name:'Dumbbell Hammer Curl',pattern:'Arm Care',category:'Post-Throwing',cns:'Low',equipment:['Dumbbell'],description:'Neutral grip curl targeting brachialis.',cues:['Neutral grip thumbs up','Elbow pinned at side','3-second lowering']},
-  {id:'ex_050',name:'Dumbbell Pronation',pattern:'Arm Care',category:'Post-Throwing',cns:'Low',equipment:['Dumbbell'],description:'Offset grip. Forearm supported. Rotate from supinated to fully pronated.',cues:['Grip near the plate end','Forearm fully supported','Full range supinated to fully pronated']},
-  {id:'ex_051',name:'Dumbbell Supination',pattern:'Arm Care',category:'Post-Throwing',cns:'Low',equipment:['Dumbbell'],description:'Offset grip. Rotate from pronated to fully supinated.',cues:['Full range of motion','Control the return','Pair with pronation']},
-  {id:'ex_052',name:'Dumbbell Wrist Extension',pattern:'Arm Care',category:'Post-Throwing',cns:'Low',equipment:['Dumbbell'],description:'Forearm supported, palm down. Raise wrist into extension.',cues:['Palm faces down','Full range','Slow controlled return']},
-  {id:'ex_053',name:'2-to-1 Eccentric Hammer Curl',pattern:'Arm Care',category:'Post-Throwing',cns:'Low',equipment:['Dumbbell'],description:'Both hands up, one hand down over 4-5 seconds.',cues:['Two hands up one hand down','5 seconds minimum lowering','Full extension at the bottom']},
-  {id:'ex_054',name:'2-to-1 Eccentric Rear Delt Fly',pattern:'Arm Care',category:'Post-Throwing',cns:'Low',equipment:['Dumbbell'],description:'Both arms raise, one arm lowers over 4-5 seconds.',cues:['Both arms raise together one arm lowers','5-second lowering','Lead with pinky on way up']},
-  {id:'ex_055',name:'Rear Delt Fly',pattern:'Arm Care',category:'Post-Throwing',cns:'Low',equipment:['Dumbbell'],description:'Hinge forward, raise arms to sides leading with pinkies.',cues:['Lead with pinkies','Pause at top','Control the lowering in 3 seconds']},
-  {id:'ex_056',name:'Prone Y-T-W',pattern:'Arm Care',category:'Post-Throwing',cns:'Low',equipment:['Bodyweight','Dumbbell'],description:'Lying face down, arms form Y T and W positions lifting against gravity.',cues:['Thumbs up in all positions','Squeeze shoulder blades before lifting','No shrugging']},
-  {id:'ex_057',name:'Scapular Wall Slide',pattern:'Arm Care',category:'Pre-Throwing',cns:'Low',equipment:['Bodyweight'],description:'Back against wall, slide arms overhead maintaining contact.',cues:['Whole back stays on wall','Elbows and wrists maintain contact','Move slowly']},
-  {id:'ex_058',name:'Sleeper Stretch',pattern:'Mobility',category:'Recovery',cns:'Low',equipment:['Bodyweight'],description:'Lie on throwing-arm side, use free hand to gently push forearm toward floor.',cues:['Gentle pressure only','Keep shoulder blade on floor','Hold 30-60 seconds']},
-  {id:'ex_059',name:'Hip 90/90 Stretch',pattern:'Mobility',category:'Recovery',cns:'Low',equipment:['Bodyweight'],description:'Sit with both legs at 90 degree angles. Transition between sides.',cues:['Both knees stay at 90 degrees','Sit tall','Breathe into tight spots']},
-  {id:'ex_060',name:'Thoracic Spine Rotation',pattern:'Mobility',category:'Recovery',cns:'Low',equipment:['Bodyweight'],description:'Improve thoracic rotation in quadruped seated or lying positions.',cues:['Rotation from mid-back','Take breath in and rotate further on exhale','Hold briefly at end range']},
-  {id:'ex_061',name:'Worlds Greatest Stretch',pattern:'Mobility',category:'Pre-Throwing',cns:'Low',equipment:['Bodyweight'],description:'Multi-joint stretch combining hip flexor thoracic rotation and ankle mobility.',cues:['Long lunge to start','Elbow drives toward floor first','Then rotate and reach overhead','3-5 reps per side']},
-  {id:'td_001',name:'Two Knee Throw',pattern:'Throwing',category:'Throwing',cns:'Low',equipment:['Bodyweight'],description:'Kneel on both knees. Throw using only trunk rotation and arm action.',cues:['Sit tall on both knees','Rotation from trunk only','Full arm layback before rotating','Release point directly in front of throwing ear']},
-  {id:'td_002',name:'One Knee Throw',pattern:'Throwing',category:'Throwing',cns:'Low',equipment:['Bodyweight'],description:'Throwing-side knee down, glove-side foot forward.',cues:['Back knee down front foot forward','Tall posture','Rotate through the front side']},
-  {id:'td_003',name:'Rocker Drill',pattern:'Throwing',category:'Throwing',cns:'Moderate',equipment:['Bodyweight'],description:'Split stance. Rock weight back to front rhythmically, throw at top of forward weight shift.',cues:['Rock back gently then forward with intent','Arm begins moving as weight shifts forward','Find your rhythm']},
-  {id:'td_004',name:'Hover Throw',pattern:'Throwing',category:'Throwing',cns:'Moderate',equipment:['Bodyweight'],description:'Balance on pivot foot with lead leg lifted. Hold 1-2 seconds then throw.',cues:['Balance on pivot foot no swaying','Hold for a full count','Lead leg drops and plants no stride']},
-  {id:'td_005',name:'Split Stance Throw',pattern:'Throwing',category:'Throwing',cns:'Moderate',equipment:['Bodyweight'],description:'Lead foot already planted at stride width. Throw from fixed position.',cues:['Start with feet at stride width','Drive front hip closed as long as possible','Aggressive hip-to-shoulder separation']},
-  {id:'td_006',name:'Walk Away Throw',pattern:'Throwing',category:'Throwing',cns:'Moderate',equipment:['Bodyweight'],description:'Walk away from target, pivot and throw in one fluid motion.',cues:['Walk with purpose','Pivot foot plants parallel to target line','Direct energy toward target']},
-  {id:'td_007',name:'Toss Up Throw',pattern:'Throwing',category:'Throwing',cns:'Moderate',equipment:['Bodyweight'],description:'Toss ball slightly upward and catch in throwing hand as arm begins action.',cues:['Toss 6-12 inches above throwing hand','Catch and throw in one motion','Arm must be in right position to catch']},
-  {id:'td_008',name:'Forward Hop Throw',pattern:'Throwing',category:'Throwing',cns:'High',equipment:['Bodyweight'],description:'Hop forward on pivot foot, land, immediately throw upon landing.',cues:['Hop with intent','Land and throw immediately no pause','Do not land stiff-legged absorb and redirect']},
-  {id:'td_009',name:'Double Hop Throw',pattern:'Throwing',category:'Throwing',cns:'High',equipment:['Bodyweight'],description:'Two consecutive hops pivot foot then lead foot throw immediately.',cues:['Hop 1 pivot foot builds momentum','Hop 2 lead foot accepts and redirects','Throw immediately off Hop 2']},
-  {id:'apr_001',name:'POW Walks',pattern:'Locomotion',category:'Pre-Throwing',cns:'Low',equipment:['Bodyweight'],description:'Contralateral walking with exaggerated arm swing.',cues:['Tall posture','Opposite arm and leg move together','Exaggerated arm swing to shoulder height','Breathe rhythmically']},
-  {id:'apr_002',name:'Band Pull Apart Arm Prep',pattern:'Arm Care',category:'Pre-Throwing',cns:'Low',equipment:['Band'],description:'Pre-throwing band pull apart for scapular activation.',cues:['Arms stay straight','Lead with pinkies','Squeeze shoulder blades at end','Light band activation only']},
-  {id:'apr_003',name:'Band Face Pull Arm Prep',pattern:'Arm Care',category:'Pre-Throwing',cns:'Low',equipment:['Band'],description:'Pre-throwing face pull activating external rotators.',cues:['Pull to your nose','Elbows high and wide','Externally rotate at finish']},
-  {id:'apr_004',name:'Arm Swings',pattern:'Mobility',category:'Pre-Throwing',cns:'Low',equipment:['Bodyweight'],description:'Swing both arms forward and back in controlled pendulum.',cues:['Relax everything','Gradually increase range','Do not force end range use momentum']},
-  {id:'apr_005',name:'Reverse Throws',pattern:'Throwing',category:'Post-Throwing',cns:'Moderate',equipment:['Bodyweight'],description:'Simulate deceleration phase of throwing in reverse.',cues:['Start in follow-through position','Reverse the motion back through your arc','Controlled speed not explosive']},
-  {id:'apr_006',name:'Roll-In Throws',pattern:'Throwing',category:'Pre-Throwing',cns:'Moderate',equipment:['Medicine Ball'],description:'Underhand rolling motion from throwing position.',cues:['Light ball','Let the ball roll off fingertips','Follow through completely','Feel the rotation leading the arm']},
+  {id:'ex_001',name:'Barbell Back Squat',pattern:'Squat',category:'Main Exercises',cns:'High',description:'Stand with bar on upper traps, feet shoulder-width. Brace core, push knees out, descend until thighs parallel or below.'},
+  {id:'ex_002',name:'Goblet Squat',pattern:'Squat',category:'Accessory',cns:'Moderate',description:'Hold KB at chest, feet slightly wider than shoulder-width. Squat deep, elbows track inside knees.'},
+  {id:'ex_003',name:'Rear Foot Elevated Split Squat',pattern:'Lunge',category:'Main Exercises',cns:'Moderate',description:'Rear foot elevated on bench, front foot far enough forward so shin stays vertical.'},
+  {id:'ex_004',name:'Lateral Lunge',pattern:'Lunge',category:'Accessory',cns:'Moderate',description:'Step wide to one side, push hips back and sit into the stepping leg.'},
+  {id:'ex_005',name:'Barbell Conventional Deadlift',pattern:'Hinge',category:'Main Exercises',cns:'High',description:'Bar over mid-foot, hip-width stance. Hinge to grip, set back flat, drive floor away.'},
+  {id:'ex_006',name:'Romanian Deadlift',pattern:'Hinge',category:'Main Exercises',cns:'Moderate',description:'Soft knee bend, push hips straight back maintaining flat back. Bar stays close.'},
+  {id:'ex_007',name:'Single Leg RDL',pattern:'Hinge',category:'Accessory',cns:'Moderate',description:'Hinge on one leg, rear leg floats back as counterbalance.'},
+  {id:'ex_008',name:'Sumo Deadlift',pattern:'Hinge',category:'Main Exercises',cns:'High',description:'Wide stance deadlift emphasizing inner thigh and hip strength.'},
+  {id:'ex_009',name:'Trap Bar Deadlift',pattern:'Hinge',category:'Main Exercises',cns:'High',description:'Stand in center of trap bar. More upright than conventional, easier to learn.'},
+  {id:'ex_010',name:'Kettlebell Swing',pattern:'Hinge',category:'Conditioning',cns:'High',description:'Ballistic hip hinge. Bell driven by hips not arms.'},
+  {id:'ex_011',name:'Barbell Bench Press',pattern:'Horizontal Push',category:'Main Exercises',cns:'High',description:'Lie flat, grip slightly wider than shoulder-width. Lower bar to lower chest.'},
+  {id:'ex_012',name:'1-Arm DB Bench Press',pattern:'Horizontal Push',category:'Accessory',cns:'Moderate',description:'Unilateral pressing that challenges rotational stability.'},
+  {id:'ex_013',name:'Landmine Press',pattern:'Horizontal Push',category:'Accessory',cns:'Moderate',description:'Shoulder-friendly pressing variation with a natural arc.'},
+  {id:'ex_014',name:'Incline Dumbbell Press',pattern:'Horizontal Push',category:'Accessory',cns:'Moderate',description:'Set bench to 30-45 degrees. Elbows at 45 degrees.'},
+  {id:'ex_015',name:'Push-Up',pattern:'Horizontal Push',category:'Accessory',cns:'Low',description:'Hands slightly wider than shoulders, body in one rigid plank.'},
+  {id:'ex_016',name:'Barbell Row',pattern:'Horizontal Pull',category:'Main Exercises',cns:'High',description:'Hinge to roughly 45 degrees. Pull bar to lower sternum, lead with elbows.'},
+  {id:'ex_017',name:'Pendlay Row',pattern:'Horizontal Pull',category:'Main Exercises',cns:'High',description:'Strict horizontal row from the floor each rep.'},
+  {id:'ex_018',name:'Single Arm DB Row',pattern:'Horizontal Pull',category:'Accessory',cns:'Moderate',description:'Supported unilateral row. Pull DB to hip, lead with elbow.'},
+  {id:'ex_019',name:'Pull-Up',pattern:'Vertical Pull',category:'Main Exercises',cns:'Moderate',description:'Dead hang start. Pull until chin clears bar.'},
+  {id:'ex_020',name:'Lat Pulldown',pattern:'Vertical Pull',category:'Accessory',cns:'Low',description:'Slight lean back, pull bar to upper chest.'},
+  {id:'ex_021',name:'DB Shoulder Press',pattern:'Vertical Push',category:'Main Exercises',cns:'Moderate',description:'Press dumbbells from shoulder height to full lockout overhead.'},
+  {id:'ex_022',name:'Power Clean',pattern:'Hinge',category:'Main Exercises',cns:'High',description:'Pull bar from floor, triple extend, catch in front rack.'},
+  {id:'ex_023',name:'Hang Clean',pattern:'Hinge',category:'Main Exercises',cns:'High',description:'Power clean starting from hang position at mid-thigh.'},
+  {id:'ex_024',name:'Med Ball Scoop Toss',pattern:'Rotation',category:'Conditioning',cns:'High',description:'Load into back hip, drive hips through, scoop ball upward and forward.'},
+  {id:'ex_025',name:'Med Ball Rotational Chest Pass',pattern:'Rotation',category:'Conditioning',cns:'High',description:'Explosive rotational throw from parallel stance into wall.'},
+  {id:'ex_026',name:'Med Ball Overhead Slam',pattern:'Rotation',category:'Conditioning',cns:'High',description:'Reach overhead then slam into ground using entire body.'},
+  {id:'ex_027',name:'Med Ball Side Slam',pattern:'Rotation',category:'Conditioning',cns:'High',description:'Lateral rotational slam training same pattern as pitching.'},
+  {id:'ex_028',name:'Landmine Rotational Press',pattern:'Rotation',category:'Conditioning',cns:'Moderate',description:'Rotational pressing from parallel stance.'},
+  {id:'ex_029',name:'Broad Jump',pattern:'Locomotion',category:'Conditioning',cns:'High',description:'Horizontal plyometric training explosive hip extension.'},
+  {id:'ex_030',name:'Triple Broad Jump',pattern:'Locomotion',category:'Conditioning',cns:'High',description:'Three consecutive broad jumps for maximum distance.'},
+  {id:'ex_031',name:'Depth Jump',pattern:'Locomotion',category:'Conditioning',cns:'High',description:'Step off box, land and immediately jump as high as possible.'},
+  {id:'ex_032',name:'Lateral Bound',pattern:'Locomotion',category:'Conditioning',cns:'High',description:'Jump from one foot to the other laterally.'},
+  {id:'ex_033',name:'Skater Jump',pattern:'Locomotion',category:'Conditioning',cns:'High',description:'Continuous lateral bounds with brief hold on each landing.'},
+  {id:'ex_034',name:'Pogo Hops',pattern:'Locomotion',category:'Conditioning',cns:'High',description:'Rapid low-amplitude bilateral hops. Minimal knee bend.'},
+  {id:'ex_035',name:'30-Yard Sprint',pattern:'Locomotion',category:'Conditioning',cns:'High',description:'Short acceleration sprint. Drive phase first 10 yards.'},
+  {id:'ex_036',name:'Dead Bug',pattern:'Core',category:'Accessory',cns:'Low',description:'Lie on back, arms up, knees at 90 degrees. Extend opposite arm and leg.'},
+  {id:'ex_037',name:'Plank',pattern:'Core',category:'Accessory',cns:'Low',description:'Static anti-extension hold. Body in one rigid line.'},
+  {id:'ex_038',name:'Side Plank',pattern:'Core',category:'Accessory',cns:'Low',description:'Lateral anti-flexion hold.'},
+  {id:'ex_039',name:'Ab Wheel Rollout',pattern:'Core',category:'Accessory',cns:'Low',description:'Dynamic anti-extension. Roll forward until fully extended, pull back using lats and abs.'},
+  {id:'ex_040',name:'Half-Kneeling Pallof Press',pattern:'Anti-Rotation',category:'Accessory',cns:'Low',description:'Anti-rotation press from split stance.'},
+  {id:'ex_041',name:'Copenhagen Plank',pattern:'Anti-Rotation',category:'Accessory',cns:'Low',description:'Side plank with top leg elevated on bench.'},
+  {id:'ex_042',name:'Bear Crawl',pattern:'Locomotion',category:'Pre-Throwing',cns:'Low',description:'Contralateral crawling. Knees hover 1 inch off floor.'},
+  {id:'ex_043',name:'Lateral Ape Crawl',pattern:'Locomotion',category:'Pre-Throwing',cns:'Low',description:'Lateral crawling developing frontal plane stability.'},
+  {id:'ex_044',name:'Spiderman Crawl',pattern:'Locomotion',category:'Pre-Throwing',cns:'Low',description:'Forward crawl where knee drives to outside elbow with each step.'},
+  {id:'ex_045',name:'Crab Walk',pattern:'Locomotion',category:'Pre-Throwing',cns:'Low',description:'Posterior movement with hands and feet on floor, hips lifted.'},
+  {id:'ex_046',name:'Band Pull-Apart',pattern:'Arm Care',category:'Pre-Throwing',cns:'Low',description:'Hold band at shoulder width, pull apart to chest while squeezing shoulder blades.'},
+  {id:'ex_047',name:'Face Pull',pattern:'Arm Care',category:'Pre-Throwing',cns:'Low',description:'Pull rope to face while rotating elbows up and out.'},
+  {id:'ex_048',name:'External Rotation at 90',pattern:'Arm Care',category:'Post-Throwing',cns:'Low',description:'Isolated rotator cuff with arm abducted to 90 degrees.'},
+  {id:'ex_049',name:'Dumbbell Hammer Curl',pattern:'Arm Care',category:'Post-Throwing',cns:'Low',description:'Neutral grip curl targeting brachialis.'},
+  {id:'ex_050',name:'Dumbbell Pronation',pattern:'Arm Care',category:'Post-Throwing',cns:'Low',description:'Offset grip. Forearm supported. Rotate from supinated to fully pronated.'},
+  {id:'ex_051',name:'Dumbbell Supination',pattern:'Arm Care',category:'Post-Throwing',cns:'Low',description:'Offset grip. Rotate from pronated to fully supinated.'},
+  {id:'ex_052',name:'Dumbbell Wrist Extension',pattern:'Arm Care',category:'Post-Throwing',cns:'Low',description:'Forearm supported, palm down. Raise wrist into extension.'},
+  {id:'ex_053',name:'2-to-1 Eccentric Hammer Curl',pattern:'Arm Care',category:'Post-Throwing',cns:'Low',description:'Both hands up, one hand down over 4-5 seconds.'},
+  {id:'ex_054',name:'2-to-1 Eccentric Rear Delt Fly',pattern:'Arm Care',category:'Post-Throwing',cns:'Low',description:'Both arms raise, one arm lowers over 4-5 seconds.'},
+  {id:'ex_055',name:'Rear Delt Fly',pattern:'Arm Care',category:'Post-Throwing',cns:'Low',description:'Hinge forward, raise arms to sides leading with pinkies.'},
+  {id:'ex_056',name:'Prone Y-T-W',pattern:'Arm Care',category:'Post-Throwing',cns:'Low',description:'Lying face down, arms form Y T and W positions lifting against gravity.'},
+  {id:'ex_057',name:'Scapular Wall Slide',pattern:'Arm Care',category:'Pre-Throwing',cns:'Low',description:'Back against wall, slide arms overhead maintaining contact.'},
+  {id:'ex_058',name:'Sleeper Stretch',pattern:'Mobility',category:'Recovery',cns:'Low',description:'Lie on throwing-arm side, use free hand to gently push forearm toward floor.'},
+  {id:'ex_059',name:'Hip 90/90 Stretch',pattern:'Mobility',category:'Recovery',cns:'Low',description:'Sit with both legs at 90 degree angles. Transition between sides.'},
+  {id:'ex_060',name:'Thoracic Spine Rotation',pattern:'Mobility',category:'Recovery',cns:'Low',description:'Improve thoracic rotation in quadruped seated or lying positions.'},
+  {id:'ex_061',name:'Worlds Greatest Stretch',pattern:'Mobility',category:'Pre-Throwing',cns:'Low',description:'Multi-joint stretch combining hip flexor thoracic rotation and ankle mobility.'},
+  {id:'td_001',name:'Two Knee Throw',pattern:'Throwing',category:'Throwing',cns:'Low',description:'Kneel on both knees. Throw using only trunk rotation and arm action.'},
+  {id:'td_002',name:'One Knee Throw',pattern:'Throwing',category:'Throwing',cns:'Low',description:'Throwing-side knee down, glove-side foot forward.'},
+  {id:'td_003',name:'Rocker Drill',pattern:'Throwing',category:'Throwing',cns:'Moderate',description:'Split stance. Rock weight back to front rhythmically, throw at top of forward weight shift.'},
+  {id:'td_004',name:'Hover Throw',pattern:'Throwing',category:'Throwing',cns:'Moderate',description:'Balance on pivot foot with lead leg lifted. Hold 1-2 seconds then throw.'},
+  {id:'td_005',name:'Split Stance Throw',pattern:'Throwing',category:'Throwing',cns:'Moderate',description:'Lead foot already planted at stride width. Throw from fixed position.'},
+  {id:'td_006',name:'Walk Away Throw',pattern:'Throwing',category:'Throwing',cns:'Moderate',description:'Walk away from target, pivot and throw in one fluid motion.'},
+  {id:'td_007',name:'Toss Up Throw',pattern:'Throwing',category:'Throwing',cns:'Moderate',description:'Toss ball slightly upward and catch in throwing hand as arm begins action.'},
+  {id:'td_008',name:'Forward Hop Throw',pattern:'Throwing',category:'Throwing',cns:'High',description:'Hop forward on pivot foot, land, immediately throw upon landing.'},
+  {id:'td_009',name:'Double Hop Throw',pattern:'Throwing',category:'Throwing',cns:'High',description:'Two consecutive hops pivot foot then lead foot throw immediately.'},
+  {id:'apr_001',name:'POW Walks',pattern:'Locomotion',category:'Pre-Throwing',cns:'Low',description:'Contralateral walking with exaggerated arm swing.'},
+  {id:'apr_002',name:'Band Pull Apart Arm Prep',pattern:'Arm Care',category:'Pre-Throwing',cns:'Low',description:'Pre-throwing band pull apart for scapular activation.'},
+  {id:'apr_003',name:'Band Face Pull Arm Prep',pattern:'Arm Care',category:'Pre-Throwing',cns:'Low',description:'Pre-throwing face pull activating external rotators.'},
+  {id:'apr_004',name:'Arm Swings',pattern:'Mobility',category:'Pre-Throwing',cns:'Low',description:'Swing both arms forward and back in controlled pendulum.'},
+  {id:'apr_005',name:'Reverse Throws',pattern:'Throwing',category:'Post-Throwing',cns:'Moderate',description:'Simulate deceleration phase of throwing in reverse.'},
+  {id:'apr_006',name:'Roll-In Throws',pattern:'Throwing',category:'Pre-Throwing',cns:'Moderate',description:'Underhand rolling motion from throwing position.'},
 ]
 
 function parsePrinciples(text:string): Record<string,{sets:string,reps:string,load:string}> {
@@ -174,6 +174,9 @@ export default function CoachDashboard(){
   const [pickerCNS,setPickerCNS]=useState('All')
   const [pickerCat,setPickerCat]=useState('All')
   const [addForm,setAddForm]=useState<any>(null)
+  const [exerciseVideos,setExerciseVideos]=useState<Record<string,string>>({})
+  const [videoInput,setVideoInput]=useState('')
+  const [videoSaved,setVideoSaved]=useState(false)
 
   const router=useRouter()
   const supabase=createClient()
@@ -190,6 +193,12 @@ export default function CoachDashboard(){
       setPitchers(ps||[])
       const {data:pr}=await supabase.from('principles').select('*').single()
       if (pr){setPrinciples(pr.content);setPrincText(pr.content)}
+      const {data:vids}=await supabase.from('exercise_videos').select('*')
+      if (vids){
+        const vm:Record<string,string>={}
+        vids.forEach((v:any)=>{vm[v.exercise_id]=v.video_url})
+        setExerciseVideos(vm)
+      }
       setLoading(false)
     }
     init()
@@ -246,18 +255,31 @@ export default function CoachDashboard(){
     }
   }
 
+  const saveVideo=async(exerciseId:string,url:string)=>{
+    if (!url.trim())return
+    await supabase.from('exercise_videos').upsert({exercise_id:exerciseId,video_url:url.trim()},{onConflict:'exercise_id'})
+    setExerciseVideos(prev=>({...prev,[exerciseId]:url.trim()}))
+    setVideoSaved(true)
+    setTimeout(()=>setVideoSaved(false),2000)
+  }
+
   const openPicker=(day:string,cat:string)=>{
     setPickerCell({day,cat})
     setPickerSearch('')
     setPickerCNS('All')
     setPickerCat(cat)
     setAddForm(null)
+    setVideoInput('')
+    setVideoSaved(false)
     setShowPicker(true)
   }
 
   const confirmAddExercise=async()=>{
     if (!addForm||!pickerCell)return
     const {exercise,sets,reps,load,notes:exNotes}=addForm
+    if (videoInput.trim()&&!exerciseVideos[exercise.id]){
+      await saveVideo(exercise.id,videoInput)
+    }
     const key=`${pickerCell.day}___${pickerCell.cat}`
     const current=structuredDays[key]||[]
     const newStructured={...structuredDays,[key]:[...current,{
@@ -482,9 +504,8 @@ Write next week's program by day and category (Pre-Throwing, Throwing, Post-Thro
                         </div>
                       ))}
                     </div>
-                    <button style={S.btn('gold')} onClick={buildPrompt}>✨ Claude ↗</button>
+                    <button style={S.btn('gold')} onClick={buildPrompt}>Claude</button>
                   </div>
-
                   <div style={{overflowX:'auto' as const}}>
                     <div style={{minWidth:900}}>
                       <div style={{display:'grid',gridTemplateColumns:'130px repeat(7,1fr)',gap:4,marginBottom:4}}>
@@ -515,24 +536,20 @@ Write next week's program by day and category (Pre-Throwing, Throwing, Post-Thro
                                       </div>
                                       <div style={{fontSize:9,color:cat.color,fontWeight:600}}>{ex.sets}x{ex.reps}{ex.load?` @ ${ex.load}%`:''}</div>
                                       {ex.notes&&<div style={{fontSize:9,color:C.textDim,fontStyle:'italic',marginTop:1}}>{ex.notes}</div>}
+                                      {exerciseVideos[ex.id]&&(
+                                        <a href={exerciseVideos[ex.id]} target="_blank" rel="noopener noreferrer" style={{fontSize:9,color:C.blue,display:'block',marginTop:2}}>Video</a>
+                                      )}
                                     </div>
                                     <button onClick={()=>removeExercise(key,i)} style={{background:'transparent',border:'none',color:C.textDim,cursor:'pointer',fontSize:11,padding:'0 2px',lineHeight:1,flexShrink:0}}>x</button>
                                   </div>
                                 ))}
                                 {note&&!isExpanded&&(
                                   <div style={{fontSize:9,color:C.textDim,fontStyle:'italic',marginTop:exercises.length>0?3:0,cursor:'pointer'}} onClick={()=>setExpandedCell(key)}>
-                                    note: {note.length>40?note.slice(0,40)+'...':note}
+                                    {note.length>40?note.slice(0,40)+'...':note}
                                   </div>
                                 )}
                                 {isExpanded&&(
-                                  <textarea
-                                    autoFocus
-                                    style={{width:'100%',background:C.bg3,border:`1px solid ${cat.border}`,borderRadius:4,padding:'4px 6px',fontSize:10,color:C.text,resize:'none' as const,outline:'none',minHeight:52,boxSizing:'border-box' as const,marginTop:3,fontFamily:'system-ui'}}
-                                    value={note}
-                                    onChange={e=>updateCellNote(day,cat.key,e.target.value)}
-                                    onBlur={()=>setExpandedCell(null)}
-                                    placeholder="Coaching note..."
-                                  />
+                                  <textarea autoFocus style={{width:'100%',background:C.bg3,border:`1px solid ${cat.border}`,borderRadius:4,padding:'4px 6px',fontSize:10,color:C.text,resize:'none' as const,outline:'none',minHeight:52,boxSizing:'border-box' as const,marginTop:3,fontFamily:'system-ui'}} value={note} onChange={e=>updateCellNote(day,cat.key,e.target.value)} onBlur={()=>setExpandedCell(null)} placeholder="Coaching note..."/>
                                 )}
                                 <div style={{display:'flex',gap:3,marginTop:4}}>
                                   <button onClick={()=>openPicker(day,cat.key)} style={{flex:1,background:'transparent',border:`1px dashed ${C.border}`,borderRadius:4,color:C.textDim,fontSize:9,padding:'3px 0',cursor:'pointer',textAlign:'center' as const}}>+ exercise</button>
@@ -551,7 +568,6 @@ Write next week's program by day and category (Pre-Throwing, Throwing, Post-Thro
               {tab==='notes'&&(
                 <div>
                   <div style={S.card}>
-                    <div style={{fontSize:11,color:C.textMuted,fontWeight:700,textTransform:'uppercase' as const,letterSpacing:'1px',marginBottom:10}}>New Note</div>
                     <textarea style={{...S.input,minHeight:80,resize:'vertical' as const}} placeholder="Write a note..." value={noteText} onChange={e=>setNoteText(e.target.value)}/>
                     <button style={{...S.btn('gold'),marginTop:10}} onClick={addNote}>Save Note</button>
                   </div>
@@ -645,26 +661,23 @@ Write next week's program by day and category (Pre-Throwing, Throwing, Post-Thro
                 </div>
                 <div style={{padding:'6px 14px',fontSize:10,color:C.textDim,borderBottom:`1px solid ${C.border}`,flexShrink:0}}>{filteredExercises.length} exercises</div>
                 <div style={{overflowY:'auto' as const,flex:1}}>
-                  {filteredExercises.length===0&&<div style={{padding:20,textAlign:'center',color:C.textDim,fontSize:13}}>No exercises match your filters.</div>}
                   {filteredExercises.map(ex=>{
                     const catColor=CAT_MAP[ex.category]?.color||C.textMuted
                     const cnsCol=CNS_COLORS[ex.cns]||CNS_COLORS['Low']
                     const prescription=lookupPrescription(ex.name,parsedPrinciples)
+                    const hasVideo=!!exerciseVideos[ex.id]
                     return(
-                      <div key={ex.id} onClick={()=>{const p=lookupPrescription(ex.name,parsedPrinciples);setAddForm({exercise:ex,sets:p?.sets||'3',reps:p?.reps||'4',load:p?.load||'',notes:''})}} style={{padding:'10px 14px',cursor:'pointer',borderBottom:`1px solid ${C.border}`,display:'flex',alignItems:'center',gap:10}}>
+                      <div key={ex.id} onClick={()=>{const p=lookupPrescription(ex.name,parsedPrinciples);setVideoInput(exerciseVideos[ex.id]||'');setAddForm({exercise:ex,sets:p?.sets||'3',reps:p?.reps||'4',load:p?.load||'',notes:''})}} style={{padding:'10px 14px',cursor:'pointer',borderBottom:`1px solid ${C.border}`,display:'flex',alignItems:'center',gap:10}}>
                         <div style={{width:3,height:32,borderRadius:2,background:catColor,flexShrink:0}}/>
                         <div style={{flex:1,minWidth:0}}>
                           <div style={{display:'flex',alignItems:'center',gap:6,marginBottom:3}}>
                             <span style={{fontSize:13,fontWeight:600,color:C.white}}>{ex.name}</span>
                             {prescription&&<span style={{fontSize:9,background:'rgba(57,211,83,0.15)',color:C.teal,border:'1px solid rgba(57,211,83,0.3)',borderRadius:4,padding:'1px 5px',fontWeight:700}}>prescribed</span>}
+                            {hasVideo&&<span style={{fontSize:9,background:'rgba(88,166,255,0.15)',color:C.blue,border:'1px solid rgba(88,166,255,0.3)',borderRadius:4,padding:'1px 5px',fontWeight:700}}>video</span>}
                           </div>
                           <div style={{display:'flex',gap:6,alignItems:'center'}}>
-                            <span style={{display:'inline-flex',alignItems:'center',gap:3,fontSize:10,color:cnsCol.text}}>
-                              <span style={{width:6,height:6,borderRadius:'50%',background:cnsCol.dot,display:'inline-block'}}/>
-                              {ex.cns} CNS
-                            </span>
+                            <span style={{fontSize:10,color:cnsCol.text}}>{ex.cns} CNS</span>
                             <span style={{fontSize:10,color:catColor}}>{ex.category}</span>
-                            <span style={{fontSize:10,color:C.textDim}}>{ex.pattern}</span>
                             {prescription&&<span style={{fontSize:10,color:C.gold,fontWeight:600}}>{prescription.sets}x{prescription.reps}{prescription.load?` @ ${prescription.load}%`:''}</span>}
                           </div>
                         </div>
@@ -685,14 +698,6 @@ Write next week's program by day and category (Pre-Throwing, Throwing, Post-Thro
                   </div>
                   {addForm.exercise.description&&<div style={{fontSize:11,color:C.textMuted,lineHeight:1.6}}>{addForm.exercise.description}</div>}
                 </div>
-                {addForm.exercise.cues?.length>0&&(
-                  <div style={{marginBottom:14}}>
-                    <div style={{fontSize:10,color:C.gold,fontWeight:700,textTransform:'uppercase' as const,letterSpacing:'0.5px',marginBottom:6}}>Coaching Cues</div>
-                    {addForm.exercise.cues.map((cue:string,i:number)=>(
-                      <div key={i} style={{fontSize:11,color:C.textMuted,marginBottom:3,paddingLeft:10,borderLeft:`2px solid ${C.goldDim}`}}>{cue}</div>
-                    ))}
-                  </div>
-                )}
                 {lookupPrescription(addForm.exercise.name,parsedPrinciples)&&(
                   <div style={{marginBottom:12,padding:'7px 10px',background:'rgba(57,211,83,0.08)',border:'1px solid rgba(57,211,83,0.25)',borderRadius:6,fontSize:11,color:C.teal}}>
                     Auto-filled from your Training Principles
@@ -706,9 +711,19 @@ Write next week's program by day and category (Pre-Throwing, Throwing, Post-Thro
                     </div>
                   ))}
                 </div>
-                <div style={{marginBottom:16}}>
+                <div style={{marginBottom:12}}>
                   <label style={{fontSize:10,color:C.textMuted,fontWeight:600,textTransform:'uppercase' as const,letterSpacing:'0.5px',marginBottom:4,display:'block'}}>Coaching Note (optional)</label>
                   <input style={{width:'100%',background:C.bg3,border:`1px solid ${C.border}`,borderRadius:6,padding:'8px 10px',fontSize:13,color:C.text,boxSizing:'border-box' as const,outline:'none'}} placeholder="e.g. slow eccentric, 3 sec down..." value={addForm.notes} onChange={e=>setAddForm((prev:any)=>({...prev,notes:e.target.value}))}/>
+                </div>
+                <div style={{marginBottom:16}}>
+                  <label style={{fontSize:10,color:C.textMuted,fontWeight:600,textTransform:'uppercase' as const,letterSpacing:'0.5px',marginBottom:4,display:'block'}}>
+                    Video URL {exerciseVideos[addForm.exercise.id]&&<span style={{color:C.teal,fontWeight:400}}>· already saved</span>}
+                  </label>
+                  <div style={{display:'flex',gap:8}}>
+                    <input style={{flex:1,background:C.bg3,border:`1px solid ${exerciseVideos[addForm.exercise.id]?'rgba(57,211,83,0.4)':C.border}`,borderRadius:6,padding:'8px 10px',fontSize:13,color:C.text,boxSizing:'border-box' as const,outline:'none'}} placeholder="https://youtube.com/watch?v=..." value={videoInput} onChange={e=>setVideoInput(e.target.value)}/>
+                    {videoInput.trim()&&<button onClick={()=>saveVideo(addForm.exercise.id,videoInput)} style={{...S.btn(),background:'rgba(88,166,255,0.1)',color:C.blue,border:'1px solid rgba(88,166,255,0.3)'}}>{videoSaved?'Saved!':'Save'}</button>}
+                  </div>
+                  {exerciseVideos[addForm.exercise.id]&&<a href={exerciseVideos[addForm.exercise.id]} target="_blank" rel="noopener noreferrer" style={{fontSize:11,color:C.blue,display:'block',marginTop:4}}>View saved video</a>}
                 </div>
                 <div style={{background:C.bg3,borderRadius:8,padding:'10px 14px',marginBottom:16,fontSize:12,color:C.textMuted}}>
                   Will add: <span style={{color:C.gold,fontWeight:600}}>{addForm.exercise.name} {addForm.sets}x{addForm.reps}{addForm.load?` @ ${addForm.load}%`:''}{addForm.notes?` - ${addForm.notes}`:''}</span>
