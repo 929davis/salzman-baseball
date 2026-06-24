@@ -794,7 +794,7 @@ Write next week's program by day and category (Pre-Throwing, Throwing, Post-Thro
                             }
                           </td>
                           <td style={{padding:'10px 12px'}}>
-                            <div style={{display:'flex',gap:6'}}>
+                            <div style={{display:'flex',gap:6}}>
                               <button onClick={()=>startEdit(ex)} style={{...S.btn(),fontSize:10,padding:'4px 8px'}}>Edit</button>
                               {isCustom&&<button onClick={()=>deleteCustomExercise(ex.id)} style={{...S.btn('danger'),fontSize:10,padding:'4px 8px',background:'rgba(248,81,73,0.1)',color:C.red,border:`1px solid rgba(248,81,73,0.3)`}}>Delete</button>}
                             </div>
