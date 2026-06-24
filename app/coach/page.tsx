@@ -111,7 +111,7 @@ const BUILT_IN_EXERCISES = [
   {id:'apr_003',name:'Band Face Pull Arm Prep',pattern:'Arm Care',category:'Pre-Throwing',cns:'Low',description:'Pre-throwing face pull activating external rotators.'},
   {id:'apr_004',name:'Arm Swings',pattern:'Mobility',category:'Pre-Throwing',cns:'Low',description:'Swing both arms forward and back in controlled pendulum.'},
   {id:'apr_005',name:'Reverse Throws',pattern:'Throwing',category:'Post-Throwing',cns:'Moderate',description:'Simulate deceleration phase of throwing in reverse.'},
-  {id:'apr_006',name:'Roll-In Throws',pattern:'Throwing',category:'Pre-Throwing',cns:'Moderate',description:'Underhand rolling motion from throwing position.'},
+  {id:'apr_006',name:'Roll-In Throws',pattern:'Throwing',category:'Pre-Throwing',cns:'Low',description:'Underhand rolling motion from throwing position.'},
 ]
 
 function parsePrinciples(text:string): Record<string,{sets:string,reps:string,load:string}> {
@@ -183,12 +183,24 @@ export default function CoachDashboard(){
   const [showCustomForm,setShowCustomForm]=useState(false)
   const [customForm,setCustomForm]=useState<any>(BLANK_CUSTOM)
   const [customSaving,setCustomSaving]=useState(false)
+  const [overrides,setOverrides]=useState<Record<string,any>>({})
+  const [editingExercise,setEditingExercise]=useState<any>(null)
+  const [editForm,setEditForm]=useState<any>(null)
+  const [editSaving,setEditSaving]=useState(false)
+  const [libSearch,setLibSearch]=useState('')
+  const [libCat,setLibCat]=useState('All')
 
   const router=useRouter()
   const supabase=createClient()
   const parsedPrinciples = useMemo(()=>parsePrinciples(principles),[principles])
 
-  const EXERCISE_DB = useMemo(()=>[...BUILT_IN_EXERCISES,...customExercises],[customExercises])
+  const EXERCISE_DB = useMemo(()=>{
+    return [...BUILT_IN_EXERCISES,...customExercises].map(ex=>{
+      const ov=overrides[ex.id]
+      if (!ov) return ex
+      return {...ex,...ov}
+    })
+  },[customExercises,overrides])
 
   useEffect(()=>{
     const init=async()=>{
@@ -205,6 +217,8 @@ export default function CoachDashboard(){
       if (vids){const vm:Record<string,string>={};vids.forEach((v:any)=>{vm[v.exercise_id]=v.video_url});setExerciseVideos(vm)}
       const {data:custom}=await supabase.from('custom_exercises').select('*').order('created_at')
       if (custom){setCustomExercises(custom.map((c:any)=>({...c,id:c.exercise_id})))}
+      const {data:ovs}=await supabase.from('exercise_overrides').select('*')
+      if (ovs){const om:Record<string,any>={};ovs.forEach((o:any)=>{om[o.exercise_id]={name:o.name,category:o.category,cns:o.cns,pattern:o.pattern,description:o.description}});setOverrides(om)}
       setLoading(false)
     }
     init()
@@ -267,21 +281,42 @@ export default function CoachDashboard(){
     if (!customForm.name.trim()||!customForm.pattern.trim())return
     setCustomSaving(true)
     const exercise_id=`custom_${Date.now()}`
-    const {data,error}=await supabase.from('custom_exercises').insert({
+    const {data}=await supabase.from('custom_exercises').insert({
       exercise_id,name:customForm.name.trim(),pattern:customForm.pattern.trim(),
       category:customForm.category,cns:customForm.cns,description:customForm.description.trim()
     }).select().single()
-    if (data){
-      setCustomExercises(prev=>[...prev,{...data,id:data.exercise_id}])
-      setCustomForm(BLANK_CUSTOM)
-      setShowCustomForm(false)
-    }
+    if (data){setCustomExercises(prev=>[...prev,{...data,id:data.exercise_id}]);setCustomForm(BLANK_CUSTOM);setShowCustomForm(false)}
     setCustomSaving(false)
   }
 
   const deleteCustomExercise=async(exercise_id:string)=>{
     await supabase.from('custom_exercises').delete().eq('exercise_id',exercise_id)
     setCustomExercises(prev=>prev.filter((e:any)=>e.exercise_id!==exercise_id))
+  }
+
+  const startEdit=(ex:any)=>{
+    setEditingExercise(ex)
+    setEditForm({name:ex.name,category:ex.category,cns:ex.cns,pattern:ex.pattern,description:ex.description||''})
+  }
+
+  const saveEdit=async()=>{
+    if (!editingExercise||!editForm)return
+    setEditSaving(true)
+    const isCustom=editingExercise.id.startsWith('custom_')
+    if (isCustom){
+      await supabase.from('custom_exercises').update({
+        name:editForm.name,category:editForm.category,cns:editForm.cns,
+        pattern:editForm.pattern,description:editForm.description
+      }).eq('exercise_id',editingExercise.id)
+      setCustomExercises(prev=>prev.map((e:any)=>e.id===editingExercise.id?{...e,...editForm}:e))
+    } else {
+      await supabase.from('exercise_overrides').upsert({
+        exercise_id:editingExercise.id,name:editForm.name,category:editForm.category,
+        cns:editForm.cns,pattern:editForm.pattern,description:editForm.description
+      },{onConflict:'exercise_id'})
+      setOverrides(prev=>({...prev,[editingExercise.id]:editForm}))
+    }
+    setEditingExercise(null);setEditForm(null);setEditSaving(false)
   }
 
   const openPicker=(day:string,cat:string)=>{
@@ -346,6 +381,13 @@ Write next week's program by day and category (Pre-Throwing, Throwing, Post-Thro
     return true
   }),[EXERCISE_DB,pickerSearch,pickerCNS,pickerCat])
 
+  const filteredLibrary=useMemo(()=>EXERCISE_DB.filter(ex=>{
+    const q=libSearch.toLowerCase()
+    if (q&&!ex.name.toLowerCase().includes(q)&&!ex.pattern.toLowerCase().includes(q))return false
+    if (libCat!=='All'&&ex.category!==libCat)return false
+    return true
+  }),[EXERCISE_DB,libSearch,libCat])
+
   if (loading)return <div style={{minHeight:'100vh',background:C.bg,display:'flex',alignItems:'center',justifyContent:'center',color:C.textMuted,fontFamily:'system-ui'}}>Loading...</div>
 
   const S={
@@ -369,7 +411,7 @@ Write next week's program by day and category (Pre-Throwing, Throwing, Post-Thro
           </div>
         </div>
         <div style={{display:'flex',gap:8,alignItems:'center'}}>
-          {['roster','principles'].map(v=>(
+          {['roster','library','principles'].map(v=>(
             <button key={v} onClick={()=>{setView(v);setSelected(null)}} style={{...S.btn(),background:view===v?C.goldBg:'transparent',color:view===v?C.gold:C.textMuted,border:`1px solid ${view===v?C.goldDim:'transparent'}`,fontSize:11,padding:'5px 12px'}}>{v.toUpperCase()}</button>
           ))}
           <button onClick={signOut} style={{...S.btn(),fontSize:11,padding:'5px 12px',color:C.textMuted}}>Sign Out</button>
@@ -602,6 +644,170 @@ Write next week's program by day and category (Pre-Throwing, Throwing, Post-Thro
             </div>
           )}
 
+          {/* LIBRARY VIEW */}
+          {view==='library'&&(
+            <div>
+              <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:16}}>
+                <div>
+                  <div style={{fontSize:20,fontWeight:700,color:C.white,marginBottom:4}}>EXERCISE LIBRARY</div>
+                  <div style={{fontSize:13,color:C.textMuted}}>{EXERCISE_DB.length} exercises · {customExercises.length} custom · {Object.keys(overrides).length} overrides</div>
+                </div>
+                <button onClick={()=>{setShowCustomForm(true);setCustomForm(BLANK_CUSTOM)}} style={{...S.btn('gold'),padding:'9px 16px'}}>+ New Exercise</button>
+              </div>
+
+              {/* Add custom form inline */}
+              {showCustomForm&&(
+                <div style={{...S.card,border:'1px solid rgba(232,184,75,0.3)',marginBottom:16}}>
+                  <div style={{fontSize:13,fontWeight:700,color:C.white,marginBottom:12}}>New Exercise</div>
+                  <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10,marginBottom:10}}>
+                    <div>
+                      <label style={{fontSize:10,color:C.textMuted,fontWeight:600,textTransform:'uppercase' as const,letterSpacing:'0.5px',marginBottom:4,display:'block'}}>Name *</label>
+                      <input style={S.input} placeholder="e.g. Banded Hip Hinge" value={customForm.name} onChange={e=>setCustomForm((f:any)=>({...f,name:e.target.value}))}/>
+                    </div>
+                    <div>
+                      <label style={{fontSize:10,color:C.textMuted,fontWeight:600,textTransform:'uppercase' as const,letterSpacing:'0.5px',marginBottom:4,display:'block'}}>Pattern *</label>
+                      <input style={S.input} placeholder="e.g. Hinge, Rotation..." value={customForm.pattern} onChange={e=>setCustomForm((f:any)=>({...f,pattern:e.target.value}))}/>
+                    </div>
+                  </div>
+                  <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10,marginBottom:10}}>
+                    <div>
+                      <label style={{fontSize:10,color:C.textMuted,fontWeight:600,textTransform:'uppercase' as const,letterSpacing:'0.5px',marginBottom:4,display:'block'}}>Category</label>
+                      <select style={{...S.input}} value={customForm.category} onChange={e=>setCustomForm((f:any)=>({...f,category:e.target.value}))}>
+                        {CATEGORIES.map(c=><option key={c.key} value={c.key}>{c.key}</option>)}
+                      </select>
+                    </div>
+                    <div>
+                      <label style={{fontSize:10,color:C.textMuted,fontWeight:600,textTransform:'uppercase' as const,letterSpacing:'0.5px',marginBottom:4,display:'block'}}>CNS Load</label>
+                      <select style={{...S.input}} value={customForm.cns} onChange={e=>setCustomForm((f:any)=>({...f,cns:e.target.value}))}>
+                        <option value="High">High</option>
+                        <option value="Moderate">Moderate</option>
+                        <option value="Low">Low</option>
+                      </select>
+                    </div>
+                  </div>
+                  <div style={{marginBottom:12}}>
+                    <label style={{fontSize:10,color:C.textMuted,fontWeight:600,textTransform:'uppercase' as const,letterSpacing:'0.5px',marginBottom:4,display:'block'}}>Description</label>
+                    <textarea style={{...S.input,minHeight:60,resize:'vertical' as const}} placeholder="Brief description..." value={customForm.description} onChange={e=>setCustomForm((f:any)=>({...f,description:e.target.value}))}/>
+                  </div>
+                  <div style={{display:'flex',gap:8}}>
+                    <button style={S.btn('gold')} onClick={saveCustomExercise} disabled={!customForm.name.trim()||!customForm.pattern.trim()||customSaving}>{customSaving?'Saving...':'Save Exercise'}</button>
+                    <button style={S.btn()} onClick={()=>setShowCustomForm(false)}>Cancel</button>
+                  </div>
+                </div>
+              )}
+
+              {/* Edit form */}
+              {editingExercise&&editForm&&(
+                <div style={{...S.card,border:`1px solid ${CAT_MAP[editingExercise.category]?.border||C.border}`,marginBottom:16}}>
+                  <div style={{fontSize:13,fontWeight:700,color:C.white,marginBottom:12}}>Editing: {editingExercise.name}</div>
+                  <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10,marginBottom:10}}>
+                    <div>
+                      <label style={{fontSize:10,color:C.textMuted,fontWeight:600,textTransform:'uppercase' as const,letterSpacing:'0.5px',marginBottom:4,display:'block'}}>Name</label>
+                      <input style={S.input} value={editForm.name} onChange={e=>setEditForm((f:any)=>({...f,name:e.target.value}))}/>
+                    </div>
+                    <div>
+                      <label style={{fontSize:10,color:C.textMuted,fontWeight:600,textTransform:'uppercase' as const,letterSpacing:'0.5px',marginBottom:4,display:'block'}}>Pattern</label>
+                      <input style={S.input} value={editForm.pattern} onChange={e=>setEditForm((f:any)=>({...f,pattern:e.target.value}))}/>
+                    </div>
+                  </div>
+                  <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10,marginBottom:10}}>
+                    <div>
+                      <label style={{fontSize:10,color:C.textMuted,fontWeight:600,textTransform:'uppercase' as const,letterSpacing:'0.5px',marginBottom:4,display:'block'}}>Category</label>
+                      <select style={{...S.input}} value={editForm.category} onChange={e=>setEditForm((f:any)=>({...f,category:e.target.value}))}>
+                        {CATEGORIES.map(c=><option key={c.key} value={c.key}>{c.key}</option>)}
+                      </select>
+                    </div>
+                    <div>
+                      <label style={{fontSize:10,color:C.textMuted,fontWeight:600,textTransform:'uppercase' as const,letterSpacing:'0.5px',marginBottom:4,display:'block'}}>CNS Load</label>
+                      <select style={{...S.input}} value={editForm.cns} onChange={e=>setEditForm((f:any)=>({...f,cns:e.target.value}))}>
+                        <option value="High">High</option>
+                        <option value="Moderate">Moderate</option>
+                        <option value="Low">Low</option>
+                      </select>
+                    </div>
+                  </div>
+                  <div style={{marginBottom:12}}>
+                    <label style={{fontSize:10,color:C.textMuted,fontWeight:600,textTransform:'uppercase' as const,letterSpacing:'0.5px',marginBottom:4,display:'block'}}>Description</label>
+                    <textarea style={{...S.input,minHeight:60,resize:'vertical' as const}} value={editForm.description} onChange={e=>setEditForm((f:any)=>({...f,description:e.target.value}))}/>
+                  </div>
+                  <div style={{display:'flex',gap:8}}>
+                    <button style={S.btn('gold')} onClick={saveEdit} disabled={editSaving}>{editSaving?'Saving...':'Save Changes'}</button>
+                    <button style={S.btn()} onClick={()=>{setEditingExercise(null);setEditForm(null)}}>Cancel</button>
+                  </div>
+                </div>
+              )}
+
+              {/* Search and filter */}
+              <div style={{display:'flex',gap:8,marginBottom:12}}>
+                <input style={{...S.input,flex:1}} placeholder="Search exercises..." value={libSearch} onChange={e=>setLibSearch(e.target.value)}/>
+                <select style={{...S.input,width:'auto'}} value={libCat} onChange={e=>setLibCat(e.target.value)}>
+                  <option value="All">All Categories</option>
+                  {CATEGORIES.map(c=><option key={c.key} value={c.key}>{c.key}</option>)}
+                </select>
+              </div>
+
+              {/* Exercise table */}
+              <div style={{...S.card,padding:0,overflow:'hidden'}}>
+                <table style={{width:'100%',borderCollapse:'collapse' as const,fontSize:12}}>
+                  <thead>
+                    <tr style={{borderBottom:`1px solid ${C.border}`,background:C.bg3}}>
+                      {['Exercise','Category','CNS','Pattern','Video',''].map(h=>(
+                        <th key={h} style={{padding:'10px 12px',textAlign:'left' as const,color:C.textMuted,fontSize:10,textTransform:'uppercase' as const,letterSpacing:'0.5px',fontWeight:700}}>{h}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {filteredLibrary.map((ex:any)=>{
+                      const catDef=CAT_MAP[ex.category]
+                      const cnsDef=CNS_COLORS[ex.cns]||CNS_COLORS['Low']
+                      const isCustom=ex.id.startsWith('custom_')
+                      const hasOverride=!!overrides[ex.id]
+                      const hasVideo=!!exerciseVideos[ex.id]
+                      return(
+                        <tr key={ex.id} style={{borderBottom:`1px solid ${C.border}`}}>
+                          <td style={{padding:'10px 12px'}}>
+                            <div style={{display:'flex',alignItems:'center',gap:8}}>
+                              <div style={{width:3,height:20,borderRadius:2,background:catDef?.color||C.textMuted,flexShrink:0}}/>
+                              <div>
+                                <span style={{color:C.white,fontWeight:600}}>{ex.name}</span>
+                                <div style={{display:'flex',gap:4,marginTop:2}}>
+                                  {isCustom&&<span style={{fontSize:9,background:'rgba(232,184,75,0.15)',color:C.gold,border:'1px solid rgba(232,184,75,0.3)',borderRadius:3,padding:'1px 4px',fontWeight:700}}>custom</span>}
+                                  {hasOverride&&<span style={{fontSize:9,background:'rgba(88,166,255,0.15)',color:C.blue,border:'1px solid rgba(88,166,255,0.3)',borderRadius:3,padding:'1px 4px',fontWeight:700}}>edited</span>}
+                                </div>
+                              </div>
+                            </div>
+                          </td>
+                          <td style={{padding:'10px 12px'}}>
+                            <span style={{color:catDef?.color||C.textMuted,fontSize:11}}>{ex.category}</span>
+                          </td>
+                          <td style={{padding:'10px 12px'}}>
+                            <span style={{display:'inline-flex',alignItems:'center',gap:4,fontSize:11,color:cnsDef.text}}>
+                              <span style={{width:6,height:6,borderRadius:'50%',background:cnsDef.dot,display:'inline-block'}}/>
+                              {ex.cns}
+                            </span>
+                          </td>
+                          <td style={{padding:'10px 12px',color:C.textMuted,fontSize:11}}>{ex.pattern}</td>
+                          <td style={{padding:'10px 12px'}}>
+                            {hasVideo
+                              ? <a href={exerciseVideos[ex.id]} target="_blank" rel="noopener noreferrer" style={{fontSize:11,color:C.blue}}>View</a>
+                              : <span style={{fontSize:11,color:C.textDim}}>—</span>
+                            }
+                          </td>
+                          <td style={{padding:'10px 12px'}}>
+                            <div style={{display:'flex',gap:6'}}>
+                              <button onClick={()=>startEdit(ex)} style={{...S.btn(),fontSize:10,padding:'4px 8px'}}>Edit</button>
+                              {isCustom&&<button onClick={()=>deleteCustomExercise(ex.id)} style={{...S.btn('danger'),fontSize:10,padding:'4px 8px',background:'rgba(248,81,73,0.1)',color:C.red,border:`1px solid rgba(248,81,73,0.3)`}}>Delete</button>}
+                            </div>
+                          </td>
+                        </tr>
+                      )
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+
           {view==='principles'&&(
             <div>
               <div style={{fontSize:20,fontWeight:700,color:C.white,marginBottom:4}}>TRAINING PRINCIPLES</div>
@@ -645,8 +851,7 @@ Write next week's program by day and category (Pre-Throwing, Throwing, Post-Thro
               </div>
               <button onClick={()=>{setShowPicker(false);setAddForm(null);setShowCustomForm(false)}} style={{background:'transparent',border:'none',color:C.textMuted,fontSize:18,cursor:'pointer',lineHeight:1}}>x</button>
             </div>
-
-            {!addForm&&!showCustomForm&&(
+            {!addForm&&(
               <>
                 <div style={{padding:'10px 14px',borderBottom:`1px solid ${C.border}`,display:'flex',gap:8,flexWrap:'wrap' as const,flexShrink:0}}>
                   <input style={{flex:1,background:C.bg3,border:`1px solid ${C.border}`,borderRadius:6,padding:'7px 10px',fontSize:13,color:C.text,outline:'none',minWidth:120}} placeholder="Search exercises..." value={pickerSearch} onChange={e=>setPickerSearch(e.target.value)} autoFocus/>
@@ -661,10 +866,7 @@ Write next week's program by day and category (Pre-Throwing, Throwing, Post-Thro
                     {CATEGORIES.map(c=><option key={c.key} value={c.key}>{c.key}</option>)}
                   </select>
                 </div>
-                <div style={{padding:'6px 14px',fontSize:10,color:C.textDim,borderBottom:`1px solid ${C.border}`,flexShrink:0,display:'flex',justifyContent:'space-between',alignItems:'center'}}>
-                  <span>{filteredExercises.length} exercises · {customExercises.length} custom</span>
-                  <button onClick={()=>setShowCustomForm(true)} style={{background:'rgba(232,184,75,0.1)',border:'1px solid rgba(232,184,75,0.3)',color:C.gold,borderRadius:4,padding:'3px 8px',fontSize:10,cursor:'pointer',fontWeight:600}}>+ New Exercise</button>
-                </div>
+                <div style={{padding:'6px 14px',fontSize:10,color:C.textDim,borderBottom:`1px solid ${C.border}`,flexShrink:0}}>{filteredExercises.length} exercises</div>
                 <div style={{overflowY:'auto' as const,flex:1}}>
                   {filteredExercises.map(ex=>{
                     const catColor=CAT_MAP[ex.category]?.color||C.textMuted
@@ -673,9 +875,9 @@ Write next week's program by day and category (Pre-Throwing, Throwing, Post-Thro
                     const hasVideo=!!exerciseVideos[ex.id]
                     const isCustom=ex.id.startsWith('custom_')
                     return(
-                      <div key={ex.id} style={{padding:'10px 14px',borderBottom:`1px solid ${C.border}`,display:'flex',alignItems:'center',gap:10}}>
+                      <div key={ex.id} onClick={()=>{const p=lookupPrescription(ex.name,parsedPrinciples);setVideoInput(exerciseVideos[ex.id]||'');setAddForm({exercise:ex,sets:p?.sets||'3',reps:p?.reps||'4',load:p?.load||'',notes:''})}} style={{padding:'10px 14px',cursor:'pointer',borderBottom:`1px solid ${C.border}`,display:'flex',alignItems:'center',gap:10}}>
                         <div style={{width:3,height:32,borderRadius:2,background:catColor,flexShrink:0}}/>
-                        <div style={{flex:1,minWidth:0,cursor:'pointer'}} onClick={()=>{const p=lookupPrescription(ex.name,parsedPrinciples);setVideoInput(exerciseVideos[ex.id]||'');setAddForm({exercise:ex,sets:p?.sets||'3',reps:p?.reps||'4',load:p?.load||'',notes:''})}}>
+                        <div style={{flex:1,minWidth:0}}>
                           <div style={{display:'flex',alignItems:'center',gap:6,marginBottom:3}}>
                             <span style={{fontSize:13,fontWeight:600,color:C.white}}>{ex.name}</span>
                             {isCustom&&<span style={{fontSize:9,background:'rgba(232,184,75,0.15)',color:C.gold,border:'1px solid rgba(232,184,75,0.3)',borderRadius:4,padding:'1px 5px',fontWeight:700}}>custom</span>}
@@ -688,59 +890,13 @@ Write next week's program by day and category (Pre-Throwing, Throwing, Post-Thro
                             {prescription&&<span style={{fontSize:10,color:C.gold,fontWeight:600}}>{prescription.sets}x{prescription.reps}{prescription.load?` @ ${prescription.load}%`:''}</span>}
                           </div>
                         </div>
-                        {isCustom&&(
-                          <button onClick={()=>deleteCustomExercise(ex.id)} style={{background:'transparent',border:'none',color:C.textDim,cursor:'pointer',fontSize:12,padding:'2px 4px'}} title="Delete custom exercise">x</button>
-                        )}
-                        <span style={{fontSize:11,color:C.textDim,flexShrink:0,cursor:'pointer'}} onClick={()=>{const p=lookupPrescription(ex.name,parsedPrinciples);setVideoInput(exerciseVideos[ex.id]||'');setAddForm({exercise:ex,sets:p?.sets||'3',reps:p?.reps||'4',load:p?.load||'',notes:''})}}>Add</span>
+                        <span style={{fontSize:11,color:C.textDim,flexShrink:0}}>Add</span>
                       </div>
                     )
                   })}
                 </div>
               </>
             )}
-
-            {showCustomForm&&(
-              <div style={{padding:18,overflowY:'auto' as const,flex:1}}>
-                <button onClick={()=>setShowCustomForm(false)} style={{background:'transparent',border:'none',color:C.textMuted,cursor:'pointer',fontSize:12,marginBottom:14}}>Back to library</button>
-                <div style={{fontSize:14,fontWeight:700,color:C.white,marginBottom:14}}>New Custom Exercise</div>
-                <div style={{marginBottom:10}}>
-                  <label style={{fontSize:10,color:C.textMuted,fontWeight:600,textTransform:'uppercase' as const,letterSpacing:'0.5px',marginBottom:4,display:'block'}}>Exercise Name *</label>
-                  <input style={S.input} placeholder="e.g. Banded Hip Hinge" value={customForm.name} onChange={e=>setCustomForm((f:any)=>({...f,name:e.target.value}))}/>
-                </div>
-                <div style={{marginBottom:10}}>
-                  <label style={{fontSize:10,color:C.textMuted,fontWeight:600,textTransform:'uppercase' as const,letterSpacing:'0.5px',marginBottom:4,display:'block'}}>Movement Pattern *</label>
-                  <input style={S.input} placeholder="e.g. Hinge, Squat, Rotation, Throwing..." value={customForm.pattern} onChange={e=>setCustomForm((f:any)=>({...f,pattern:e.target.value}))}/>
-                </div>
-                <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10,marginBottom:10}}>
-                  <div>
-                    <label style={{fontSize:10,color:C.textMuted,fontWeight:600,textTransform:'uppercase' as const,letterSpacing:'0.5px',marginBottom:4,display:'block'}}>Category</label>
-                    <select style={{...S.input}} value={customForm.category} onChange={e=>setCustomForm((f:any)=>({...f,category:e.target.value}))}>
-                      {CATEGORIES.map(c=><option key={c.key} value={c.key}>{c.key}</option>)}
-                    </select>
-                  </div>
-                  <div>
-                    <label style={{fontSize:10,color:C.textMuted,fontWeight:600,textTransform:'uppercase' as const,letterSpacing:'0.5px',marginBottom:4,display:'block'}}>CNS Load</label>
-                    <select style={{...S.input}} value={customForm.cns} onChange={e=>setCustomForm((f:any)=>({...f,cns:e.target.value}))}>
-                      <option value="High">High</option>
-                      <option value="Moderate">Moderate</option>
-                      <option value="Low">Low</option>
-                    </select>
-                  </div>
-                </div>
-                <div style={{marginBottom:16}}>
-                  <label style={{fontSize:10,color:C.textMuted,fontWeight:600,textTransform:'uppercase' as const,letterSpacing:'0.5px',marginBottom:4,display:'block'}}>Description (optional)</label>
-                  <textarea style={{...S.input,minHeight:70,resize:'vertical' as const}} placeholder="Brief description of the exercise..." value={customForm.description} onChange={e=>setCustomForm((f:any)=>({...f,description:e.target.value}))}/>
-                </div>
-                <button
-                  style={{...S.btn('gold'),width:'100%',padding:'12px',fontSize:14,textAlign:'center' as const,opacity:(!customForm.name.trim()||!customForm.pattern.trim())?0.5:1}}
-                  onClick={saveCustomExercise}
-                  disabled={!customForm.name.trim()||!customForm.pattern.trim()||customSaving}
-                >
-                  {customSaving?'Saving...':'Save to Library'}
-                </button>
-              </div>
-            )}
-
             {addForm&&(
               <div style={{padding:18,overflowY:'auto' as const,flex:1}}>
                 <button onClick={()=>setAddForm(null)} style={{background:'transparent',border:'none',color:C.textMuted,cursor:'pointer',fontSize:12,marginBottom:14}}>Back to library</button>
@@ -753,9 +909,7 @@ Write next week's program by day and category (Pre-Throwing, Throwing, Post-Thro
                   {addForm.exercise.description&&<div style={{fontSize:11,color:C.textMuted,lineHeight:1.6}}>{addForm.exercise.description}</div>}
                 </div>
                 {lookupPrescription(addForm.exercise.name,parsedPrinciples)&&(
-                  <div style={{marginBottom:12,padding:'7px 10px',background:'rgba(57,211,83,0.08)',border:'1px solid rgba(57,211,83,0.25)',borderRadius:6,fontSize:11,color:C.teal}}>
-                    Auto-filled from your Training Principles
-                  </div>
+                  <div style={{marginBottom:12,padding:'7px 10px',background:'rgba(57,211,83,0.08)',border:'1px solid rgba(57,211,83,0.25)',borderRadius:6,fontSize:11,color:C.teal}}>Auto-filled from your Training Principles</div>
                 )}
                 <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:10,marginBottom:12}}>
                   {[{label:'Sets',key:'sets',placeholder:'3'},{label:'Reps',key:'reps',placeholder:'4'},{label:'Load %',key:'load',placeholder:'80'}].map(f=>(
