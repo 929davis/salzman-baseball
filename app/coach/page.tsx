@@ -35,7 +35,7 @@ const CNS_COLORS:Record<string,{bg:string,border:string,text:string,dot:string}>
 
 const DAYS = ['Monday','Tuesday','Wednesday','Thursday','Friday','Saturday','Sunday']
 
-const EXERCISE_DB = [
+const BUILT_IN_EXERCISES = [
   {id:'ex_001',name:'Barbell Back Squat',pattern:'Squat',category:'Main Exercises',cns:'High',description:'Stand with bar on upper traps, feet shoulder-width. Brace core, push knees out, descend until thighs parallel or below.'},
   {id:'ex_002',name:'Goblet Squat',pattern:'Squat',category:'Accessory',cns:'Moderate',description:'Hold KB at chest, feet slightly wider than shoulder-width. Squat deep, elbows track inside knees.'},
   {id:'ex_003',name:'Rear Foot Elevated Split Squat',pattern:'Lunge',category:'Main Exercises',cns:'Moderate',description:'Rear foot elevated on bench, front foot far enough forward so shin stays vertical.'},
@@ -99,7 +99,7 @@ const EXERCISE_DB = [
   {id:'ex_061',name:'Worlds Greatest Stretch',pattern:'Mobility',category:'Pre-Throwing',cns:'Low',description:'Multi-joint stretch combining hip flexor thoracic rotation and ankle mobility.'},
   {id:'td_001',name:'Two Knee Throw',pattern:'Throwing',category:'Throwing',cns:'Low',description:'Kneel on both knees. Throw using only trunk rotation and arm action.'},
   {id:'td_002',name:'One Knee Throw',pattern:'Throwing',category:'Throwing',cns:'Low',description:'Throwing-side knee down, glove-side foot forward.'},
-  {id:'td_003',name:'Rocker Drill',pattern:'Throwing',category:'Throwing',cns:'Moderate',description:'Split stance. Rock weight back to front rhythmically, throw at top of forward weight shift.'},
+  {id:'td_003',name:'Rocker Drill',pattern:'Throwing',category:'Throwing',cns:'Moderate',description:'Split stance. Rock weight back to front rhythmically.'},
   {id:'td_004',name:'Hover Throw',pattern:'Throwing',category:'Throwing',cns:'Moderate',description:'Balance on pivot foot with lead leg lifted. Hold 1-2 seconds then throw.'},
   {id:'td_005',name:'Split Stance Throw',pattern:'Throwing',category:'Throwing',cns:'Moderate',description:'Lead foot already planted at stride width. Throw from fixed position.'},
   {id:'td_006',name:'Walk Away Throw',pattern:'Throwing',category:'Throwing',cns:'Moderate',description:'Walk away from target, pivot and throw in one fluid motion.'},
@@ -148,6 +148,8 @@ function CNSDot({cns}:{cns:string}){
   return <span title={`CNS: ${cns}`} style={{display:'inline-block',width:7,height:7,borderRadius:'50%',background:col.dot,flexShrink:0,marginTop:1}}/>
 }
 
+const BLANK_CUSTOM = {name:'',pattern:'',category:'Main Exercises',cns:'Moderate',description:''}
+
 export default function CoachDashboard(){
   const [user,setUser]=useState<any>(null)
   const [pitchers,setPitchers]=useState<any[]>([])
@@ -177,10 +179,16 @@ export default function CoachDashboard(){
   const [exerciseVideos,setExerciseVideos]=useState<Record<string,string>>({})
   const [videoInput,setVideoInput]=useState('')
   const [videoSaved,setVideoSaved]=useState(false)
+  const [customExercises,setCustomExercises]=useState<any[]>([])
+  const [showCustomForm,setShowCustomForm]=useState(false)
+  const [customForm,setCustomForm]=useState<any>(BLANK_CUSTOM)
+  const [customSaving,setCustomSaving]=useState(false)
 
   const router=useRouter()
   const supabase=createClient()
   const parsedPrinciples = useMemo(()=>parsePrinciples(principles),[principles])
+
+  const EXERCISE_DB = useMemo(()=>[...BUILT_IN_EXERCISES,...customExercises],[customExercises])
 
   useEffect(()=>{
     const init=async()=>{
@@ -194,11 +202,9 @@ export default function CoachDashboard(){
       const {data:pr}=await supabase.from('principles').select('*').single()
       if (pr){setPrinciples(pr.content);setPrincText(pr.content)}
       const {data:vids}=await supabase.from('exercise_videos').select('*')
-      if (vids){
-        const vm:Record<string,string>={}
-        vids.forEach((v:any)=>{vm[v.exercise_id]=v.video_url})
-        setExerciseVideos(vm)
-      }
+      if (vids){const vm:Record<string,string>={};vids.forEach((v:any)=>{vm[v.exercise_id]=v.video_url});setExerciseVideos(vm)}
+      const {data:custom}=await supabase.from('custom_exercises').select('*').order('created_at')
+      if (custom){setCustomExercises(custom.map((c:any)=>({...c,id:c.exercise_id})))}
       setLoading(false)
     }
     init()
@@ -213,14 +219,9 @@ export default function CoachDashboard(){
       supabase.from('cmj_results').select('*').eq('pitcher_id',p.id).order('test_date',{ascending:false}),
       supabase.from('programs').select('*').eq('pitcher_id',p.id).order('week_of',{ascending:false}).limit(1)
     ])
-    setLogs(logsRes.data||[])
-    setNotes(notesRes.data||[])
-    setMessages(msgsRes.data||[])
-    setCmjResults(cmjRes.data||[])
+    setLogs(logsRes.data||[]);setNotes(notesRes.data||[]);setMessages(msgsRes.data||[]);setCmjResults(cmjRes.data||[])
     const prog=progRes.data?.[0]||null
-    setProgram(prog)
-    setStructuredDays(prog?.structured_days||{})
-    setCellNotes(prog?.days||{})
+    setProgram(prog);setStructuredDays(prog?.structured_days||{});setCellNotes(prog?.days||{})
   }
 
   const signOut=async()=>{await supabase.auth.signOut();router.push('/auth/login')}
@@ -259,27 +260,40 @@ export default function CoachDashboard(){
     if (!url.trim())return
     await supabase.from('exercise_videos').upsert({exercise_id:exerciseId,video_url:url.trim()},{onConflict:'exercise_id'})
     setExerciseVideos(prev=>({...prev,[exerciseId]:url.trim()}))
-    setVideoSaved(true)
-    setTimeout(()=>setVideoSaved(false),2000)
+    setVideoSaved(true);setTimeout(()=>setVideoSaved(false),2000)
+  }
+
+  const saveCustomExercise=async()=>{
+    if (!customForm.name.trim()||!customForm.pattern.trim())return
+    setCustomSaving(true)
+    const exercise_id=`custom_${Date.now()}`
+    const {data,error}=await supabase.from('custom_exercises').insert({
+      exercise_id,name:customForm.name.trim(),pattern:customForm.pattern.trim(),
+      category:customForm.category,cns:customForm.cns,description:customForm.description.trim()
+    }).select().single()
+    if (data){
+      setCustomExercises(prev=>[...prev,{...data,id:data.exercise_id}])
+      setCustomForm(BLANK_CUSTOM)
+      setShowCustomForm(false)
+    }
+    setCustomSaving(false)
+  }
+
+  const deleteCustomExercise=async(exercise_id:string)=>{
+    await supabase.from('custom_exercises').delete().eq('exercise_id',exercise_id)
+    setCustomExercises(prev=>prev.filter((e:any)=>e.exercise_id!==exercise_id))
   }
 
   const openPicker=(day:string,cat:string)=>{
-    setPickerCell({day,cat})
-    setPickerSearch('')
-    setPickerCNS('All')
-    setPickerCat(cat)
-    setAddForm(null)
-    setVideoInput('')
-    setVideoSaved(false)
+    setPickerCell({day,cat});setPickerSearch('');setPickerCNS('All');setPickerCat(cat)
+    setAddForm(null);setVideoInput('');setVideoSaved(false);setShowCustomForm(false)
     setShowPicker(true)
   }
 
   const confirmAddExercise=async()=>{
     if (!addForm||!pickerCell)return
     const {exercise,sets,reps,load,notes:exNotes}=addForm
-    if (videoInput.trim()&&!exerciseVideos[exercise.id]){
-      await saveVideo(exercise.id,videoInput)
-    }
+    if (videoInput.trim()&&!exerciseVideos[exercise.id])await saveVideo(exercise.id,videoInput)
     const key=`${pickerCell.day}___${pickerCell.cat}`
     const current=structuredDays[key]||[]
     const newStructured={...structuredDays,[key]:[...current,{
@@ -293,21 +307,17 @@ export default function CoachDashboard(){
 
   const removeExercise=async(key:string,idx:number)=>{
     const updated={...structuredDays,[key]:(structuredDays[key]||[]).filter((_:any,i:number)=>i!==idx)}
-    setStructuredDays(updated)
-    await saveProgram(updated,cellNotes)
+    setStructuredDays(updated);await saveProgram(updated,cellNotes)
   }
 
   const updateCellNote=async(day:string,cat:string,val:string)=>{
-    const key=`${day}___${cat}`
-    const updated={...cellNotes,[key]:val}
-    setCellNotes(updated)
-    await saveProgram(structuredDays,updated)
+    const key=`${day}___${cat}`;const updated={...cellNotes,[key]:val}
+    setCellNotes(updated);await saveProgram(structuredDays,updated)
   }
 
   const buildPrompt=()=>{
     const jiP=armCare(selected?.weekly_pitches||0,selected?.avg_velocity||0)
-    const lastCMJ=cmjResults[0]
-    const recentLogs=logs.slice(0,7)
+    const lastCMJ=cmjResults[0];const recentLogs=logs.slice(0,7)
     const prompt=`You are helping Coach Salzman write a weekly training program for pitcher ${selected?.full_name}.
 
 PITCHER DATA:
@@ -334,7 +344,7 @@ Write next week's program by day and category (Pre-Throwing, Throwing, Post-Thro
     if (pickerCNS!=='All'&&ex.cns!==pickerCNS)return false
     if (pickerCat!=='All'&&ex.category!==pickerCat)return false
     return true
-  }),[pickerSearch,pickerCNS,pickerCat])
+  }),[EXERCISE_DB,pickerSearch,pickerCNS,pickerCat])
 
   if (loading)return <div style={{minHeight:'100vh',background:C.bg,display:'flex',alignItems:'center',justifyContent:'center',color:C.textMuted,fontFamily:'system-ui'}}>Loading...</div>
 
@@ -496,7 +506,6 @@ Write next week's program by day and category (Pre-Throwing, Throwing, Post-Thro
                       </div>
                     ))}
                     <div style={{marginLeft:'auto',display:'flex',alignItems:'center',gap:10}}>
-                      <span style={{fontSize:10,color:C.textDim,fontWeight:700,textTransform:'uppercase' as const,letterSpacing:'1px'}}>CNS:</span>
                       {['High','Moderate','Low'].map(c=>(
                         <div key={c} style={{display:'flex',alignItems:'center',gap:4}}>
                           <div style={{width:7,height:7,borderRadius:'50%',background:CNS_COLORS[c].dot}}/>
@@ -536,21 +545,13 @@ Write next week's program by day and category (Pre-Throwing, Throwing, Post-Thro
                                       </div>
                                       <div style={{fontSize:9,color:cat.color,fontWeight:600}}>{ex.sets}x{ex.reps}{ex.load?` @ ${ex.load}%`:''}</div>
                                       {ex.notes&&<div style={{fontSize:9,color:C.textDim,fontStyle:'italic',marginTop:1}}>{ex.notes}</div>}
-                                      {exerciseVideos[ex.id]&&(
-                                        <a href={exerciseVideos[ex.id]} target="_blank" rel="noopener noreferrer" style={{fontSize:9,color:C.blue,display:'block',marginTop:2}}>Video</a>
-                                      )}
+                                      {exerciseVideos[ex.id]&&<a href={exerciseVideos[ex.id]} target="_blank" rel="noopener noreferrer" style={{fontSize:9,color:C.blue,display:'block',marginTop:2}}>Video</a>}
                                     </div>
                                     <button onClick={()=>removeExercise(key,i)} style={{background:'transparent',border:'none',color:C.textDim,cursor:'pointer',fontSize:11,padding:'0 2px',lineHeight:1,flexShrink:0}}>x</button>
                                   </div>
                                 ))}
-                                {note&&!isExpanded&&(
-                                  <div style={{fontSize:9,color:C.textDim,fontStyle:'italic',marginTop:exercises.length>0?3:0,cursor:'pointer'}} onClick={()=>setExpandedCell(key)}>
-                                    {note.length>40?note.slice(0,40)+'...':note}
-                                  </div>
-                                )}
-                                {isExpanded&&(
-                                  <textarea autoFocus style={{width:'100%',background:C.bg3,border:`1px solid ${cat.border}`,borderRadius:4,padding:'4px 6px',fontSize:10,color:C.text,resize:'none' as const,outline:'none',minHeight:52,boxSizing:'border-box' as const,marginTop:3,fontFamily:'system-ui'}} value={note} onChange={e=>updateCellNote(day,cat.key,e.target.value)} onBlur={()=>setExpandedCell(null)} placeholder="Coaching note..."/>
-                                )}
+                                {note&&!isExpanded&&<div style={{fontSize:9,color:C.textDim,fontStyle:'italic',marginTop:exercises.length>0?3:0,cursor:'pointer'}} onClick={()=>setExpandedCell(key)}>{note.length>40?note.slice(0,40)+'...':note}</div>}
+                                {isExpanded&&<textarea autoFocus style={{width:'100%',background:C.bg3,border:`1px solid ${cat.border}`,borderRadius:4,padding:'4px 6px',fontSize:10,color:C.text,resize:'none' as const,outline:'none',minHeight:52,boxSizing:'border-box' as const,marginTop:3,fontFamily:'system-ui'}} value={note} onChange={e=>updateCellNote(day,cat.key,e.target.value)} onBlur={()=>setExpandedCell(null)} placeholder="Coaching note..."/>}
                                 <div style={{display:'flex',gap:3,marginTop:4}}>
                                   <button onClick={()=>openPicker(day,cat.key)} style={{flex:1,background:'transparent',border:`1px dashed ${C.border}`,borderRadius:4,color:C.textDim,fontSize:9,padding:'3px 0',cursor:'pointer',textAlign:'center' as const}}>+ exercise</button>
                                   <button onClick={()=>setExpandedCell(isExpanded?null:key)} style={{background:'transparent',border:`1px dashed ${C.border}`,borderRadius:4,color:C.textDim,fontSize:9,padding:'3px 5px',cursor:'pointer'}}>note</button>
@@ -642,9 +643,10 @@ Write next week's program by day and category (Pre-Throwing, Throwing, Post-Thro
                 <div style={{fontSize:14,fontWeight:700,color:C.white}}>Add Exercise</div>
                 {pickerCell&&<div style={{fontSize:11,color:C.textMuted,marginTop:2}}>{pickerCell.day} · <span style={{color:CAT_MAP[pickerCell.cat]?.color||C.textMuted}}>{pickerCell.cat}</span></div>}
               </div>
-              <button onClick={()=>{setShowPicker(false);setAddForm(null)}} style={{background:'transparent',border:'none',color:C.textMuted,fontSize:18,cursor:'pointer',lineHeight:1}}>x</button>
+              <button onClick={()=>{setShowPicker(false);setAddForm(null);setShowCustomForm(false)}} style={{background:'transparent',border:'none',color:C.textMuted,fontSize:18,cursor:'pointer',lineHeight:1}}>x</button>
             </div>
-            {!addForm?(
+
+            {!addForm&&!showCustomForm&&(
               <>
                 <div style={{padding:'10px 14px',borderBottom:`1px solid ${C.border}`,display:'flex',gap:8,flexWrap:'wrap' as const,flexShrink:0}}>
                   <input style={{flex:1,background:C.bg3,border:`1px solid ${C.border}`,borderRadius:6,padding:'7px 10px',fontSize:13,color:C.text,outline:'none',minWidth:120}} placeholder="Search exercises..." value={pickerSearch} onChange={e=>setPickerSearch(e.target.value)} autoFocus/>
@@ -659,19 +661,24 @@ Write next week's program by day and category (Pre-Throwing, Throwing, Post-Thro
                     {CATEGORIES.map(c=><option key={c.key} value={c.key}>{c.key}</option>)}
                   </select>
                 </div>
-                <div style={{padding:'6px 14px',fontSize:10,color:C.textDim,borderBottom:`1px solid ${C.border}`,flexShrink:0}}>{filteredExercises.length} exercises</div>
+                <div style={{padding:'6px 14px',fontSize:10,color:C.textDim,borderBottom:`1px solid ${C.border}`,flexShrink:0,display:'flex',justifyContent:'space-between',alignItems:'center'}}>
+                  <span>{filteredExercises.length} exercises · {customExercises.length} custom</span>
+                  <button onClick={()=>setShowCustomForm(true)} style={{background:'rgba(232,184,75,0.1)',border:'1px solid rgba(232,184,75,0.3)',color:C.gold,borderRadius:4,padding:'3px 8px',fontSize:10,cursor:'pointer',fontWeight:600}}>+ New Exercise</button>
+                </div>
                 <div style={{overflowY:'auto' as const,flex:1}}>
                   {filteredExercises.map(ex=>{
                     const catColor=CAT_MAP[ex.category]?.color||C.textMuted
                     const cnsCol=CNS_COLORS[ex.cns]||CNS_COLORS['Low']
                     const prescription=lookupPrescription(ex.name,parsedPrinciples)
                     const hasVideo=!!exerciseVideos[ex.id]
+                    const isCustom=ex.id.startsWith('custom_')
                     return(
-                      <div key={ex.id} onClick={()=>{const p=lookupPrescription(ex.name,parsedPrinciples);setVideoInput(exerciseVideos[ex.id]||'');setAddForm({exercise:ex,sets:p?.sets||'3',reps:p?.reps||'4',load:p?.load||'',notes:''})}} style={{padding:'10px 14px',cursor:'pointer',borderBottom:`1px solid ${C.border}`,display:'flex',alignItems:'center',gap:10}}>
+                      <div key={ex.id} style={{padding:'10px 14px',borderBottom:`1px solid ${C.border}`,display:'flex',alignItems:'center',gap:10}}>
                         <div style={{width:3,height:32,borderRadius:2,background:catColor,flexShrink:0}}/>
-                        <div style={{flex:1,minWidth:0}}>
+                        <div style={{flex:1,minWidth:0,cursor:'pointer'}} onClick={()=>{const p=lookupPrescription(ex.name,parsedPrinciples);setVideoInput(exerciseVideos[ex.id]||'');setAddForm({exercise:ex,sets:p?.sets||'3',reps:p?.reps||'4',load:p?.load||'',notes:''})}}>
                           <div style={{display:'flex',alignItems:'center',gap:6,marginBottom:3}}>
                             <span style={{fontSize:13,fontWeight:600,color:C.white}}>{ex.name}</span>
+                            {isCustom&&<span style={{fontSize:9,background:'rgba(232,184,75,0.15)',color:C.gold,border:'1px solid rgba(232,184,75,0.3)',borderRadius:4,padding:'1px 5px',fontWeight:700}}>custom</span>}
                             {prescription&&<span style={{fontSize:9,background:'rgba(57,211,83,0.15)',color:C.teal,border:'1px solid rgba(57,211,83,0.3)',borderRadius:4,padding:'1px 5px',fontWeight:700}}>prescribed</span>}
                             {hasVideo&&<span style={{fontSize:9,background:'rgba(88,166,255,0.15)',color:C.blue,border:'1px solid rgba(88,166,255,0.3)',borderRadius:4,padding:'1px 5px',fontWeight:700}}>video</span>}
                           </div>
@@ -681,13 +688,60 @@ Write next week's program by day and category (Pre-Throwing, Throwing, Post-Thro
                             {prescription&&<span style={{fontSize:10,color:C.gold,fontWeight:600}}>{prescription.sets}x{prescription.reps}{prescription.load?` @ ${prescription.load}%`:''}</span>}
                           </div>
                         </div>
-                        <span style={{fontSize:11,color:C.textDim,flexShrink:0}}>Add</span>
+                        {isCustom&&(
+                          <button onClick={()=>deleteCustomExercise(ex.id)} style={{background:'transparent',border:'none',color:C.textDim,cursor:'pointer',fontSize:12,padding:'2px 4px'}} title="Delete custom exercise">x</button>
+                        )}
+                        <span style={{fontSize:11,color:C.textDim,flexShrink:0,cursor:'pointer'}} onClick={()=>{const p=lookupPrescription(ex.name,parsedPrinciples);setVideoInput(exerciseVideos[ex.id]||'');setAddForm({exercise:ex,sets:p?.sets||'3',reps:p?.reps||'4',load:p?.load||'',notes:''})}}>Add</span>
                       </div>
                     )
                   })}
                 </div>
               </>
-            ):(
+            )}
+
+            {showCustomForm&&(
+              <div style={{padding:18,overflowY:'auto' as const,flex:1}}>
+                <button onClick={()=>setShowCustomForm(false)} style={{background:'transparent',border:'none',color:C.textMuted,cursor:'pointer',fontSize:12,marginBottom:14}}>Back to library</button>
+                <div style={{fontSize:14,fontWeight:700,color:C.white,marginBottom:14}}>New Custom Exercise</div>
+                <div style={{marginBottom:10}}>
+                  <label style={{fontSize:10,color:C.textMuted,fontWeight:600,textTransform:'uppercase' as const,letterSpacing:'0.5px',marginBottom:4,display:'block'}}>Exercise Name *</label>
+                  <input style={S.input} placeholder="e.g. Banded Hip Hinge" value={customForm.name} onChange={e=>setCustomForm((f:any)=>({...f,name:e.target.value}))}/>
+                </div>
+                <div style={{marginBottom:10}}>
+                  <label style={{fontSize:10,color:C.textMuted,fontWeight:600,textTransform:'uppercase' as const,letterSpacing:'0.5px',marginBottom:4,display:'block'}}>Movement Pattern *</label>
+                  <input style={S.input} placeholder="e.g. Hinge, Squat, Rotation, Throwing..." value={customForm.pattern} onChange={e=>setCustomForm((f:any)=>({...f,pattern:e.target.value}))}/>
+                </div>
+                <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10,marginBottom:10}}>
+                  <div>
+                    <label style={{fontSize:10,color:C.textMuted,fontWeight:600,textTransform:'uppercase' as const,letterSpacing:'0.5px',marginBottom:4,display:'block'}}>Category</label>
+                    <select style={{...S.input}} value={customForm.category} onChange={e=>setCustomForm((f:any)=>({...f,category:e.target.value}))}>
+                      {CATEGORIES.map(c=><option key={c.key} value={c.key}>{c.key}</option>)}
+                    </select>
+                  </div>
+                  <div>
+                    <label style={{fontSize:10,color:C.textMuted,fontWeight:600,textTransform:'uppercase' as const,letterSpacing:'0.5px',marginBottom:4,display:'block'}}>CNS Load</label>
+                    <select style={{...S.input}} value={customForm.cns} onChange={e=>setCustomForm((f:any)=>({...f,cns:e.target.value}))}>
+                      <option value="High">High</option>
+                      <option value="Moderate">Moderate</option>
+                      <option value="Low">Low</option>
+                    </select>
+                  </div>
+                </div>
+                <div style={{marginBottom:16}}>
+                  <label style={{fontSize:10,color:C.textMuted,fontWeight:600,textTransform:'uppercase' as const,letterSpacing:'0.5px',marginBottom:4,display:'block'}}>Description (optional)</label>
+                  <textarea style={{...S.input,minHeight:70,resize:'vertical' as const}} placeholder="Brief description of the exercise..." value={customForm.description} onChange={e=>setCustomForm((f:any)=>({...f,description:e.target.value}))}/>
+                </div>
+                <button
+                  style={{...S.btn('gold'),width:'100%',padding:'12px',fontSize:14,textAlign:'center' as const,opacity:(!customForm.name.trim()||!customForm.pattern.trim())?0.5:1}}
+                  onClick={saveCustomExercise}
+                  disabled={!customForm.name.trim()||!customForm.pattern.trim()||customSaving}
+                >
+                  {customSaving?'Saving...':'Save to Library'}
+                </button>
+              </div>
+            )}
+
+            {addForm&&(
               <div style={{padding:18,overflowY:'auto' as const,flex:1}}>
                 <button onClick={()=>setAddForm(null)} style={{background:'transparent',border:'none',color:C.textMuted,cursor:'pointer',fontSize:12,marginBottom:14}}>Back to library</button>
                 <div style={{marginBottom:14,padding:'12px 14px',background:CAT_MAP[addForm.exercise.category]?.bg||C.bg3,border:`1px solid ${CAT_MAP[addForm.exercise.category]?.border||C.border}`,borderRadius:8,borderLeft:`4px solid ${CAT_MAP[addForm.exercise.category]?.color||C.textMuted}`}}>
