@@ -440,7 +440,7 @@ export default function PitcherDashboard(){
       {fields.map(f=>(
         <div key={f.key}>
           <label style={lbl}>{f.label}</label>
-          <input type="number" style={inp} placeholder={f.placeholder} value={form[f.key]} onChange={e=>setForm((prev:any)=>({...prev,[f.key]:e.target.value}))}/>
+          <input type="text" inputMode="numeric" pattern="[0-9]*" style={inp} placeholder={f.placeholder} value={form[f.key]} onChange={e=>setForm((prev:any)=>({...prev,[f.key]:e.target.value}))}/>
         </div>
       ))}
     </div>
@@ -579,7 +579,7 @@ export default function PitcherDashboard(){
             <div style={{...card,marginBottom:16}}>
               <div style={{fontSize:11,color:C.blue,fontWeight:700,textTransform:'uppercase' as const,letterSpacing:'1px',marginBottom:10}}>💧 Water Intake</div>
               <div style={{display:'flex',gap:8,alignItems:'center'}}>
-                <input type="number" style={{...inp,flex:1,marginBottom:0}} placeholder="oz today (target: 80-100)" value={waterOz} onChange={e=>setWaterOz(e.target.value)}/>
+                <input type="text" inputMode="numeric" pattern="[0-9]*" style={{...inp,flex:1,marginBottom:0}} placeholder="oz today (target: 80-100)" value={waterOz} onChange={e=>setWaterOz(e.target.value)}/>
                 <button onClick={saveWater} style={{background:C.blue,color:C.bg,border:'none',borderRadius:8,padding:'12px 16px',fontSize:13,fontWeight:700,cursor:'pointer',flexShrink:0}}>Save</button>
               </div>
               {waterSaved&&<div style={{fontSize:12,color:C.teal,marginTop:6}}>✓ Water logged</div>}
@@ -625,7 +625,7 @@ export default function PitcherDashboard(){
                 {[{key:'protein',label:'Protein (g)',color:C.teal},{key:'carbs',label:'Carbs (g)',color:C.blue},{key:'fat',label:'Fat (g)',color:C.gold}].map(f=>(
                   <div key={f.key}>
                     <label style={{...lbl,color:f.color,marginTop:8}}>{f.label}</label>
-                    <input type="number" style={{...inp,marginBottom:0}} placeholder="0" value={mealForm[f.key]} onChange={e=>setMealForm((prev:any)=>({...prev,[f.key]:e.target.value}))}/>
+                    <input type="text" inputMode="numeric" pattern="[0-9]*" style={{...inp,marginBottom:0}} placeholder="0" value={mealForm[f.key]} onChange={e=>setMealForm((prev:any)=>({...prev,[f.key]:e.target.value}))}/>
                   </div>
                 ))}
               </div>
@@ -731,7 +731,7 @@ export default function PitcherDashboard(){
                   <input type="date" style={inp} value={cmjForm.date} onChange={e=>setCmjForm(f=>({...f,date:e.target.value}))}/>
                   <label style={lbl}>Body Weight</label>
                   <div style={{display:'flex',gap:8}}>
-                    <input type="number" style={{...inp,flex:1}} placeholder="e.g. 195" value={cmjForm.bodyweight} onChange={e=>setCmjForm(f=>({...f,bodyweight:e.target.value}))}/>
+                    <input type="text" inputMode="numeric" pattern="[0-9]*" style={{...inp,flex:1}} placeholder="e.g. 195" value={cmjForm.bodyweight} onChange={e=>setCmjForm(f=>({...f,bodyweight:e.target.value}))}/>
                     <select style={{...inp,width:80}} value={cmjForm.weightUnit} onChange={e=>setCmjForm(f=>({...f,weightUnit:e.target.value}))}><option value="lbs">lbs</option><option value="kg">kg</option></select>
                   </div>
                   <label style={lbl}>FPS</label>
@@ -787,7 +787,7 @@ export default function PitcherDashboard(){
                   <input type="date" style={inp} value={sjForm.date} onChange={e=>setSjForm(f=>({...f,date:e.target.value}))}/>
                   <label style={lbl}>Body Weight</label>
                   <div style={{display:'flex',gap:8}}>
-                    <input type="number" style={{...inp,flex:1}} placeholder="e.g. 195" value={sjForm.bodyweight} onChange={e=>setSjForm(f=>({...f,bodyweight:e.target.value}))}/>
+                    <input type="text" inputMode="numeric" pattern="[0-9]*" style={{...inp,flex:1}} placeholder="e.g. 195" value={sjForm.bodyweight} onChange={e=>setSjForm(f=>({...f,bodyweight:e.target.value}))}/>
                     <select style={{...inp,width:80}} value={sjForm.weightUnit} onChange={e=>setSjForm(f=>({...f,weightUnit:e.target.value}))}><option value="lbs">lbs</option><option value="kg">kg</option></select>
                   </div>
                   <label style={lbl}>FPS</label>
@@ -889,9 +889,9 @@ export default function PitcherDashboard(){
                   <label style={lbl}>Date</label>
                   <input type="date" style={inp} value={hopForm.date} onChange={e=>setHopForm(f=>({...f,date:e.target.value}))}/>
                   <label style={lbl}>Left Leg Distance (inches)</label>
-                  <input type="number" step="0.1" style={inp} placeholder="e.g. 156.5" value={hopForm.leftDistance} onChange={e=>setHopForm(f=>({...f,leftDistance:e.target.value}))}/>
+                  <input type="text" inputMode="numeric" pattern="[0-9]*" step="0.1" style={inp} placeholder="e.g. 156.5" value={hopForm.leftDistance} onChange={e=>setHopForm(f=>({...f,leftDistance:e.target.value}))}/>
                   <label style={lbl}>Right Leg Distance (inches)</label>
-                  <input type="number" step="0.1" style={inp} placeholder="e.g. 162.0" value={hopForm.rightDistance} onChange={e=>setHopForm(f=>({...f,rightDistance:e.target.value}))}/>
+                  <input type="text" inputMode="numeric" pattern="[0-9]*" step="0.1" style={inp} placeholder="e.g. 162.0" value={hopForm.rightDistance} onChange={e=>setHopForm(f=>({...f,rightDistance:e.target.value}))}/>
                   <button style={btn('gold')} onClick={calcHopHandler}>Calculate</button>
                 </div>
                 {hopResult&&(
@@ -989,15 +989,15 @@ export default function PitcherDashboard(){
               <label style={lbl}>Date</label>
               <input type="date" style={inp} value={logForm.date} onChange={e=>setLogForm(f=>({...f,date:e.target.value}))}/>
               <label style={lbl}>Velocity (mph)</label>
-              <input type="number" style={inp} placeholder="e.g. 91" value={logForm.velocity} onChange={e=>setLogForm(f=>({...f,velocity:e.target.value}))}/>
+              <input type="text" inputMode="numeric" pattern="[0-9]*" style={inp} placeholder="e.g. 91" value={logForm.velocity} onChange={e=>setLogForm(f=>({...f,velocity:e.target.value}))}/>
               <label style={lbl}>Weight Lifted (lbs)</label>
-              <input type="number" style={inp} placeholder="e.g. 225" value={logForm.weightLifted} onChange={e=>setLogForm(f=>({...f,weightLifted:e.target.value}))}/>
+              <input type="text" inputMode="numeric" pattern="[0-9]*" style={inp} placeholder="e.g. 225" value={logForm.weightLifted} onChange={e=>setLogForm(f=>({...f,weightLifted:e.target.value}))}/>
               <label style={lbl}>Sprint Time (sec)</label>
-              <input type="number" step="0.1" style={inp} placeholder="e.g. 6.8" value={logForm.sprintTime} onChange={e=>setLogForm(f=>({...f,sprintTime:e.target.value}))}/>
+              <input type="text" inputMode="numeric" pattern="[0-9]*" step="0.1" style={inp} placeholder="e.g. 6.8" value={logForm.sprintTime} onChange={e=>setLogForm(f=>({...f,sprintTime:e.target.value}))}/>
               <label style={lbl}>Pitch Count</label>
-              <input type="number" style={inp} placeholder="e.g. 45" value={logForm.pitchCount} onChange={e=>setLogForm(f=>({...f,pitchCount:e.target.value}))}/>
+              <input type="text" inputMode="numeric" pattern="[0-9]*" style={inp} placeholder="e.g. 45" value={logForm.pitchCount} onChange={e=>setLogForm(f=>({...f,pitchCount:e.target.value}))}/>
               <label style={lbl}>High Effort Throws</label>
-              <input type="number" style={inp} placeholder="e.g. 20" value={logForm.highEffortThrows} onChange={e=>setLogForm(f=>({...f,highEffortThrows:e.target.value}))}/>
+              <input type="text" inputMode="numeric" pattern="[0-9]*" style={inp} placeholder="e.g. 20" value={logForm.highEffortThrows} onChange={e=>setLogForm(f=>({...f,highEffortThrows:e.target.value}))}/>
               <label style={lbl}>Overall Feeling — <span style={{color:C.gold,fontSize:16,fontWeight:700}}>{logForm.feeling}/10</span></label>
               <input type="range" min="1" max="10" style={{width:'100%',accentColor:C.gold,marginBottom:4}} value={logForm.feeling} onChange={e=>setLogForm(f=>({...f,feeling:parseInt(e.target.value)}))}/>
               <div style={{display:'flex',justifyContent:'space-between',fontSize:11,color:C.textDim,marginBottom:14}}><span>Poor</span><span>Great</span></div>
