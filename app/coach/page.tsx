@@ -35,57 +35,62 @@ const CNS_COLORS:Record<string,{bg:string,border:string,text:string,dot:string}>
 
 const DAYS = ['Monday','Tuesday','Wednesday','Thursday','Friday','Saturday','Sunday']
 
-// CMJ Classification thresholds based on Salzman database
 const CMJ_THRESHOLDS = {
-  jumpHeight: { aboveAverage:21, good:18, developing:15 },
-  ppKg:       { aboveAverage:70, good:62, developing:55 },
-  rsi:        { aboveAverage:0.86, good:0.64, developing:0.45 },
+  jumpHeight:{ aboveAverage:21, good:18, developing:15 },
+  ppKg:{ aboveAverage:70, good:62, developing:55 },
+  rsi:{ aboveAverage:0.86, good:0.64, developing:0.45 },
 }
 
 function classifyCMJ(cmj:any):{classification:string,jumpTier:string,ppTier:string,rsiTier:string}{
   if (!cmj) return {classification:'No Data',jumpTier:'No Data',ppTier:'No Data',rsiTier:'No Data'}
-
-  const getTier = (val:number, thresholds:{aboveAverage:number,good:number,developing:number}) => {
+  const getTier=(val:number,thresholds:{aboveAverage:number,good:number,developing:number})=>{
     if (!val) return 'No Data'
-    if (val >= thresholds.aboveAverage) return 'Above Average'
-    if (val >= thresholds.good) return 'Good'
-    if (val >= thresholds.developing) return 'Developing'
+    if (val>=thresholds.aboveAverage) return 'Above Average'
+    if (val>=thresholds.good) return 'Good'
+    if (val>=thresholds.developing) return 'Developing'
     return 'Limited'
   }
-
-  const jumpTier = getTier(cmj.jump_height_in, CMJ_THRESHOLDS.jumpHeight)
-  const ppTier = getTier(cmj.peak_power_per_kg, CMJ_THRESHOLDS.ppKg)
-  const rsiTier = getTier(cmj.rsi_mod, CMJ_THRESHOLDS.rsi)
-
-  const isRateLimited = cmj.rsi_mod < CMJ_THRESHOLDS.rsi.developing && cmj.peak_power_per_kg >= CMJ_THRESHOLDS.ppKg.good
-  const isMagnitudeLimited = cmj.peak_power_per_kg < CMJ_THRESHOLDS.ppKg.developing && cmj.rsi_mod >= CMJ_THRESHOLDS.rsi.developing
-  const isBothLimited = cmj.rsi_mod < CMJ_THRESHOLDS.rsi.developing && cmj.peak_power_per_kg < CMJ_THRESHOLDS.ppKg.developing
-  const isWellDeveloped = cmj.rsi_mod >= CMJ_THRESHOLDS.rsi.good && cmj.peak_power_per_kg >= CMJ_THRESHOLDS.ppKg.good
-
-  let classification = 'Developing'
-  if (isBothLimited) classification = 'Both Limited'
-  else if (isRateLimited) classification = 'Rate Limiter'
-  else if (isMagnitudeLimited) classification = 'Magnitude Limiter'
-  else if (isWellDeveloped) classification = 'Well Developed'
-
+  const jumpTier=getTier(cmj.jump_height_in,CMJ_THRESHOLDS.jumpHeight)
+  const ppTier=getTier(cmj.peak_power_per_kg,CMJ_THRESHOLDS.ppKg)
+  const rsiTier=getTier(cmj.rsi_mod,CMJ_THRESHOLDS.rsi)
+  const isRateLimited=cmj.rsi_mod<CMJ_THRESHOLDS.rsi.developing&&cmj.peak_power_per_kg>=CMJ_THRESHOLDS.ppKg.good
+  const isMagnitudeLimited=cmj.peak_power_per_kg<CMJ_THRESHOLDS.ppKg.developing&&cmj.rsi_mod>=CMJ_THRESHOLDS.rsi.developing
+  const isBothLimited=cmj.rsi_mod<CMJ_THRESHOLDS.rsi.developing&&cmj.peak_power_per_kg<CMJ_THRESHOLDS.ppKg.developing
+  const isWellDeveloped=cmj.rsi_mod>=CMJ_THRESHOLDS.rsi.good&&cmj.peak_power_per_kg>=CMJ_THRESHOLDS.ppKg.good
+  let classification='Developing'
+  if (isBothLimited) classification='Both Limited'
+  else if (isRateLimited) classification='Rate Limiter'
+  else if (isMagnitudeLimited) classification='Magnitude Limiter'
+  else if (isWellDeveloped) classification='Well Developed'
   return {classification,jumpTier,ppTier,rsiTier}
 }
 
 const TIER_COLORS:Record<string,{bg:string,border:string,text:string}> = {
-  'Above Average': {bg:'rgba(57,211,83,0.12)',  border:'rgba(57,211,83,0.4)',  text:'#39d353'},
-  'Good':          {bg:'rgba(88,166,255,0.12)', border:'rgba(88,166,255,0.4)', text:'#58a6ff'},
-  'Developing':    {bg:'rgba(232,184,75,0.12)', border:'rgba(232,184,75,0.4)', text:'#e8b84b'},
-  'Limited':       {bg:'rgba(248,81,73,0.12)',  border:'rgba(248,81,73,0.4)',  text:'#f85149'},
-  'No Data':       {bg:'rgba(72,79,88,0.12)',   border:'rgba(72,79,88,0.4)',   text:'#484f58'},
+  'Above Average':{bg:'rgba(57,211,83,0.12)',border:'rgba(57,211,83,0.4)',text:'#39d353'},
+  'Good':{bg:'rgba(88,166,255,0.12)',border:'rgba(88,166,255,0.4)',text:'#58a6ff'},
+  'Developing':{bg:'rgba(232,184,75,0.12)',border:'rgba(232,184,75,0.4)',text:'#e8b84b'},
+  'Limited':{bg:'rgba(248,81,73,0.12)',border:'rgba(248,81,73,0.4)',text:'#f85149'},
+  'No Data':{bg:'rgba(72,79,88,0.12)',border:'rgba(72,79,88,0.4)',text:'#484f58'},
 }
 
 const CLASS_COLORS:Record<string,{bg:string,border:string,text:string}> = {
-  'Well Developed':    {bg:'rgba(57,211,83,0.1)',   border:'rgba(57,211,83,0.35)',   text:'#39d353'},
-  'Rate Limiter':      {bg:'rgba(88,166,255,0.1)',  border:'rgba(88,166,255,0.35)',  text:'#58a6ff'},
-  'Magnitude Limiter': {bg:'rgba(232,184,75,0.1)',  border:'rgba(232,184,75,0.35)',  text:'#e8b84b'},
-  'Both Limited':      {bg:'rgba(248,81,73,0.1)',   border:'rgba(248,81,73,0.35)',   text:'#f85149'},
-  'Developing':        {bg:'rgba(163,113,247,0.1)', border:'rgba(163,113,247,0.35)', text:'#a371f7'},
-  'No Data':           {bg:'rgba(72,79,88,0.1)',    border:'rgba(72,79,88,0.35)',    text:'#7d8590'},
+  'Well Developed':{bg:'rgba(57,211,83,0.1)',border:'rgba(57,211,83,0.35)',text:'#39d353'},
+  'Rate Limiter':{bg:'rgba(88,166,255,0.1)',border:'rgba(88,166,255,0.35)',text:'#58a6ff'},
+  'Magnitude Limiter':{bg:'rgba(232,184,75,0.1)',border:'rgba(232,184,75,0.35)',text:'#e8b84b'},
+  'Both Limited':{bg:'rgba(248,81,73,0.1)',border:'rgba(248,81,73,0.35)',text:'#f85149'},
+  'Developing':{bg:'rgba(163,113,247,0.1)',border:'rgba(163,113,247,0.35)',text:'#a371f7'},
+  'No Data':{bg:'rgba(72,79,88,0.1)',border:'rgba(72,79,88,0.35)',text:'#7d8590'},
+}
+
+const MEAL_TYPE_COLORS:Record<string,string> = {
+  'Pre-Training':'#58a6ff','Post-Training':'#39d353','Recovery Meal':'#a371f7','Regular Meal':'#e8b84b'
+}
+
+function scoreColor(score:number){
+  if (score>=80) return '#39d353'
+  if (score>=60) return '#e8b84b'
+  if (score>=40) return '#f97316'
+  return '#f85149'
 }
 
 const BUILT_IN_EXERCISES = [
@@ -248,10 +253,15 @@ export default function CoachDashboard(){
   const [libSearch,setLibSearch]=useState('')
   const [libCat,setLibCat]=useState('All')
   const [recommendationRules,setRecommendationRules]=useState<any[]>([])
+  // Food log state
+  const [todayFoodLogs,setTodayFoodLogs]=useState<any[]>([])
+  const [todayFuelScore,setTodayFuelScore]=useState<any>(null)
+  const [weekFuelScores,setWeekFuelScores]=useState<any[]>([])
 
   const router=useRouter()
   const supabase=createClient()
   const parsedPrinciples = useMemo(()=>parsePrinciples(principles),[principles])
+  const today=new Date().toISOString().split('T')[0]
 
   const EXERCISE_DB = useMemo(()=>{
     return [...BUILT_IN_EXERCISES,...customExercises].map(ex=>{
@@ -287,16 +297,26 @@ export default function CoachDashboard(){
 
   const selectPitcher=async(p:any)=>{
     setSelected(p);setTab('overview');setView('roster')
-    const [logsRes,notesRes,msgsRes,cmjRes,progRes]=await Promise.all([
+    const sevenDaysAgo=new Date(Date.now()-7*24*60*60*1000).toISOString().split('T')[0]
+    const [logsRes,notesRes,msgsRes,cmjRes,progRes,foodRes,fuelRes,weekFuelRes]=await Promise.all([
       supabase.from('session_logs').select('*').eq('pitcher_id',p.id).order('log_date',{ascending:false}),
       supabase.from('coach_notes').select('*').eq('pitcher_id',p.id).order('created_at',{ascending:false}),
       supabase.from('messages').select('*').eq('pitcher_id',p.id).order('created_at'),
       supabase.from('cmj_results').select('*').eq('pitcher_id',p.id).order('test_date',{ascending:false}),
-      supabase.from('programs').select('*').eq('pitcher_id',p.id).order('week_of',{ascending:false}).limit(1)
+      supabase.from('programs').select('*').eq('pitcher_id',p.id).order('week_of',{ascending:false}).limit(1),
+      supabase.from('food_logs').select('*').eq('pitcher_id',p.id).eq('log_date',today).order('created_at'),
+      supabase.from('daily_fuel_scores').select('*').eq('pitcher_id',p.id).eq('log_date',today).maybeSingle(),
+      supabase.from('daily_fuel_scores').select('*').eq('pitcher_id',p.id).gte('log_date',sevenDaysAgo).order('log_date'),
     ])
-    setLogs(logsRes.data||[]);setNotes(notesRes.data||[]);setMessages(msgsRes.data||[]);setCmjResults(cmjRes.data||[])
+    setLogs(logsRes.data||[])
+    setNotes(notesRes.data||[])
+    setMessages(msgsRes.data||[])
+    setCmjResults(cmjRes.data||[])
     const prog=progRes.data?.[0]||null
     setProgram(prog);setStructuredDays(prog?.structured_days||{});setCellNotes(prog?.days||{})
+    setTodayFoodLogs(foodRes.data||[])
+    setTodayFuelScore(fuelRes.data||null)
+    setWeekFuelScores(weekFuelRes.data||[])
   }
 
   const signOut=async()=>{await supabase.auth.signOut();router.push('/auth/login')}
@@ -413,9 +433,10 @@ export default function CoachDashboard(){
 
   const buildPrompt=()=>{
     const jiP=armCare(selected?.weekly_pitches||0,selected?.avg_velocity||0)
-    const lastCMJ=cmjResults[0];const recentLogs=logs.slice(0,7)
+    const lastCMJ=cmjResults[0]
     const {classification}=classifyCMJ(lastCMJ)
     const rule=recommendationRules.find(r=>r.classification===classification)
+    const recentLogs=logs.slice(0,7)
     const prompt=`You are helping Coach Salzman write a weekly training program for pitcher ${selected?.full_name}.
 
 PITCHER DATA:
@@ -425,7 +446,6 @@ PITCHER DATA:
 ${lastCMJ?`- CMJ: Jump ${lastCMJ.jump_height_in?.toFixed(1)}in | RSI ${lastCMJ.rsi_mod?.toFixed(2)} | PP/kg ${lastCMJ.peak_power_per_kg?.toFixed(1)} W/kg`:'- No CMJ data'}
 - Neuro Classification: ${classification}
 ${rule?`- Training Emphasis: ${rule.emphasis} | Load Range: ${rule.load_range}`:''}
-${rule?.notes?`- Notes: ${rule.notes}`:''}
 
 RECENT LOGS:
 ${recentLogs.map((l:any)=>`  ${l.log_date}: vel=${l.velocity||'—'}mph, feeling=${l.feeling||'—'}/10, soreness=[${(l.soreness||[]).join(',')||'none'}]`).join('\n')||'  None.'}
@@ -439,15 +459,12 @@ Write next week's program by day and category (Pre-Throwing, Throwing, Post-Thro
     alert('Prompt copied! Paste into Claude.')
   }
 
-  // Get recommended exercises based on classification
-  const getRecommendedExercises = (classification:string) => {
-    const rule = recommendationRules.find(r=>r.classification===classification)
+  const getRecommendedExercises=(classification:string)=>{
+    const rule=recommendationRules.find(r=>r.classification===classification)
     if (!rule) return []
-    const preferredCats:string[] = rule.preferred_categories||[]
-    const preferredPatterns:string[] = rule.preferred_patterns||[]
-    return EXERCISE_DB.filter(ex=>
-      preferredCats.includes(ex.category) || preferredPatterns.includes(ex.pattern)
-    ).slice(0,6)
+    const preferredCats:string[]=rule.preferred_categories||[]
+    const preferredPatterns:string[]=rule.preferred_patterns||[]
+    return EXERCISE_DB.filter(ex=>preferredCats.includes(ex.category)||preferredPatterns.includes(ex.pattern)).slice(0,6)
   }
 
   const filteredExercises=useMemo(()=>EXERCISE_DB.filter(ex=>{
@@ -520,11 +537,12 @@ Write next week's program by day and category (Pre-Throwing, Throwing, Post-Thro
           )}
 
           {view==='roster'&&selected&&(()=>{
-            const latestCMJ = cmjResults[0]||null
-            const {classification,jumpTier,ppTier,rsiTier} = classifyCMJ(latestCMJ)
-            const classCol = CLASS_COLORS[classification]||CLASS_COLORS['No Data']
-            const rule = recommendationRules.find(r=>r.classification===classification)
-            const recommendedExercises = getRecommendedExercises(classification)
+            const latestCMJ=cmjResults[0]||null
+            const {classification,jumpTier,ppTier,rsiTier}=classifyCMJ(latestCMJ)
+            const classCol=CLASS_COLORS[classification]||CLASS_COLORS['No Data']
+            const rule=recommendationRules.find(r=>r.classification===classification)
+            const recommendedExercises=getRecommendedExercises(classification)
+            const todayScore=todayFuelScore?.total_score||0
 
             return(
             <div>
@@ -554,7 +572,6 @@ Write next week's program by day and category (Pre-Throwing, Throwing, Post-Thro
 
               {tab==='overview'&&(
                 <div>
-                  {/* Quick stats */}
                   <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:12,marginBottom:12}}>
                     {[{label:'Pitches/Wk',val:selected.weekly_pitches||'—'},{label:'HE Throws/Wk',val:selected.weekly_high_effort||'—'},{label:'CMJ Tests',val:cmjResults.length}].map(m=>(
                       <div key={m.label} style={{background:C.bg3,border:`1px solid ${C.border}`,borderRadius:8,padding:'12px 14px'}}>
@@ -564,7 +581,7 @@ Write next week's program by day and category (Pre-Throwing, Throwing, Post-Thro
                     ))}
                   </div>
 
-                  {/* Neuro Classification Card */}
+                  {/* Neuro Classification */}
                   {latestCMJ?(
                     <div style={{...S.card,border:`1px solid ${classCol.border}`,background:classCol.bg,marginBottom:12}}>
                       <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',marginBottom:12}}>
@@ -578,8 +595,6 @@ Write next week's program by day and category (Pre-Throwing, Throwing, Post-Thro
                           <div style={{fontSize:16,fontWeight:700,color:C.white}}>{rule?.load_range||'—'}</div>
                         </div>
                       </div>
-
-                      {/* CMJ Metric Tiers */}
                       <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:8,marginBottom:12}}>
                         {[
                           {label:'Jump Height',val:`${latestCMJ.jump_height_in?.toFixed(1)} in`,tier:jumpTier},
@@ -593,15 +608,7 @@ Write next week's program by day and category (Pre-Throwing, Throwing, Post-Thro
                           </div>
                         ))}
                       </div>
-
-                      {/* Rule notes */}
-                      {rule?.notes&&(
-                        <div style={{fontSize:11,color:C.textMuted,padding:'8px 10px',background:'rgba(0,0,0,0.2)',borderRadius:6,marginBottom:12}}>
-                          {rule.notes}
-                        </div>
-                      )}
-
-                      {/* Recommended exercises */}
+                      {rule?.notes&&<div style={{fontSize:11,color:C.textMuted,padding:'8px 10px',background:'rgba(0,0,0,0.2)',borderRadius:6,marginBottom:12}}>{rule.notes}</div>}
                       {recommendedExercises.length>0&&(
                         <div>
                           <div style={{fontSize:10,color:classCol.text,fontWeight:700,textTransform:'uppercase' as const,letterSpacing:'1px',marginBottom:8}}>Recommended Exercises</div>
@@ -621,7 +628,6 @@ Write next week's program by day and category (Pre-Throwing, Throwing, Post-Thro
                                       {prescription&&<span style={{fontSize:10,color:C.gold,fontWeight:600}}>{prescription.sets}x{prescription.reps}{prescription.load?` @ ${prescription.load}%`:''}</span>}
                                     </div>
                                   </div>
-                                  {exerciseVideos[ex.id]&&<a href={exerciseVideos[ex.id]} target="_blank" rel="noopener noreferrer" style={{fontSize:10,color:C.blue}}>Video</a>}
                                 </div>
                               )
                             })}
@@ -632,11 +638,82 @@ Write next week's program by day and category (Pre-Throwing, Throwing, Post-Thro
                   ):(
                     <div style={{...S.card,border:'1px solid rgba(163,113,247,0.2)',background:'rgba(163,113,247,0.04)',marginBottom:12}}>
                       <div style={{fontSize:11,color:C.purple,fontWeight:700,textTransform:'uppercase' as const,letterSpacing:'1px',marginBottom:6}}>Neuro Classification</div>
-                      <div style={{fontSize:13,color:C.textDim}}>No CMJ data yet. Have the pitcher complete a CMJ test to see their classification and recommendations.</div>
+                      <div style={{fontSize:13,color:C.textDim}}>No CMJ data yet.</div>
                     </div>
                   )}
 
-                  {/* Recent logs */}
+                  {/* Fuel Score */}
+                  <div style={{...S.card,marginBottom:12}}>
+                    <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:12}}>
+                      <div style={{fontSize:11,color:C.textMuted,fontWeight:700,textTransform:'uppercase' as const,letterSpacing:'1px'}}>Today's Fuel Score</div>
+                      {todayFuelScore?.water_oz>0&&<div style={{fontSize:11,color:C.blue}}>💧 {todayFuelScore.water_oz} oz water</div>}
+                    </div>
+
+                    {todayScore>0?(
+                      <div>
+                        <div style={{display:'flex',alignItems:'center',gap:16,marginBottom:12}}>
+                          <div style={{fontSize:48,fontWeight:700,color:scoreColor(todayScore),letterSpacing:'-2px'}}>{todayScore}<span style={{fontSize:16,color:C.textMuted,fontWeight:400}}>/100</span></div>
+                          <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:6,flex:1}}>
+                            {[{l:'Macros',v:todayFuelScore?.macro_score||0,max:30},{l:'Quality',v:todayFuelScore?.quality_score||0,max:30},{l:'Glycemic',v:todayFuelScore?.glycemic_score||0,max:20},{l:'Timing',v:todayFuelScore?.timing_score||0,max:20}].map(s=>(
+                              <div key={s.l} style={{background:C.bg3,borderRadius:6,padding:'5px 8px'}}>
+                                <div style={{fontSize:9,color:C.textMuted}}>{s.l}</div>
+                                <div style={{fontSize:12,fontWeight:700,color:C.white}}>{s.v}<span style={{fontSize:9,color:C.textDim}}>/{s.max}</span></div>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+
+                        {/* Today's meals */}
+                        {todayFoodLogs.length>0&&(
+                          <div>
+                            <div style={{fontSize:10,color:C.textMuted,fontWeight:700,textTransform:'uppercase' as const,letterSpacing:'0.5px',marginBottom:8}}>Meals Today</div>
+                            {todayFoodLogs.map((meal:any,i:number)=>{
+                              const mealCol=MEAL_TYPE_COLORS[meal.meal_type]||C.textMuted
+                              return(
+                                <div key={i} style={{padding:'8px 10px',background:C.bg3,borderRadius:6,marginBottom:6,borderLeft:`3px solid ${mealCol}`}}>
+                                  <div style={{display:'flex',justifyContent:'space-between',marginBottom:4}}>
+                                    <span style={{fontSize:10,color:mealCol,fontWeight:700,textTransform:'uppercase' as const,letterSpacing:'0.3px'}}>{meal.meal_type}</span>
+                                    <span style={{fontSize:11,color:C.gold,fontWeight:600}}>{Math.round(meal.estimated_calories)} cal</span>
+                                  </div>
+                                  <div style={{fontSize:12,color:C.white,marginBottom:4}}>{meal.meal_description}</div>
+                                  <div style={{display:'flex',gap:10}}>
+                                    <span style={{fontSize:10,color:C.teal}}>P: {meal.estimated_protein}g</span>
+                                    <span style={{fontSize:10,color:C.blue}}>C: {meal.estimated_carbs}g</span>
+                                    <span style={{fontSize:10,color:C.gold}}>F: {meal.estimated_fat}g</span>
+                                    <span style={{fontSize:10,color:C.textMuted}}>GL: {meal.gl_score}</span>
+                                  </div>
+                                  {meal.pro_metabolic_foods?.length>0&&<div style={{fontSize:10,color:C.teal,marginTop:3}}>✓ {meal.pro_metabolic_foods.join(', ')}</div>}
+                                </div>
+                              )
+                            })}
+                          </div>
+                        )}
+
+                        {/* 7-day trend */}
+                        {weekFuelScores.length>1&&(
+                          <div style={{marginTop:12}}>
+                            <div style={{fontSize:10,color:C.textMuted,fontWeight:700,textTransform:'uppercase' as const,letterSpacing:'0.5px',marginBottom:8}}>7-Day Fuel Trend</div>
+                            <div style={{display:'flex',gap:4,alignItems:'flex-end',height:48}}>
+                              {weekFuelScores.map((s:any,i:number)=>{
+                                const score=s.total_score||0
+                                const height=Math.max(4,Math.round((score/100)*44))
+                                return(
+                                  <div key={i} style={{flex:1,display:'flex',flexDirection:'column' as const,alignItems:'center',gap:2}}>
+                                    <div style={{width:'100%',height,background:scoreColor(score),borderRadius:2,minHeight:4}}/>
+                                    <div style={{fontSize:8,color:C.textDim}}>{score}</div>
+                                  </div>
+                                )
+                              })}
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    ):(
+                      <div style={{fontSize:13,color:C.textDim}}>No food logged today.</div>
+                    )}
+                  </div>
+
+                  {/* Recent sessions */}
                   {logs.length>0&&(
                     <div style={S.card}>
                       <div style={{fontSize:11,color:C.textMuted,fontWeight:700,textTransform:'uppercase' as const,letterSpacing:'1px',marginBottom:12}}>Recent Sessions</div>
@@ -919,9 +996,7 @@ Write next week's program by day and category (Pre-Throwing, Throwing, Post-Thro
                               </div>
                             </div>
                           </td>
-                          <td style={{padding:'10px 12px'}}>
-                            <span style={{color:catDef?.color||C.textMuted,fontSize:11}}>{ex.category}</span>
-                          </td>
+                          <td style={{padding:'10px 12px'}}><span style={{color:catDef?.color||C.textMuted,fontSize:11}}>{ex.category}</span></td>
                           <td style={{padding:'10px 12px'}}>
                             <span style={{display:'inline-flex',alignItems:'center',gap:4,fontSize:11,color:cnsDef.text}}>
                               <span style={{width:6,height:6,borderRadius:'50%',background:cnsDef.dot,display:'inline-block'}}/>
@@ -930,10 +1005,7 @@ Write next week's program by day and category (Pre-Throwing, Throwing, Post-Thro
                           </td>
                           <td style={{padding:'10px 12px',color:C.textMuted,fontSize:11}}>{ex.pattern}</td>
                           <td style={{padding:'10px 12px'}}>
-                            {hasVideo
-                              ? <a href={exerciseVideos[ex.id]} target="_blank" rel="noopener noreferrer" style={{fontSize:11,color:C.blue}}>View</a>
-                              : <span style={{fontSize:11,color:C.textDim}}>—</span>
-                            }
+                            {hasVideo?<a href={exerciseVideos[ex.id]} target="_blank" rel="noopener noreferrer" style={{fontSize:11,color:C.blue}}>View</a>:<span style={{fontSize:11,color:C.textDim}}>—</span>}
                           </td>
                           <td style={{padding:'10px 12px'}}>
                             <div style={{display:'flex',gap:6}}>
