@@ -116,7 +116,7 @@ export default function PublicCMJ(){
           {[
             'Open iPhone Camera → swipe to SLO-MO → set to 240fps',
             'Stand sideways to camera, feet shoulder-width',
-            'Squat down then jump as high as possible',
+            'Hands on your hips, squat down then jump as high as possible (DO NOT SWING YOUR ARMS IN THE JUMP)',
             'Open in Photos → Edit → scrub to find frames',
             'Record: frame you start down, frame feet leave ground, frame feet land',
           ].map((s,i)=>(
