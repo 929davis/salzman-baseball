@@ -48,9 +48,9 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
-  const date = getYesterdayDate()
+  const { searchParams } = new URL(request.url)
+  const date = searchParams.get('date') || getYesterdayDate()
 
-  // Baseball Savant CSV - swings and contact only, 2026 season
   const savantUrl = [
     'https://baseballsavant.mlb.com/statcast_search/csv',
     '?all=true',
@@ -77,7 +77,7 @@ export async function GET(request: Request) {
 
   const lines = csvText.trim().split('\n')
   if (lines.length < 2) {
-    return NextResponse.json({ message: 'No games yesterday', date })
+    return NextResponse.json({ message: 'No games on this date', date })
   }
 
   const headers = lines[0].split(',').map(h => h.trim().replace(/"/g, ''))
@@ -139,7 +139,6 @@ export async function GET(request: Request) {
     return NextResponse.json({ message: 'No qualifying pitches found', date })
   }
 
-  // Use service role key so we can insert without RLS restrictions
   const supabase = createClient(
     process.env.SUPABASE_URL!,
     process.env.SUPABASE_SERVICE_KEY!
