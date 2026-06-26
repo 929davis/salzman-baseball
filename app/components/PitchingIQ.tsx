@@ -70,8 +70,12 @@ export default function PitchingIQ() {
   const fetchData=useCallback(async()=>{
     setLoading(true)
     try {
-      let q=supabase.from('statcast_pitches').select('zone,description,events,launch_speed,estimated_woba,bats,arm_angle_bucket,count_bucket,pitch_type,game_date')
-      q=q.eq('bats',bats)
+      const filters:{[key:string]:string}={bats}
+      if (armBucket!=='all') filters.arm_angle_bucket=armBucket
+      if (countBucket!=='all') filters.count_bucket=countBucket
+      if (pitchFilter!=='all') filters.pitch_type=pitchFilter
+
+      let q=supabase.from('statcast_pitches').select('zone,description,launch_speed,estimated_woba,arm_angle_bucket,count_bucket,pitch_type,game_date').eq('bats',bats)
       if (armBucket!=='all') q=q.eq('arm_angle_bucket',armBucket)
       if (countBucket!=='all') q=q.eq('count_bucket',countBucket)
       if (pitchFilter!=='all') q=q.eq('pitch_type',pitchFilter)
