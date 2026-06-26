@@ -42,17 +42,6 @@ function parseCSVLine(line: string): string[] {
   return row
 }
 
-// Only keep swings and contact — filter out called strikes, balls, etc.
-const VALID_DESCRIPTIONS = new Set([
-  'swinging_strike',
-  'swinging_strike_blocked',
-  'hit_into_play',
-  'hit_into_play_no_out',
-  'hit_into_play_score',
-  'foul',
-  'foul_tip',
-])
-
 export async function GET(request: Request) {
   const authHeader = request.headers.get('authorization')
   if (authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
@@ -62,7 +51,8 @@ export async function GET(request: Request) {
   const { searchParams } = new URL(request.url)
   const date = searchParams.get('date') || getYesterdayDate()
 
-  // No hfAB filter — pull everything and filter by description in code
+  // hfDes filters by pitch description - X means ball in play, S means strike (includes swinging)
+  // This keeps the response small enough for Savant to return quickly
   const savantUrl = [
     'https://baseballsavant.mlb.com/statcast_search/csv',
     '?all=true',
@@ -70,7 +60,15 @@ export async function GET(request: Request) {
     `&game_date_gt=${date}`,
     `&game_date_lt=${date}`,
     '&player_type=pitcher',
+    '&hfDes=swinging_strike%7Cswinging_strike_blocked%7Cfoul%7Cfoul_tip%7Chit_into_play%7Chit_into_play_no_out%7Chit_into_play_score%7C',
     '&type=details',
+    '&min_pitches=0',
+    '&min_results=0',
+    '&group_by=name',
+    '&sort_col=pitches',
+    '&player_event_sort=api_p_release_speed',
+    '&sort_order=desc',
+    '&min_pas=0',
   ].join('')
 
   let csvText: string
@@ -88,7 +86,7 @@ export async function GET(request: Request) {
 
   const lines = csvText.trim().split('\n')
   if (lines.length < 2) {
-    return NextResponse.json({ message: 'No games on this date', date })
+    return NextResponse.json({ message: 'No games on this date', date, lines: lines.length })
   }
 
   const headers = lines[0].split(',').map(h => h.trim().replace(/"/g, ''))
@@ -107,21 +105,12 @@ export async function GET(request: Request) {
   }
 
   const rows: object[] = []
-  let skipped = 0
 
   for (let i = 1; i < lines.length; i++) {
     const line = lines[i]
     if (!line.trim()) continue
 
     const row = parseCSVLine(line)
-    const description = col(row, 'description')
-
-    // Only keep swings and contact
-    if (!VALID_DESCRIPTIONS.has(description)) {
-      skipped++
-      continue
-    }
-
     const balls    = int(col(row, 'balls')) ?? 0
     const strikes  = int(col(row, 'strikes')) ?? 0
     const armAngle = num(col(row, 'arm_angle'))
@@ -140,7 +129,7 @@ export async function GET(request: Request) {
       plate_x:           num(col(row, 'plate_x')),
       plate_z:           num(col(row, 'plate_z')),
       zone:              int(col(row, 'zone')),
-      description,
+      description:       col(row, 'description'),
       events:            col(row, 'events'),
       launch_speed:      num(col(row, 'launch_speed')),
       launch_angle:      num(col(row, 'launch_angle')),
@@ -156,7 +145,7 @@ export async function GET(request: Request) {
   }
 
   if (rows.length === 0) {
-    return NextResponse.json({ message: 'No qualifying pitches found', date, skipped })
+    return NextResponse.json({ message: 'No qualifying pitches found', date, header_count: headers.length })
   }
 
   const supabase = createClient(
@@ -184,6 +173,5 @@ export async function GET(request: Request) {
     success: true,
     date,
     pitches_inserted: inserted,
-    skipped,
   })
 }
