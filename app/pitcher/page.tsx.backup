@@ -3,7 +3,6 @@
 import { useEffect, useState, useRef } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { useRouter } from 'next/navigation'
-import PitchingIQ from '@/app/components/PitchingIQ'
 
 const C = {
   bg:'#0d1117',bg2:'#161b22',bg3:'#1c2333',border:'#30363d',
@@ -478,7 +477,6 @@ export default function PitcherDashboard(){
           {id:'log',icon:'📝',label:'Log'},
           {id:'messages',icon:'💬',label:unread>0?`(${unread})`:'Chat'},
           {id:'notes',icon:'📌',label:'Notes'},
-          {id:'iq',icon:'🎯',label:'Pitching IQ'},
         ].map(t=>(
           <button key={t.id} onClick={()=>setTab(t.id)} style={{flex:1,background:'transparent',border:'none',borderBottom:`2px solid ${tab===t.id?C.gold:'transparent'}`,padding:'8px 2px',cursor:'pointer',color:tab===t.id?C.gold:C.textMuted,fontSize:9,fontWeight:tab===t.id?700:400,textTransform:'uppercase' as const,letterSpacing:'0.3px',whiteSpace:'nowrap' as const}}>
             <div style={{fontSize:15,marginBottom:2}}>{t.icon}</div>
@@ -1071,7 +1069,6 @@ export default function PitcherDashboard(){
             ))}
           </div>
         )}
-        {tab==='iq'&&<PitchingIQ/>}
 
       </div>
     </div>
