@@ -59,6 +59,8 @@ export default function PitchingIQ() {
   const [countBucket,setCountBucket]=useState('all')
   const [metric,setMetric]=useState('whiff')
   const [pitchFilter,setPitchFilter]=useState('all')
+  const [pThrows,setPThrows]=useState('all')
+  const [swingPath,setSwingPath]=useState('all')
   const [zoneData,setZoneData]=useState<ZoneData>({})
   const [chaseRows,setChaseRows]=useState<ChaseRow[]>([])
   const [pitchRanks,setPitchRanks]=useState<PitchRank[]>([])
@@ -75,10 +77,14 @@ export default function PitchingIQ() {
       if (countBucket!=='all') filters.count_bucket=countBucket
       if (pitchFilter!=='all') filters.pitch_type=pitchFilter
 
-      let q=supabase.from('statcast_pitches').select('zone,description,launch_speed,estimated_woba,arm_angle_bucket,count_bucket,pitch_type,game_date,attack_angle').eq('bats',bats)
+      let q=supabase.from('statcast_pitches').select('zone,description,launch_speed,estimated_woba,arm_angle_bucket,count_bucket,pitch_type,game_date,attack_angle,p_throws').eq('bats',bats)
       if (armBucket!=='all') q=q.eq('arm_angle_bucket',armBucket)
       if (countBucket!=='all') q=q.eq('count_bucket',countBucket)
       if (pitchFilter!=='all') q=q.eq('pitch_type',pitchFilter)
+      if (pThrows!=='all') q=q.eq('p_throws',pThrows)
+      if (swingPath==='flat') q=q.lt('attack_angle',10)
+      else if (swingPath==='slight') q=q.gte('attack_angle',10).lt('attack_angle',25)
+      else if (swingPath==='uppercut') q=q.gte('attack_angle',25)
       const {data,error}=await q.limit(50000)
       console.log("statcast query:",{error,count:data?.length,bats,armBucket,countBucket,pitchFilter})
       // Debug: test raw query with no filters
@@ -182,7 +188,7 @@ export default function PitchingIQ() {
       }
     } catch(e){console.error(e)}
     setLoading(false)
-  },[bats,armBucket,countBucket,metric,pitchFilter])
+  },[bats,armBucket,countBucket,metric,pitchFilter,pThrows,swingPath])
 
   useEffect(()=>{fetchData()},[fetchData])
 
@@ -205,6 +211,10 @@ export default function PitchingIQ() {
       </div>
       <div style={{background:C.bg3,border:`1px solid ${C.border}`,borderRadius:8,padding:'10px 12px',marginBottom:12}}>
         <div style={{display:'flex',flexWrap:'wrap' as const,gap:12}}>
+          <div>
+            <div style={{fontSize:10,color:C.textMuted,textTransform:'uppercase' as const,letterSpacing:'0.5px',marginBottom:4}}>Pitcher hand</div>
+            <div style={{display:'flex',gap:4}}>{pill('All',pThrows==='all',()=>setPThrows('all'))}{pill('RHP',pThrows==='R',()=>setPThrows('R'))}{pill('LHP',pThrows==='L',()=>setPThrows('L'))}</div>
+          </div>
           <div>
             <div style={{fontSize:10,color:C.textMuted,textTransform:'uppercase' as const,letterSpacing:'0.5px',marginBottom:4}}>Batter hand</div>
             <div style={{display:'flex',gap:4}}>{pill('vs RHH',bats==='R',()=>setBats('R'))}{pill('vs LHH',bats==='L',()=>setBats('L'))}</div>
