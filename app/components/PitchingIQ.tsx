@@ -75,7 +75,7 @@ export default function PitchingIQ() {
       if (countBucket!=='all') filters.count_bucket=countBucket
       if (pitchFilter!=='all') filters.pitch_type=pitchFilter
 
-      let q=supabase.from('statcast_pitches').select('zone,description,launch_speed,estimated_woba,arm_angle_bucket,count_bucket,pitch_type,game_date').eq('bats',bats)
+      let q=supabase.from('statcast_pitches').select('zone,description,launch_speed,estimated_woba,arm_angle_bucket,count_bucket,pitch_type,game_date,attack_angle').eq('bats',bats)
       if (armBucket!=='all') q=q.eq('arm_angle_bucket',armBucket)
       if (countBucket!=='all') q=q.eq('count_bucket',countBucket)
       if (pitchFilter!=='all') q=q.eq('pitch_type',pitchFilter)
@@ -345,5 +345,20 @@ export default function PitchingIQ() {
         </>
       )}
     </div>
+      <div style={{background:C.bg3,border:`1px solid ${C.border}`,borderRadius:8,padding:'12px 14px',marginTop:10}}>
+        <div style={{fontSize:11,fontWeight:700,color:C.textMuted,textTransform:'uppercase' as const,letterSpacing:'0.5px',marginBottom:8}}>Swing path guide</div>
+        <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(200px,1fr))',gap:6}}>
+          {[
+            {label:'Flat',range:'Below 10°',desc:'Level or downward swing path. Pitches up in the zone are nearly untouchable. Low pitches get topped for weak grounders. Go up early in counts.'},
+            {label:'Slight Uppercut',range:'10° – 25°',desc:'Slight lift through the zone. Most dangerous swing type — stays on the ball a long time. Change speeds and work both edges. Do not leave pitches middle-middle.'},
+            {label:'Uppercut',range:'25°+',desc:'Steep lift swing — either a barrel or a miss. Low breaking balls are a trap, they match the swing plane. Elevate hard stuff and bury breaking balls below the zone for chases.'},
+          ].map(a=>(
+            <div key={a.label} style={{background:C.bg2,borderRadius:6,padding:'8px 10px'}}>
+              <div style={{fontSize:12,fontWeight:600,color:C.gold,marginBottom:2}}>{a.label} <span style={{fontSize:10,color:C.textMuted,fontWeight:400}}>({a.range})</span></div>
+              <div style={{fontSize:11,color:C.textMuted,lineHeight:1.5}}>{a.desc}</div>
+            </div>
+          ))}
+        </div>
+      </div>
   )
 }
