@@ -117,7 +117,7 @@ export default function PublicCMJ(){
             'Open iPhone Camera → swipe to SLO-MO → set to 240fps',
             'Stand sideways to camera, feet shoulder-width',
             'Hands on your hips, squat down then jump as high as possible (DO NOT SWING YOUR ARMS IN THE JUMP)',
-            'Open Photos app → tap Edit → find each moment by scrubbing → multiply the timestamp by 240 to get the frame number (example: 0:03.2 seconds x 240 = frame 768) → do this for: first downward movement, feet leaving ground, and feet landing',
+            'Open Photos app, tap Edit, find each moment by scrubbing, multiply the timestamp by 240 to get the frame number (example: 0:03.2 seconds times 240 = frame 768) → do this for: first downward movement, feet leaving ground, and feet landing',
             <div key={i} style={{display:'flex',gap:10,marginBottom:6,alignItems:'flex-start'}}>
               <div style={{width:20,height:20,borderRadius:'50%',background:'rgba(88,166,255,0.15)',border:'1px solid rgba(88,166,255,0.3)',color:C.blue,fontSize:11,fontWeight:700,display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0,marginTop:1}}>{i+1}</div>
               <div style={{fontSize:12,color:C.textMuted,lineHeight:1.5}}>{s}</div>
