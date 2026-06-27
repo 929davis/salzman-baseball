@@ -80,7 +80,12 @@ export default function PitchingIQ() {
       if (countBucket!=='all') q=q.eq('count_bucket',countBucket)
       if (pitchFilter!=='all') q=q.eq('pitch_type',pitchFilter)
       const {data,error}=await q.limit(50000)
-      console.log("statcast query:",{error,count:data?.length,url:process.env.NEXT_PUBLIC_SUPABASE_URL,hasKey:!!process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY})
+      console.log("statcast query:",{error,count:data?.length,bats,armBucket,countBucket,pitchFilter})
+      // Debug: test raw query with no filters
+      const testRaw = await supabase.from('statcast_pitches').select('zone,bats', {count:'exact'}).limit(5)
+      console.log('raw test (no filter):', {count:testRaw.count, error:testRaw.error, data:testRaw.data})
+      const testBats = await supabase.from('statcast_pitches').select('zone,bats').eq('bats','R').limit(5)
+      console.log('bats=R test:', {count:testBats.data?.length, error:testBats.error, data:testBats.data})
       if (error||!data){setLoading(false);return}
 
       const dates=data.map((r:any)=>r.game_date).filter(Boolean).sort()
