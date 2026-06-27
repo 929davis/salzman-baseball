@@ -117,7 +117,7 @@ export default function PublicCMJ(){
             'Open iPhone Camera → swipe to SLO-MO → set to 240fps',
             'Stand sideways to camera, feet shoulder-width',
             'Hands on your hips, squat down then jump as high as possible (DO NOT SWING YOUR ARMS IN THE JUMP)',
-            'Open in Photos → Edit → scrub to find frames',
+            'Open the video in Photos → Edit → Frame Number = Time (in seconds) × FPS (EX: If the timestamp shows 0:03.2 → that is 3.2 seconds → 3.2 × 240 = 768) do that for first downward movement, the frame you feet leave the ground, and when your feet land after the jump
             'Record: frame you start down, frame feet leave ground, frame feet land',
           ].map((s,i)=>(
             <div key={i} style={{display:'flex',gap:10,marginBottom:6,alignItems:'flex-start'}}>
