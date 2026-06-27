@@ -80,7 +80,7 @@ export default function PitchingIQ() {
       if (countBucket!=='all') q=q.eq('count_bucket',countBucket)
       if (pitchFilter!=='all') q=q.eq('pitch_type',pitchFilter)
       const {data,error}=await q.limit(50000)
-      console.log("statcast query:",{error,count:data?.length,sample:data?.[0]})
+      console.log("statcast query:",{error,count:data?.length,url:process.env.NEXT_PUBLIC_SUPABASE_URL,hasKey:!!process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY})
       if (error||!data){setLoading(false);return}
 
       const dates=data.map((r:any)=>r.game_date).filter(Boolean).sort()
