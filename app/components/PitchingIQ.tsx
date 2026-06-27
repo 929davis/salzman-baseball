@@ -344,7 +344,6 @@ export default function PitchingIQ() {
           </div>
         </>
       )}
-    </div>
       <div style={{background:C.bg3,border:`1px solid ${C.border}`,borderRadius:8,padding:'12px 14px',marginTop:10}}>
         <div style={{fontSize:11,fontWeight:700,color:C.textMuted,textTransform:'uppercase' as const,letterSpacing:'0.5px',marginBottom:8}}>Swing path guide</div>
         <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(200px,1fr))',gap:6}}>
@@ -360,5 +359,6 @@ export default function PitchingIQ() {
           ))}
         </div>
       </div>
+    </div>
   )
 }

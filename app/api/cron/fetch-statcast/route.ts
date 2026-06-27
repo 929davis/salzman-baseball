@@ -142,7 +142,6 @@ export async function GET(request: Request) {
       count_bucket:      classifyCount(balls, strikes),
       inning:            int(col(row, 'inning')),
       attack_angle:      num(col(row, 'attack_angle')),
-      attack_angle:      num(col(row, 'attack_angle')),
     })
   }
 
