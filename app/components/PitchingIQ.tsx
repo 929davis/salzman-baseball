@@ -251,7 +251,7 @@ export default function PitchingIQ() {
           <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(280px,1fr))',gap:12,marginBottom:12}}>
             <div style={{background:C.bg2,border:`1px solid ${C.border}`,borderRadius:8,padding:14}}>
               <div style={{fontSize:11,fontWeight:700,color:C.textMuted,textTransform:'uppercase' as const,letterSpacing:'0.5px',marginBottom:10}}>Zone heatmap — {METRIC_LABELS[metric]}</div>
-              <div style={{display:'flex',flexDirection:'column' as const,alignItems:'center',gap:3}}>
+              <div style={{display:'flex',flexDirection:'column' as const,alignItems:'center',gap:3,paddingBottom:8}}>
                 {ZONE_GRID.map((row,ri)=>(
                   <div key={ri} style={{display:'flex',gap:3}}>
                     {row.map((zone,ci)=>{
