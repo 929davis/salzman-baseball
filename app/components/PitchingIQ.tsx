@@ -348,6 +348,31 @@ export default function PitchingIQ() {
           </div>
         </>
       )}
+
+      <div style={{background:C.bg3,border:`1px solid ${C.border}`,borderRadius:8,padding:'12px 14px',marginTop:10}}>
+        <div style={{fontSize:11,fontWeight:700,color:C.textMuted,textTransform:'uppercase' as const,letterSpacing:'0.5px',marginBottom:8}}>Pitch type guide</div>
+        <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(180px,1fr))',gap:6}}>
+          {[
+            {code:'FF',name:'4-Seam Fastball',desc:'Straight, high spin, plays up in the zone'},
+            {code:'SI',name:'Sinker',desc:'Arm-side run and sink, generates ground balls'},
+            {code:'FC',name:'Cutter',desc:'Late glove-side cut off fastball shape'},
+            {code:'SL',name:'Slider',desc:'Traditional breaking ball, horizontal break'},
+            {code:'ST',name:'Sweeper',desc:'Wide horizontal break, looks like a fastball early'},
+            {code:'SV',name:'Slurve',desc:'Hybrid slider/curve with diagonal break'},
+            {code:'CU',name:'Curveball',desc:'12-to-6 or 11-to-5 downward break'},
+            {code:'CH',name:'Changeup',desc:'Fastball look with arm-side fade and drop'},
+            {code:'FS',name:'Splitter',desc:'Fastball shape with late downward drop'},
+            {code:'FO',name:'Forkball',desc:'Deep grip split, extreme drop'},
+            {code:'SC',name:'Screwball',desc:'Reverse changeup, rare arm-side break'},
+            {code:'KN',name:'Knuckleball',desc:'Minimal spin, unpredictable movement'},
+          ].map(p=>(
+            <div key={p.code} style={{background:C.bg2,borderRadius:6,padding:'8px 10px'}}>
+              <div style={{fontSize:12,fontWeight:700,color:C.gold,marginBottom:2}}>{p.code} <span style={{fontSize:11,color:C.text,fontWeight:400}}>{p.name}</span></div>
+              <div style={{fontSize:10,color:C.textMuted,lineHeight:1.4}}>{p.desc}</div>
+            </div>
+          ))}
+        </div>
+      </div>
       <div style={{background:C.bg3,border:`1px solid ${C.border}`,borderRadius:8,padding:'12px 14px',marginTop:10}}>
         <div style={{fontSize:11,fontWeight:700,color:C.textMuted,textTransform:'uppercase' as const,letterSpacing:'0.5px',marginBottom:8}}>Swing path guide</div>
         <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(200px,1fr))',gap:6}}>
