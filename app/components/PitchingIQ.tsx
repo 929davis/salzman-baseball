@@ -85,7 +85,6 @@ export default function PitchingIQ() {
       else if (swingPath==='slight') q=q.gte('attack_angle',10).lt('attack_angle',25)
       else if (swingPath==='uppercut') q=q.gte('attack_angle',25)
       const {data,error}=await q.limit(50000)
-      console.log("statcast query:",{error,count:data?.length,bats,armBucket,countBucket,pitchFilter})
       // Debug: test raw query with no filters
       const testRaw = await supabase.from('statcast_pitches').select('zone,bats', {count:'exact'}).limit(5)
       console.log('raw test (no filter):', {count:testRaw.count, error:testRaw.error, data:testRaw.data})
