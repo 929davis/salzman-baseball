@@ -24,13 +24,14 @@ const ZONE_GRID = [
   [14,1,2,3,14],
   [14,4,5,6,14],
   [14,7,8,9,14],
+  [null,14,14,14,null],
 ]
 const ZONE_LABELS:Record<number,string> = {
   1:'Up-in',2:'Up-middle',3:'Up-away',
   4:'Mid-in',5:'Heart',6:'Mid-away',
   7:'Low-in',8:'Low-middle',9:'Low-away',
   11:'High (above zone)',12:'High-middle (above zone)',
-  13:'High-away (above zone)',14:'Off plate (shadow zone)',
+  13:'High-away (above zone)',14:'Shadow/chase zone (off plate — all sides including low)',
 }
 type ZoneData = Record<number,{whiff:number,chase:number,hard_hit:number,xwoba:number,count:number}>
 type ChaseRow = {pitch_type:string,chase_pct:number,whiff_pct:number,hard_hit_pct:number,xwoba:number,count:number}
