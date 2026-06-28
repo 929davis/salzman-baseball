@@ -272,7 +272,7 @@ export default function PitchingIQ() {
                   </div>
                 ))}
               </div>
-              <div style={{textAlign:'center' as const,fontSize:10,color:C.textDim,marginTop:8}}>catcher's view · plate_x = left/right · plate_z = height · zones 1–9 in-zone · 10–14 shadow/chase</div>
+              <div style={{textAlign:'center' as const,fontSize:10,color:C.textDim,marginTop:8}}>catcher's view · plate_x = left/right · plate_z = height · zones 1–9 in-zone · 11–14 shadow/chase</div>
               <div style={{display:'flex',alignItems:'center',gap:6,justifyContent:'center',marginTop:6}}>
                 <span style={{fontSize:10,color:C.textMuted}}>low</span>
                 <div style={{width:80,height:7,borderRadius:4,background:'linear-gradient(to right,#3b82f6,#f85149)'}}/>
