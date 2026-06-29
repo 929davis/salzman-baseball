@@ -239,6 +239,10 @@ export default function CoachDashboard(){
   const [copyToDay,setCopyToDay]=useState<string>('')
   const [copyToCat,setCopyToCat]=useState<string>('')
   const [copySaving,setCopySaving]=useState(false)
+  const [importModal,setImportModal]=useState(false)
+  const [importText,setImportText]=useState('')
+  const [importSaving,setImportSaving]=useState(false)
+  const [importResult,setImportResult]=useState<string|null>(null)
   const [showPicker,setShowPicker]=useState(false)
   const [pickerCell,setPickerCell]=useState<{day:string,cat:string}|null>(null)
   const [pickerSearch,setPickerSearch]=useState('')
@@ -1185,6 +1189,33 @@ Write next week's program by day and category (Pre-Throwing, Throwing, Post-Thro
           </div>
         </div>
       )}
+    {importModal&&(
+      <div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.7)',zIndex:9999,display:'flex',alignItems:'center',justifyContent:'center'}} onClick={()=>setImportModal(false)}>
+        <div style={{background:'#1a1a2e',border:'1px solid rgba(255,255,255,0.1)',borderRadius:12,padding:24,width:480,maxWidth:'90vw'}} onClick={e=>e.stopPropagation()}>
+          <div style={{fontSize:15,fontWeight:700,color:'#fff',marginBottom:4}}>Import Program</div>
+          <div style={{fontSize:12,color:'#888',marginBottom:12}}>Paste program text in the format:<br/><span style={{color:'#58a6ff',fontFamily:'monospace',fontSize:11}}>MONDAY{'
+'}Category | Exercise Name | Sets x Reps @ Load%</span></div>
+          <textarea
+            style={{width:'100%',height:220,background:'#0d0d1a',border:'1px solid rgba(255,255,255,0.1)',borderRadius:8,padding:'10px 12px',fontSize:12,color:'#fff',outline:'none',resize:'vertical' as const,boxSizing:'border-box' as const,fontFamily:'monospace'}}
+            placeholder={`MONDAY
+Main Exercises | Trap Bar Deadlift | 4 x 4 @ 70%
+Conditioning | Depth Jump | 4 x 3
+
+TUESDAY
+Accessory | Single Arm DB Row | 3 x 6 @ 70%`}
+            value={importText}
+            onChange={e=>setImportText(e.target.value)}
+          />
+          {importResult&&<div style={{fontSize:12,color:importResult.startsWith('✅')?'#39d353':'#f0883e',marginTop:8,lineHeight:1.5}}>{importResult}</div>}
+          <div style={{display:'flex',gap:8,marginTop:12}}>
+            <button onClick={()=>{setImportModal(false);setImportResult(null);setImportText('')}} style={{flex:1,background:'transparent',border:'1px solid rgba(255,255,255,0.1)',borderRadius:8,padding:'10px',fontSize:13,color:'#888',cursor:'pointer'}}>Cancel</button>
+            <button onClick={()=>parseAndImportProgram(importText)} disabled={!importText.trim()||importSaving} style={{flex:2,background:importText.trim()?'rgba(88,166,255,0.15)':'rgba(255,255,255,0.05)',border:`1px solid ${importText.trim()?'rgba(88,166,255,0.4)':'rgba(255,255,255,0.1)'}`,borderRadius:8,padding:'10px',fontSize:13,color:importText.trim()?'#58a6ff':'#555',cursor:importText.trim()?'pointer':'not-allowed'}}>
+              {importSaving?'Importing...':'Import into Program'}
+            </button>
+          </div>
+        </div>
+      </div>
+    )}
     {copyModal&&(
       <div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.7)',zIndex:9999,display:'flex',alignItems:'center',justifyContent:'center'}} onClick={()=>setCopyModal(null)}>
         <div style={{background:'#1a1a2e',border:'1px solid rgba(255,255,255,0.1)',borderRadius:12,padding:24,minWidth:320,maxWidth:400}} onClick={e=>e.stopPropagation()}>
