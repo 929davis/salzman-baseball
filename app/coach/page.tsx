@@ -847,6 +847,7 @@ Write next week's program by day and category (Pre-Throwing, Throwing, Post-Thro
                       ))}
                     </div>
                     <button style={S.btn('gold')} onClick={buildPrompt}>Claude</button>
+                    <button style={{...S.btn(),background:'rgba(88,166,255,0.1)',color:'#58a6ff',border:'1px solid rgba(88,166,255,0.3)'}} onClick={()=>{setImportModal(true);setImportResult(null)}}>Import</button>
                   </div>
                   <div style={{overflowX:'auto' as const}}>
                     <div style={{minWidth:900}}>
