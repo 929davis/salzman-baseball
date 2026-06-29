@@ -349,6 +349,47 @@ export default function CoachDashboard(){
     setPrinciples(princText);setPrincSaved(true);setTimeout(()=>setPrincSaved(false),2000)
   }
 
+  const parseAndImportProgram=async(text:string)=>{
+    if(!program&&!selected) return
+    setImportSaving(true)
+    const VALID_DAYS=['MONDAY','TUESDAY','WEDNESDAY','THURSDAY','FRIDAY','SATURDAY','SUNDAY']
+    const VALID_CATS=['Pre-Throwing','Throwing','Post-Throwing','Main Exercises','Accessory','Conditioning','Recovery']
+    const lines=text.split('\n').map((l:string)=>l.trim()).filter((l:string)=>l.length>0)
+    const newStructured={...structuredDays}
+    let currentDay=''
+    let added=0
+    const skipped:string[]=[]
+    for(const line of lines){
+      if(VALID_DAYS.includes(line.toUpperCase())){
+        currentDay=line.charAt(0).toUpperCase()+line.slice(1).toLowerCase()
+        continue
+      }
+      if(!currentDay) continue
+      const parts=line.split('|').map((p:string)=>p.trim())
+      if(parts.length<3) continue
+      const [cat,exName,prescription]=parts
+      if(!VALID_CATS.includes(cat)){skipped.push('Bad category: '+cat);continue}
+      const setsRepsMatch=prescription.match(/(\d+)\s*x\s*(\d+)(?:\s*@\s*(\d+)%?)?/i)
+      if(!setsRepsMatch){skipped.push('Bad prescription: '+prescription);continue}
+      const sets=parseInt(setsRepsMatch[1])
+      const reps=parseInt(setsRepsMatch[2])
+      const load=setsRepsMatch[3]||''
+      const allExercises=[...exercises,...customExercises]
+      const match=allExercises.find((e:any)=>e.name.toLowerCase()===exName.toLowerCase())
+      if(!match){skipped.push('Not in library: '+exName);continue}
+      const key=currentDay+'___'+cat
+      const current=newStructured[key]||[]
+      newStructured[key]=[...current,{id:match.id||match.exercise_id,name:match.name,sets,reps,load,notes:'',cns:match.cns||''}]
+      added++
+    }
+    await saveProgram(newStructured,cellNotes)
+    setStructuredDays(newStructured)
+    setImportSaving(false)
+    setImportText('')
+    const skippedMsg=skipped.length>0?' Skipped '+skipped.length+': '+skipped.slice(0,3).join(', ')+(skipped.length>3?'...':'')+'.':''
+    setImportResult('Added '+added+' exercise'+(added!==1?'s':'')+'.'+skippedMsg)
+  }
+
   const saveProgram=async(structured:any,notes:any)=>{
     if (!selected)return
     const weekOf=new Date().toISOString().split('T')[0]
