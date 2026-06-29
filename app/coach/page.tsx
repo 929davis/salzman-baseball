@@ -1234,8 +1234,7 @@ Write next week's program by day and category (Pre-Throwing, Throwing, Post-Thro
       <div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.7)',zIndex:9999,display:'flex',alignItems:'center',justifyContent:'center'}} onClick={()=>setImportModal(false)}>
         <div style={{background:'#1a1a2e',border:'1px solid rgba(255,255,255,0.1)',borderRadius:12,padding:24,width:480,maxWidth:'90vw'}} onClick={e=>e.stopPropagation()}>
           <div style={{fontSize:15,fontWeight:700,color:'#fff',marginBottom:4}}>Import Program</div>
-          <div style={{fontSize:12,color:'#888',marginBottom:12}}>Paste program text in the format:<br/><span style={{color:'#58a6ff',fontFamily:'monospace',fontSize:11}}>MONDAY{'
-'}Category | Exercise Name | Sets x Reps @ Load%</span></div>
+          <div style={{fontSize:12,color:'#888',marginBottom:12}}>Paste program text in the format:<br/><span style={{color:'#58a6ff',fontFamily:'monospace',fontSize:11}}>MONDAY | Category | Exercise Name | Sets x Reps @ Load%</span></div>
           <textarea
             style={{width:'100%',height:220,background:'#0d0d1a',border:'1px solid rgba(255,255,255,0.1)',borderRadius:8,padding:'10px 12px',fontSize:12,color:'#fff',outline:'none',resize:'vertical' as const,boxSizing:'border-box' as const,fontFamily:'monospace'}}
             placeholder={`MONDAY
