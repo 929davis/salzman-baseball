@@ -234,6 +234,11 @@ export default function CoachDashboard(){
   const [princSaved,setPrincSaved]=useState(false)
   const [cellNotes,setCellNotes]=useState<Record<string,string>>({})
   const [expandedCell,setExpandedCell]=useState<string|null>(null)
+  const [copyModal,setCopyModal]=useState<{ex:any,fromKey:string}|null>(null)
+  const [copyToPitcher,setCopyToPitcher]=useState<any>(null)
+  const [copyToDay,setCopyToDay]=useState<string>('')
+  const [copyToCat,setCopyToCat]=useState<string>('')
+  const [copySaving,setCopySaving]=useState(false)
   const [showPicker,setShowPicker]=useState(false)
   const [pickerCell,setPickerCell]=useState<{day:string,cat:string}|null>(null)
   const [pickerSearch,setPickerSearch]=useState('')
@@ -420,6 +425,23 @@ export default function CoachDashboard(){
     setStructuredDays(newStructured)
     await saveProgram(newStructured,cellNotes)
     setAddForm(null);setShowPicker(false)
+  }
+
+  const copyExerciseToPitcher=async(ex:any,targetPitcher:any,day:string,cat:string)=>{
+    if(!targetPitcher||!day||!cat) return
+    setCopySaving(true)
+    const {data:prog}=await supabase.from('programs').select('*').eq('pitcher_id',targetPitcher.id).order('week_of',{ascending:false}).limit(1).maybeSingle()
+    if(!prog){setCopySaving(false);alert('No program found for that pitcher');return}
+    const key=`${day}___${cat}`
+    const current=prog.structured_days?.[key]||[]
+    const updated={...prog.structured_days,[key]:[...current,{id:ex.id,name:ex.name,sets:ex.sets,reps:ex.reps,load:ex.load||'',notes:ex.notes||'',cns:ex.cns||''}]}
+    await supabase.from('programs').update({structured_days:updated}).eq('id',prog.id)
+    setCopySaving(false)
+    setCopyModal(null)
+    setCopyToPitcher(null)
+    setCopyToDay('')
+    setCopyToCat('')
+    alert(`✅ Copied to ${targetPitcher.name}`)
   }
 
   const removeExercise=async(key:string,idx:number)=>{
@@ -813,6 +835,7 @@ Write next week's program by day and category (Pre-Throwing, Throwing, Post-Thro
                                       {ex.notes&&<div style={{fontSize:9,color:C.textDim,fontStyle:'italic',marginTop:1}}>{ex.notes}</div>}
                                       {exerciseVideos[ex.id]&&<a href={exerciseVideos[ex.id]} target="_blank" rel="noopener noreferrer" style={{fontSize:9,color:C.blue,display:'block',marginTop:2}}>Video</a>}
                                     </div>
+                                    <button onClick={()=>setCopyModal({ex,fromKey:key})} style={{background:'transparent',border:'none',color:C.blue,cursor:'pointer',fontSize:9,padding:'0 2px',lineHeight:1,flexShrink:0}}>copy</button>
                                     <button onClick={()=>removeExercise(key,i)} style={{background:'transparent',border:'none',color:C.textDim,cursor:'pointer',fontSize:11,padding:'0 2px',lineHeight:1,flexShrink:0}}>x</button>
                                   </div>
                                 ))}
@@ -1162,6 +1185,47 @@ Write next week's program by day and category (Pre-Throwing, Throwing, Post-Thro
           </div>
         </div>
       )}
+    {copyModal&&(
+      <div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.7)',zIndex:9999,display:'flex',alignItems:'center',justifyContent:'center'}} onClick={()=>setCopyModal(null)}>
+        <div style={{background:'#1a1a2e',border:'1px solid rgba(255,255,255,0.1)',borderRadius:12,padding:24,minWidth:320,maxWidth:400}} onClick={e=>e.stopPropagation()}>
+          <div style={{fontSize:15,fontWeight:700,color:'#fff',marginBottom:4}}>Copy Exercise</div>
+          <div style={{fontSize:12,color:'#888',marginBottom:16}}>{copyModal.ex.name} · {copyModal.ex.sets}x{copyModal.ex.reps}{copyModal.ex.load?` @ ${copyModal.ex.load}%`:''}</div>
+          <div style={{marginBottom:12}}>
+            <div style={{fontSize:11,color:'#888',marginBottom:4}}>Copy to Pitcher</div>
+            <select value={copyToPitcher?.id||''} onChange={e=>setCopyToPitcher(pitchers.find((p:any)=>p.id===e.target.value)||null)} style={{width:'100%',background:'#0d0d1a',border:'1px solid rgba(255,255,255,0.1)',borderRadius:6,padding:'8px 10px',fontSize:13,color:'#fff',outline:'none'}}>
+              <option value=''>Select pitcher...</option>
+              {pitchers.filter((p:any)=>p.id!==selected?.id).map((p:any)=>(
+                <option key={p.id} value={p.id}>{p.full_name}</option>
+              ))}
+            </select>
+          </div>
+          <div style={{marginBottom:12}}>
+            <div style={{fontSize:11,color:'#888',marginBottom:4}}>Day</div>
+            <select value={copyToDay} onChange={e=>setCopyToDay(e.target.value)} style={{width:'100%',background:'#0d0d1a',border:'1px solid rgba(255,255,255,0.1)',borderRadius:6,padding:'8px 10px',fontSize:13,color:'#fff',outline:'none'}}>
+              <option value=''>Select day...</option>
+              {['Monday','Tuesday','Wednesday','Thursday','Friday','Saturday','Sunday'].map(d=>(
+                <option key={d} value={d}>{d}</option>
+              ))}
+            </select>
+          </div>
+          <div style={{marginBottom:20}}>
+            <div style={{fontSize:11,color:'#888',marginBottom:4}}>Category</div>
+            <select value={copyToCat} onChange={e=>setCopyToCat(e.target.value)} style={{width:'100%',background:'#0d0d1a',border:'1px solid rgba(255,255,255,0.1)',borderRadius:6,padding:'8px 10px',fontSize:13,color:'#fff',outline:'none'}}>
+              <option value=''>Select category...</option>
+              {['Pre-Throwing','Throwing','Post-Throwing','Main Exercises','Accessory','Conditioning','Recovery'].map(c=>(
+                <option key={c} value={c}>{c}</option>
+              ))}
+            </select>
+          </div>
+          <div style={{display:'flex',gap:8}}>
+            <button onClick={()=>setCopyModal(null)} style={{flex:1,background:'transparent',border:'1px solid rgba(255,255,255,0.1)',borderRadius:8,padding:'10px',fontSize:13,color:'#888',cursor:'pointer'}}>Cancel</button>
+            <button onClick={()=>copyExerciseToPitcher(copyModal.ex,copyToPitcher,copyToDay,copyToCat)} disabled={!copyToPitcher||!copyToDay||!copyToCat||copySaving} style={{flex:2,background:copyToPitcher&&copyToDay&&copyToCat?'rgba(57,211,83,0.15)':'rgba(255,255,255,0.05)',border:`1px solid ${copyToPitcher&&copyToDay&&copyToCat?'rgba(57,211,83,0.4)':'rgba(255,255,255,0.1)'}`,borderRadius:8,padding:'10px',fontSize:13,color:copyToPitcher&&copyToDay&&copyToCat?'#39d353':'#555',cursor:copyToPitcher&&copyToDay&&copyToCat?'pointer':'not-allowed'}}>
+              {copySaving?'Copying...':'Copy Exercise'}
+            </button>
+          </div>
+        </div>
+      </div>
+    )}
     </div>
   )
 }

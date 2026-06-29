@@ -3,6 +3,7 @@
 import { useEffect, useState, useMemo } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { useRouter } from 'next/navigation'
+import PitchingIQ from '@/app/components/PitchingIQ'
 
 const C = {
   bg:'#0d1117',bg2:'#161b22',bg3:'#1c2333',border:'#30363d',
@@ -565,7 +566,7 @@ Write next week's program by day and category (Pre-Throwing, Throwing, Post-Thro
               </div>
 
               <div style={{display:'flex',gap:6,marginBottom:16,flexWrap:'wrap' as const}}>
-                {['overview','logs','program','notes','messages'].map(t=>(
+                {['overview','logs','program','notes','messages','iq'].map(t=>(
                   <button key={t} style={S.tab(tab===t)} onClick={()=>setTab(t)}>{t}</button>
                 ))}
               </div>
@@ -863,6 +864,9 @@ Write next week's program by day and category (Pre-Throwing, Throwing, Post-Thro
                     <button style={S.btn('gold')} onClick={sendMessage}>Send</button>
                   </div>
                 </div>
+              )}
+              {tab==='iq'&&(
+                <div style={{padding:4}}><PitchingIQ/></div>
               )}
             </div>
             )
