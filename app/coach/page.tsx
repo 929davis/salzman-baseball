@@ -374,7 +374,7 @@ export default function CoachDashboard(){
       const sets=parseInt(setsRepsMatch[1])
       const reps=parseInt(setsRepsMatch[2])
       const load=setsRepsMatch[3]||''
-      const allExercises=[...exercises,...customExercises]
+      const allExercises=[...BUILT_IN_EXERCISES,...customExercises]
       const match=allExercises.find((e:any)=>e.name.toLowerCase()===exName.toLowerCase())
       if(!match){skipped.push('Not in library: '+exName);continue}
       const key=currentDay+'___'+cat
