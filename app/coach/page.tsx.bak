@@ -260,7 +260,6 @@ export default function CoachDashboard(){
   const [editingExercise,setEditingExercise]=useState<any>(null)
   const [editForm,setEditForm]=useState<any>(null)
   const [editSaving,setEditSaving]=useState(false)
-  const [editingProgramItem,setEditingProgramItem]=useState<{key:string,idx:number}|null>(null)
   const [libSearch,setLibSearch]=useState('')
   const [libCat,setLibCat]=useState('All')
   const [recommendationRules,setRecommendationRules]=useState<any[]>([])
@@ -452,17 +451,9 @@ export default function CoachDashboard(){
     setEditingExercise(null);setEditForm(null);setEditSaving(false)
   }
 
-  const openPicker=(day:string,cat:string,editItem?:{idx:number,ex:any})=>{
+  const openPicker=(day:string,cat:string)=>{
     setPickerCell({day,cat});setPickerSearch('');setPickerCNS('All');setPickerCat(cat)
-    setVideoSaved(false);setShowCustomForm(false)
-    if (editItem){
-      const ex=EXERCISE_DB.find(e=>e.id===editItem.ex.id)||editItem.ex
-      setAddForm({exercise:ex,sets:String(editItem.ex.sets),reps:String(editItem.ex.reps),load:editItem.ex.load||'',notes:editItem.ex.notes||''})
-      setVideoInput(exerciseVideos[editItem.ex.id]||'')
-      setEditingProgramItem({key:`${day}___${cat}`,idx:editItem.idx})
-    } else {
-      setAddForm(null);setVideoInput('');setEditingProgramItem(null)
-    }
+    setAddForm(null);setVideoInput('');setVideoSaved(false);setShowCustomForm(false)
     setShowPicker(true)
   }
 
@@ -470,20 +461,15 @@ export default function CoachDashboard(){
     if (!addForm||!pickerCell)return
     const {exercise,sets,reps,load,notes:exNotes}=addForm
     if (videoInput.trim()&&!exerciseVideos[exercise.id])await saveVideo(exercise.id,videoInput)
-    const newItem={id:exercise.id,name:exercise.name,sets:parseInt(sets)||0,reps:parseInt(reps)||0,load:load||'',notes:exNotes||'',cns:exercise.cns,category:exercise.category,pattern:exercise.pattern}
-    let newStructured:any
-    if (editingProgramItem){
-      const list=[...(structuredDays[editingProgramItem.key]||[])]
-      list[editingProgramItem.idx]=newItem
-      newStructured={...structuredDays,[editingProgramItem.key]:list}
-    } else {
-      const key=`${pickerCell.day}___${pickerCell.cat}`
-      const current=structuredDays[key]||[]
-      newStructured={...structuredDays,[key]:[...current,newItem]}
-    }
+    const key=`${pickerCell.day}___${pickerCell.cat}`
+    const current=structuredDays[key]||[]
+    const newStructured={...structuredDays,[key]:[...current,{
+      id:exercise.id,name:exercise.name,sets:parseInt(sets)||0,reps:parseInt(reps)||0,
+      load:load||'',notes:exNotes||'',cns:exercise.cns,category:exercise.category,pattern:exercise.pattern
+    }]}
     setStructuredDays(newStructured)
     await saveProgram(newStructured,cellNotes)
-    setAddForm(null);setShowPicker(false);setEditingProgramItem(null)
+    setAddForm(null);setShowPicker(false)
   }
 
   const copyExerciseToPitcher=async(ex:any,targetPitcher:any,day:string,cat:string)=>{
@@ -895,7 +881,6 @@ Write next week's program by day and category (Pre-Throwing, Throwing, Post-Thro
                                       {ex.notes&&<div style={{fontSize:9,color:C.textDim,fontStyle:'italic',marginTop:1}}>{ex.notes}</div>}
                                       {exerciseVideos[ex.id]&&<a href={exerciseVideos[ex.id]} target="_blank" rel="noopener noreferrer" style={{fontSize:9,color:C.blue,display:'block',marginTop:2}}>Video</a>}
                                     </div>
-                                    <button onClick={()=>openPicker(day,cat.key,{idx:i,ex})} style={{background:'transparent',border:'none',color:C.gold,cursor:'pointer',fontSize:9,padding:'0 2px',lineHeight:1,flexShrink:0}}>edit</button>
                                     <button onClick={()=>setCopyModal({ex,fromKey:key})} style={{background:'transparent',border:'none',color:C.blue,cursor:'pointer',fontSize:9,padding:'0 2px',lineHeight:1,flexShrink:0}}>copy</button>
                                     <button onClick={()=>removeExercise(key,i)} style={{background:'transparent',border:'none',color:C.textDim,cursor:'pointer',fontSize:11,padding:'0 2px',lineHeight:1,flexShrink:0}}>x</button>
                                   </div>
@@ -1148,10 +1133,10 @@ Write next week's program by day and category (Pre-Throwing, Throwing, Post-Thro
           <div style={{background:C.bg2,border:`1px solid ${C.border}`,borderRadius:12,width:'100%',maxWidth:580,maxHeight:'82vh',display:'flex',flexDirection:'column' as const}}>
             <div style={{padding:'14px 18px',borderBottom:`1px solid ${C.border}`,display:'flex',justifyContent:'space-between',alignItems:'center',flexShrink:0}}>
               <div>
-                <div style={{fontSize:14,fontWeight:700,color:C.white}}>{editingProgramItem?'Edit Exercise':'Add Exercise'}</div>
+                <div style={{fontSize:14,fontWeight:700,color:C.white}}>Add Exercise</div>
                 {pickerCell&&<div style={{fontSize:11,color:C.textMuted,marginTop:2}}>{pickerCell.day} · <span style={{color:CAT_MAP[pickerCell.cat]?.color||C.textMuted}}>{pickerCell.cat}</span></div>}
               </div>
-              <button onClick={()=>{setShowPicker(false);setAddForm(null);setShowCustomForm(false);setEditingProgramItem(null)}} style={{background:'transparent',border:'none',color:C.textMuted,fontSize:18,cursor:'pointer',lineHeight:1}}>x</button>
+              <button onClick={()=>{setShowPicker(false);setAddForm(null);setShowCustomForm(false)}} style={{background:'transparent',border:'none',color:C.textMuted,fontSize:18,cursor:'pointer',lineHeight:1}}>x</button>
             </div>
             {!addForm&&(
               <>
@@ -1201,7 +1186,7 @@ Write next week's program by day and category (Pre-Throwing, Throwing, Post-Thro
             )}
             {addForm&&(
               <div style={{padding:18,overflowY:'auto' as const,flex:1}}>
-                <button onClick={()=>{setAddForm(null);setEditingProgramItem(null)}} style={{background:'transparent',border:'none',color:C.textMuted,cursor:'pointer',fontSize:12,marginBottom:14}}>Back to library</button>
+                <button onClick={()=>setAddForm(null)} style={{background:'transparent',border:'none',color:C.textMuted,cursor:'pointer',fontSize:12,marginBottom:14}}>Back to library</button>
                 <div style={{marginBottom:14,padding:'12px 14px',background:CAT_MAP[addForm.exercise.category]?.bg||C.bg3,border:`1px solid ${CAT_MAP[addForm.exercise.category]?.border||C.border}`,borderRadius:8,borderLeft:`4px solid ${CAT_MAP[addForm.exercise.category]?.color||C.textMuted}`}}>
                   <div style={{fontSize:15,fontWeight:700,color:C.white,marginBottom:4}}>{addForm.exercise.name}</div>
                   <div style={{display:'flex',gap:8,alignItems:'center',marginBottom:6}}>
@@ -1239,7 +1224,7 @@ Write next week's program by day and category (Pre-Throwing, Throwing, Post-Thro
                   Will add: <span style={{color:C.gold,fontWeight:600}}>{addForm.exercise.name} {addForm.sets}x{addForm.reps}{addForm.load?` @ ${addForm.load}%`:''}{addForm.notes?` - ${addForm.notes}`:''}</span>
                 </div>
                 <button style={{...S.btn('gold'),width:'100%',padding:'12px',fontSize:14,textAlign:'center' as const}} onClick={confirmAddExercise}>
-                  {editingProgramItem?'Save Changes':`Add to ${pickerCell?.day} - ${pickerCell?.cat}`}
+                  Add to {pickerCell?.day} - {pickerCell?.cat}
                 </button>
               </div>
             )}
