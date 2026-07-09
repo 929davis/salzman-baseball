@@ -9,10 +9,7 @@ jobs:
     steps:
       - name: Call Statcast fetch endpoint
         run: |
-          echo "Secret length: ${#CRON_SECRET}"
           curl -X GET \
-            -H "Authorization: Bearer ${CRON_SECRET}" \
             -w "\nHTTP Status: %{http_code}\n" \
+            -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}" \
             https://salzman-baseball.vercel.app/api/cron/fetch-statcast
-        env:
-          CRON_SECRET: ${{ secrets.CRON_SECRET }}
