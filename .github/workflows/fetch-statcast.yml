@@ -1,4 +1,13 @@
-- name: Call Statcast fetch endpoint
+name: Fetch Statcast Data
+on:
+  schedule:
+    - cron: '0 10 * * *'  # 6am ET every day
+  workflow_dispatch:        # allows manual trigger from GitHub Actions tab
+jobs:
+  fetch:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Call Statcast fetch endpoint
         run: |
           echo "Secret length: ${#CRON_SECRET}"
           curl -X GET \
