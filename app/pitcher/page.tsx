@@ -87,14 +87,26 @@ const CLASS_COLORS:Record<string,{bg:string,border:string,text:string,desc:strin
   'No Data':{bg:'rgba(72,79,88,0.1)',border:'rgba(72,79,88,0.35)',text:'#7d8590',desc:'No CMJ data yet. Complete a CMJ test to see your neuromuscular profile.'},
 }
 
-const calcJumpHeight=(takeoff:number,landing:number,fps:number)=>{
-  const ft=(landing-takeoff)/fps
+const parseTime=(s:string):number=>{
+  const t=s.trim()
+  if (t.includes(':')){
+    const [m,sec]=t.split(':')
+    const mins=parseFloat(m)
+    const secs=parseFloat(sec)
+    if (isNaN(mins)||isNaN(secs))return NaN
+    return mins*60+secs
+  }
+  return parseFloat(t)
+}
+
+const calcJumpHeight=(takeoff:number,landing:number)=>{
+  const ft=landing-takeoff
   return (9.81*ft*ft)/8*39.3701
 }
 
-const calcCMJFn=({startFrame,takeoffFrame,landingFrame,fps,massKg}:{startFrame:number,takeoffFrame:number,landingFrame:number,fps:number,massKg:number})=>{
-  const ft=(landingFrame-takeoffFrame)/fps
-  const ttt=(takeoffFrame-startFrame)/fps
+const calcCMJFn=({startTime,takeoffTime,landingTime,massKg}:{startTime:number,takeoffTime:number,landingTime:number,massKg:number})=>{
+  const ft=landingTime-takeoffTime
+  const ttt=takeoffTime-startTime
   const jh=(9.81*ft*ft)/8
   const jhc=jh*100
   const jhi=jh*39.3701
@@ -176,18 +188,18 @@ export default function PitcherDashboard(){
   const [showGuidelines,setShowGuidelines]=useState(false)
 
   // Assessment forms
-  const [cmjForm,setCmjForm]=useState({date:new Date().toISOString().split('T')[0],bodyweight:'',weightUnit:'lbs',fps:'240',startFrame:'',takeoffFrame:'',landingFrame:'',notes:''})
+  const [cmjForm,setCmjForm]=useState({date:new Date().toISOString().split('T')[0],bodyweight:'',weightUnit:'lbs',fps:'240',startTime:'',takeoffTime:'',landingTime:'',notes:''})
   const [cmjResult,setCmjResult]=useState<any>(null)
   const [cmjErr,setCmjErr]=useState('')
-  const [sjForm,setSjForm]=useState({date:new Date().toISOString().split('T')[0],bodyweight:'',weightUnit:'lbs',fps:'240',startFrame:'',takeoffFrame:'',landingFrame:'',notes:''})
+  const [sjForm,setSjForm]=useState({date:new Date().toISOString().split('T')[0],bodyweight:'',weightUnit:'lbs',fps:'240',startTime:'',takeoffTime:'',landingTime:'',notes:''})
   const [sjResult,setSjResult]=useState<any>(null)
   const [sjErr,setSjErr]=useState('')
-  const [slForm,setSlForm]=useState({date:new Date().toISOString().split('T')[0],bodyweight:'',weightUnit:'lbs',fps:'240',leftTakeoff:'',leftLanding:'',rightTakeoff:'',rightLanding:'',notes:''})
+  const [slForm,setSlForm]=useState({date:new Date().toISOString().split('T')[0],bodyweight:'',weightUnit:'lbs',fps:'240',leftTakeoffTime:'',leftLandingTime:'',rightTakeoffTime:'',rightLandingTime:'',notes:''})
   const [slResult,setSlResult]=useState<any>(null)
   const [slErr,setSlErr]=useState('')
   const [hopForm,setHopForm]=useState({date:new Date().toISOString().split('T')[0],leftDistance:'',rightDistance:'',notes:''})
   const [hopResult,setHopResult]=useState<any>(null)
-  const [plyoForm,setPlyoForm]=useState({date:new Date().toISOString().split('T')[0],fps:'240',takeoffFrame:'',landingFrame:'',notes:''})
+  const [plyoForm,setPlyoForm]=useState({date:new Date().toISOString().split('T')[0],fps:'240',takeoffTime:'',landingTime:'',notes:''})
   const [plyoResult,setPlyoResult]=useState<any>(null)
   const [plyoErr,setPlyoErr]=useState('')
   const [assessTab,setAssessTab]=useState('cmj')
@@ -305,75 +317,77 @@ export default function PitcherDashboard(){
   // Assessment calcs
   const calcCMJHandler=()=>{
     setCmjErr('')
-    const bw=parseFloat(cmjForm.bodyweight),fps=parseFloat(cmjForm.fps)
-    const sf=parseFloat(cmjForm.startFrame),tf=parseFloat(cmjForm.takeoffFrame),lf=parseFloat(cmjForm.landingFrame)
-    if (!bw||isNaN(sf)||isNaN(tf)||isNaN(lf)||tf<=sf||lf<=tf){setCmjErr('Check your inputs.');return}
+    const bw=parseFloat(cmjForm.bodyweight)
+    const st=parseTime(cmjForm.startTime),tt=parseTime(cmjForm.takeoffTime),lt=parseTime(cmjForm.landingTime)
+    if (!bw||isNaN(st)||isNaN(tt)||isNaN(lt)||tt<=st||lt<=tt){setCmjErr('Check your inputs.');return}
     const massKg=cmjForm.weightUnit==='lbs'?bw*0.453592:bw
-    setCmjResult(calcCMJFn({startFrame:sf,takeoffFrame:tf,landingFrame:lf,fps,massKg}))
+    setCmjResult(calcCMJFn({startTime:st,takeoffTime:tt,landingTime:lt,massKg}))
   }
   const saveCMJ=async()=>{
     if (!cmjResult||!profile)return
     const bw=parseFloat(cmjForm.bodyweight)
     const massKg=cmjForm.weightUnit==='lbs'?bw*0.453592:bw
+    const fps=parseFloat(cmjForm.fps)
     await supabase.from('cmj_results').insert({
       pitcher_id:profile.id,test_date:cmjForm.date,bodyweight:bw,weight_unit:cmjForm.weightUnit,
-      fps:parseInt(cmjForm.fps),start_frame:parseInt(cmjForm.startFrame),
-      takeoff_frame:parseInt(cmjForm.takeoffFrame),landing_frame:parseInt(cmjForm.landingFrame),
+      fps:parseInt(cmjForm.fps),start_frame:Math.round(parseTime(cmjForm.startTime)*fps),
+      takeoff_frame:Math.round(parseTime(cmjForm.takeoffTime)*fps),landing_frame:Math.round(parseTime(cmjForm.landingTime)*fps),
       flight_time:cmjResult.flightTime,jump_height_in:cmjResult.jumpHeightIn,rsi_mod:cmjResult.rsiMod,
       peak_power_per_kg:cmjResult.peakPowerPerKg,takeoff_velocity:cmjResult.takeoffVelocity,
       explosive_index:cmjResult.explosiveIndex,estimated_velocity:cmjResult.estimatedVelocity,notes:cmjForm.notes||null
     })
     const {data}=await supabase.from('cmj_results').select('*').eq('pitcher_id',profile.id).order('test_date',{ascending:false})
     setCmjResults(data||[]);setCmjResult(null)
-    setCmjForm({date:new Date().toISOString().split('T')[0],bodyweight:'',weightUnit:'lbs',fps:'240',startFrame:'',takeoffFrame:'',landingFrame:'',notes:''})
+    setCmjForm({date:new Date().toISOString().split('T')[0],bodyweight:'',weightUnit:'lbs',fps:'240',startTime:'',takeoffTime:'',landingTime:'',notes:''})
   }
   const calcSJHandler=()=>{
     setSjErr('')
-    const bw=parseFloat(sjForm.bodyweight),fps=parseFloat(sjForm.fps)
-    const sf=parseFloat(sjForm.startFrame),tf=parseFloat(sjForm.takeoffFrame),lf=parseFloat(sjForm.landingFrame)
-    if (!bw||isNaN(sf)||isNaN(tf)||isNaN(lf)||tf<=sf||lf<=tf){setSjErr('Check your inputs.');return}
+    const bw=parseFloat(sjForm.bodyweight)
+    const st=parseTime(sjForm.startTime),tt=parseTime(sjForm.takeoffTime),lt=parseTime(sjForm.landingTime)
+    if (!bw||isNaN(st)||isNaN(tt)||isNaN(lt)||tt<=st||lt<=tt){setSjErr('Check your inputs.');return}
     const massKg=sjForm.weightUnit==='lbs'?bw*0.453592:bw
-    setSjResult(calcCMJFn({startFrame:sf,takeoffFrame:tf,landingFrame:lf,fps,massKg}))
+    setSjResult(calcCMJFn({startTime:st,takeoffTime:tt,landingTime:lt,massKg}))
   }
   const saveSJ=async()=>{
     if (!sjResult||!profile)return
     const bw=parseFloat(sjForm.bodyweight)
+    const fps=parseFloat(sjForm.fps)
     await supabase.from('squat_jump_results').insert({
       pitcher_id:profile.id,test_date:sjForm.date,bodyweight:bw,weight_unit:sjForm.weightUnit,
-      fps:parseInt(sjForm.fps),start_frame:parseInt(sjForm.startFrame),
-      takeoff_frame:parseInt(sjForm.takeoffFrame),landing_frame:parseInt(sjForm.landingFrame),
+      fps:parseInt(sjForm.fps),start_frame:Math.round(parseTime(sjForm.startTime)*fps),
+      takeoff_frame:Math.round(parseTime(sjForm.takeoffTime)*fps),landing_frame:Math.round(parseTime(sjForm.landingTime)*fps),
       flight_time:sjResult.flightTime,jump_height_in:sjResult.jumpHeightIn,
       peak_power_per_kg:sjResult.peakPowerPerKg,notes:sjForm.notes||null
     })
     const {data}=await supabase.from('squat_jump_results').select('*').eq('pitcher_id',profile.id).order('test_date',{ascending:false})
     setSqJumpResults(data||[]);setSjResult(null)
-    setSjForm({date:new Date().toISOString().split('T')[0],bodyweight:'',weightUnit:'lbs',fps:'240',startFrame:'',takeoffFrame:'',landingFrame:'',notes:''})
+    setSjForm({date:new Date().toISOString().split('T')[0],bodyweight:'',weightUnit:'lbs',fps:'240',startTime:'',takeoffTime:'',landingTime:'',notes:''})
   }
   const calcSLHandler=()=>{
     setSlErr('')
-    const fps=parseFloat(slForm.fps)
-    const lt=parseFloat(slForm.leftTakeoff),ll=parseFloat(slForm.leftLanding)
-    const rt=parseFloat(slForm.rightTakeoff),rl=parseFloat(slForm.rightLanding)
+    const lt=parseTime(slForm.leftTakeoffTime),ll=parseTime(slForm.leftLandingTime)
+    const rt=parseTime(slForm.rightTakeoffTime),rl=parseTime(slForm.rightLandingTime)
     if (isNaN(lt)||isNaN(ll)||isNaN(rt)||isNaN(rl)||ll<=lt||rl<=rt){setSlErr('Check your inputs.');return}
-    const leftJH=calcJumpHeight(lt,ll,fps)
-    const rightJH=calcJumpHeight(rt,rl,fps)
+    const leftJH=calcJumpHeight(lt,ll)
+    const rightJH=calcJumpHeight(rt,rl)
     const lsi=(Math.min(leftJH,rightJH)/Math.max(leftJH,rightJH))*100
-    setSlResult({leftJH,rightJH,lsi,leftFT:(ll-lt)/fps,rightFT:(rl-rt)/fps})
+    setSlResult({leftJH,rightJH,lsi,leftFT:ll-lt,rightFT:rl-rt})
   }
   const saveSL=async()=>{
     if (!slResult||!profile)return
+    const fps=parseFloat(slForm.fps)
     await supabase.from('single_leg_cmj_results').insert({
       pitcher_id:profile.id,test_date:slForm.date,
       bodyweight:parseFloat(slForm.bodyweight)||null,weight_unit:slForm.weightUnit,fps:parseInt(slForm.fps),
-      left_takeoff_frame:parseInt(slForm.leftTakeoff),left_landing_frame:parseInt(slForm.leftLanding),
+      left_takeoff_frame:Math.round(parseTime(slForm.leftTakeoffTime)*fps),left_landing_frame:Math.round(parseTime(slForm.leftLandingTime)*fps),
       left_flight_time:slResult.leftFT,left_jump_height_in:slResult.leftJH,
-      right_takeoff_frame:parseInt(slForm.rightTakeoff),right_landing_frame:parseInt(slForm.rightLanding),
+      right_takeoff_frame:Math.round(parseTime(slForm.rightTakeoffTime)*fps),right_landing_frame:Math.round(parseTime(slForm.rightLandingTime)*fps),
       right_flight_time:slResult.rightFT,right_jump_height_in:slResult.rightJH,
       lsi:slResult.lsi,notes:slForm.notes||null
     })
     const {data}=await supabase.from('single_leg_cmj_results').select('*').eq('pitcher_id',profile.id).order('test_date',{ascending:false})
     setSlCmjResults(data||[]);setSlResult(null)
-    setSlForm({date:new Date().toISOString().split('T')[0],bodyweight:'',weightUnit:'lbs',fps:'240',leftTakeoff:'',leftLanding:'',rightTakeoff:'',rightLanding:'',notes:''})
+    setSlForm({date:new Date().toISOString().split('T')[0],bodyweight:'',weightUnit:'lbs',fps:'240',leftTakeoffTime:'',leftLandingTime:'',rightTakeoffTime:'',rightLandingTime:'',notes:''})
   }
   const calcHopHandler=()=>{
     const l=parseFloat(hopForm.leftDistance),r=parseFloat(hopForm.rightDistance)
@@ -393,21 +407,22 @@ export default function PitcherDashboard(){
   }
   const calcPlyoHandler=()=>{
     setPlyoErr('')
-    const fps=parseFloat(plyoForm.fps),tf=parseFloat(plyoForm.takeoffFrame),lf=parseFloat(plyoForm.landingFrame)
-    if (isNaN(tf)||isNaN(lf)||lf<=tf){setPlyoErr('Check your inputs.');return}
-    const ft=(lf-tf)/fps
+    const tt=parseTime(plyoForm.takeoffTime),lt=parseTime(plyoForm.landingTime)
+    if (isNaN(tt)||isNaN(lt)||lt<=tt){setPlyoErr('Check your inputs.');return}
+    const ft=lt-tt
     setPlyoResult({flightTime:ft,jumpHeightIn:(9.81*ft*ft)/8*39.3701})
   }
   const savePlyo=async()=>{
     if (!plyoResult||!profile)return
+    const fps=parseFloat(plyoForm.fps)
     await supabase.from('plyo_pushup_results').insert({
       pitcher_id:profile.id,test_date:plyoForm.date,fps:parseInt(plyoForm.fps),
-      takeoff_frame:parseInt(plyoForm.takeoffFrame),landing_frame:parseInt(plyoForm.landingFrame),
+      takeoff_frame:Math.round(parseTime(plyoForm.takeoffTime)*fps),landing_frame:Math.round(parseTime(plyoForm.landingTime)*fps),
       flight_time:plyoResult.flightTime,jump_height_in:plyoResult.jumpHeightIn,notes:plyoForm.notes||null
     })
     const {data}=await supabase.from('plyo_pushup_results').select('*').eq('pitcher_id',profile.id).order('test_date',{ascending:false})
     setPlyoPushupResults(data||[]);setPlyoResult(null)
-    setPlyoForm({date:new Date().toISOString().split('T')[0],fps:'240',takeoffFrame:'',landingFrame:'',notes:''})
+    setPlyoForm({date:new Date().toISOString().split('T')[0],fps:'240',takeoffTime:'',landingTime:'',notes:''})
   }
 
   const latestCMJ=cmjResults[0]
@@ -441,7 +456,7 @@ export default function PitcherDashboard(){
       {fields.map(f=>(
         <div key={f.key}>
           <label style={lbl}>{f.label}</label>
-          <input type="text" inputMode="numeric" pattern="[0-9]*" style={inp} placeholder={f.placeholder} value={form[f.key]} onChange={e=>setForm((prev:any)=>({...prev,[f.key]:e.target.value}))}/>
+          <input type="text" style={inp} placeholder={f.placeholder} value={form[f.key]} onChange={e=>setForm((prev:any)=>({...prev,[f.key]:e.target.value}))}/>
         </div>
       ))}
     </div>
@@ -715,7 +730,7 @@ export default function PitcherDashboard(){
         {tab==='assess'&&(
           <div>
             <div style={{fontSize:18,fontWeight:700,color:C.white,marginBottom:4}}>Assessments</div>
-            <div style={{fontSize:12,color:C.textMuted,marginBottom:16}}>Film at 240 FPS · Open in Photos · Edit · Scrub to find frames</div>
+            <div style={{fontSize:12,color:C.textMuted,marginBottom:16}}>Film at 240 FPS · Open in Photos · Edit · Scrub to find timestamps</div>
             <div style={{display:'flex',gap:6,marginBottom:16,overflowX:'auto' as const,paddingBottom:4}}>
               {[{id:'cmj',label:'CMJ'},{id:'squat_jump',label:'Squat Jump'},{id:'single_leg',label:'Single Leg'},{id:'triple_hop',label:'Triple Hop'},{id:'plyo_pushup',label:'Plyo Push Up'}].map(t=>(
                 <button key={t.id} onClick={()=>setAssessTab(t.id)} style={{background:assessTab===t.id?C.gold:C.bg3,color:assessTab===t.id?C.bg:C.textMuted,border:`1px solid ${assessTab===t.id?C.gold:C.border}`,borderRadius:8,padding:'8px 14px',fontSize:12,fontWeight:assessTab===t.id?700:400,cursor:'pointer',whiteSpace:'nowrap' as const,flexShrink:0}}>{t.label}</button>
@@ -726,7 +741,7 @@ export default function PitcherDashboard(){
               <div>
                 <div style={{...card,background:'rgba(88,166,255,0.05)',border:'1px solid rgba(88,166,255,0.2)',marginBottom:12}}>
                   <div style={{fontSize:12,fontWeight:700,color:C.blue,marginBottom:4}}>Countermovement Jump (CMJ)</div>
-                  <div style={{fontSize:12,color:C.textMuted,lineHeight:1.6}}>Squat down then jump as high as possible. Film at 240fps and record the frame numbers below.</div>
+                  <div style={{fontSize:12,color:C.textMuted,lineHeight:1.6}}>Squat down then jump as high as possible. Film at 240fps and record the timestamps below.</div>
                 </div>
                 <div style={card}>
                   <label style={lbl}>Date</label>
@@ -738,7 +753,7 @@ export default function PitcherDashboard(){
                   </div>
                   <label style={lbl}>FPS</label>
                   <select style={inp} value={cmjForm.fps} onChange={e=>setCmjForm(f=>({...f,fps:e.target.value}))}><option value="240">240 FPS (iPhone)</option><option value="120">120 FPS</option><option value="480">480 FPS</option></select>
-                  <FrameInputs form={cmjForm} setForm={setCmjForm} fields={[{key:'startFrame',label:'Start Frame',placeholder:'Frame when you start descending'},{key:'takeoffFrame',label:'Takeoff Frame',placeholder:'Frame when feet leave ground'},{key:'landingFrame',label:'Landing Frame',placeholder:'Frame when feet hit ground'}]}/>
+                  <FrameInputs form={cmjForm} setForm={setCmjForm} fields={[{key:'startTime',label:'Start Time',placeholder:'e.g. 0:03.20'},{key:'takeoffTime',label:'Takeoff Time',placeholder:'e.g. 0:03.20'},{key:'landingTime',label:'Landing Time',placeholder:'e.g. 0:03.20'}]}/>
                   {cmjErr&&<div style={{color:C.red,fontSize:13,marginTop:8,padding:'10px',background:'rgba(248,81,73,0.1)',borderRadius:8}}>{cmjErr}</div>}
                   <button style={btn('gold')} onClick={calcCMJHandler}>Calculate</button>
                 </div>
@@ -794,7 +809,7 @@ export default function PitcherDashboard(){
                   </div>
                   <label style={lbl}>FPS</label>
                   <select style={inp} value={sjForm.fps} onChange={e=>setSjForm(f=>({...f,fps:e.target.value}))}><option value="240">240 FPS</option><option value="120">120 FPS</option></select>
-                  <FrameInputs form={sjForm} setForm={setSjForm} fields={[{key:'startFrame',label:'Start Frame',placeholder:'Frame at bottom of squat hold'},{key:'takeoffFrame',label:'Takeoff Frame',placeholder:'Frame when feet leave ground'},{key:'landingFrame',label:'Landing Frame',placeholder:'Frame when feet hit ground'}]}/>
+                  <FrameInputs form={sjForm} setForm={setSjForm} fields={[{key:'startTime',label:'Start Time',placeholder:'e.g. 0:03.20'},{key:'takeoffTime',label:'Takeoff Time',placeholder:'e.g. 0:03.20'},{key:'landingTime',label:'Landing Time',placeholder:'e.g. 0:03.20'}]}/>
                   {sjErr&&<div style={{color:C.red,fontSize:13,marginTop:8,padding:'10px',background:'rgba(248,81,73,0.1)',borderRadius:8}}>{sjErr}</div>}
                   <button style={btn('gold')} onClick={calcSJHandler}>Calculate</button>
                 </div>
@@ -838,9 +853,9 @@ export default function PitcherDashboard(){
                   <label style={lbl}>FPS</label>
                   <select style={inp} value={slForm.fps} onChange={e=>setSlForm(f=>({...f,fps:e.target.value}))}><option value="240">240 FPS</option><option value="120">120 FPS</option></select>
                   <div style={{fontSize:11,color:C.teal,fontWeight:700,textTransform:'uppercase' as const,letterSpacing:'0.5px',marginTop:14,marginBottom:8}}>Left Leg</div>
-                  <FrameInputs form={slForm} setForm={setSlForm} fields={[{key:'leftTakeoff',label:'Left Takeoff Frame',placeholder:'Frame when left foot leaves ground'},{key:'leftLanding',label:'Left Landing Frame',placeholder:'Frame when left foot hits ground'}]}/>
+                  <FrameInputs form={slForm} setForm={setSlForm} fields={[{key:'leftTakeoffTime',label:'Left Takeoff Time',placeholder:'e.g. 0:03.20'},{key:'leftLandingTime',label:'Left Landing Time',placeholder:'e.g. 0:03.20'}]}/>
                   <div style={{fontSize:11,color:C.red,fontWeight:700,textTransform:'uppercase' as const,letterSpacing:'0.5px',marginTop:14,marginBottom:8}}>Right Leg</div>
-                  <FrameInputs form={slForm} setForm={setSlForm} fields={[{key:'rightTakeoff',label:'Right Takeoff Frame',placeholder:'Frame when right foot leaves ground'},{key:'rightLanding',label:'Right Landing Frame',placeholder:'Frame when right foot hits ground'}]}/>
+                  <FrameInputs form={slForm} setForm={setSlForm} fields={[{key:'rightTakeoffTime',label:'Right Takeoff Time',placeholder:'e.g. 0:03.20'},{key:'rightLandingTime',label:'Right Landing Time',placeholder:'e.g. 0:03.20'}]}/>
                   {slErr&&<div style={{color:C.red,fontSize:13,marginTop:8,padding:'10px',background:'rgba(248,81,73,0.1)',borderRadius:8}}>{slErr}</div>}
                   <button style={btn('gold')} onClick={calcSLHandler}>Calculate</button>
                 </div>
@@ -936,14 +951,14 @@ export default function PitcherDashboard(){
               <div>
                 <div style={{...card,background:'rgba(88,166,255,0.05)',border:'1px solid rgba(88,166,255,0.2)',marginBottom:12}}>
                   <div style={{fontSize:12,fontWeight:700,color:C.blue,marginBottom:4}}>Plyo Push Up</div>
-                  <div style={{fontSize:12,color:C.textMuted,lineHeight:1.6}}>Push up explosively so hands leave ground. Film at 240fps. Record takeoff and landing frames.</div>
+                  <div style={{fontSize:12,color:C.textMuted,lineHeight:1.6}}>Push up explosively so hands leave ground. Film at 240fps. Record takeoff and landing timestamps.</div>
                 </div>
                 <div style={card}>
                   <label style={lbl}>Date</label>
                   <input type="date" style={inp} value={plyoForm.date} onChange={e=>setPlyoForm(f=>({...f,date:e.target.value}))}/>
                   <label style={lbl}>FPS</label>
                   <select style={inp} value={plyoForm.fps} onChange={e=>setPlyoForm(f=>({...f,fps:e.target.value}))}><option value="240">240 FPS</option><option value="120">120 FPS</option></select>
-                  <FrameInputs form={plyoForm} setForm={setPlyoForm} fields={[{key:'takeoffFrame',label:'Takeoff Frame',placeholder:'Frame when hands leave ground'},{key:'landingFrame',label:'Landing Frame',placeholder:'Frame when hands hit ground'}]}/>
+                  <FrameInputs form={plyoForm} setForm={setPlyoForm} fields={[{key:'takeoffTime',label:'Takeoff Time',placeholder:'e.g. 0:03.20'},{key:'landingTime',label:'Landing Time',placeholder:'e.g. 0:03.20'}]}/>
                   {plyoErr&&<div style={{color:C.red,fontSize:13,marginTop:8,padding:'10px',background:'rgba(248,81,73,0.1)',borderRadius:8}}>{plyoErr}</div>}
                   <button style={btn('gold')} onClick={calcPlyoHandler}>Calculate</button>
                 </div>

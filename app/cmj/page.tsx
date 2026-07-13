@@ -12,9 +12,21 @@ const C = {
 
 const LEVELS = ['High School','College — JUCO','College — D3','College — D2','College — D1','Independent Pro','Minor League','Major League']
 
-const calcCMJ=({startFrame,takeoffFrame,landingFrame,fps,massKg}:{startFrame:number,takeoffFrame:number,landingFrame:number,fps:number,massKg:number})=>{
-  const ft=(landingFrame-takeoffFrame)/fps
-  const ttt=(takeoffFrame-startFrame)/fps
+const parseTime=(s:string):number=>{
+  const t=s.trim()
+  if (t.includes(':')){
+    const [m,sec]=t.split(':')
+    const mins=parseFloat(m)
+    const secs=parseFloat(sec)
+    if (isNaN(mins)||isNaN(secs))return NaN
+    return mins*60+secs
+  }
+  return parseFloat(t)
+}
+
+const calcCMJ=({startTime,takeoffTime,landingTime,massKg}:{startTime:number,takeoffTime:number,landingTime:number,massKg:number})=>{
+  const ft=landingTime-takeoffTime
+  const ttt=takeoffTime-startTime
   const jh=(9.81*ft*ft)/8
   const jhc=jh*100
   const jhi=jh*39.3701
@@ -30,7 +42,7 @@ const calcCMJ=({startFrame,takeoffFrame,landingFrame,fps,massKg}:{startFrame:num
 const velTier=(v:number)=>v>=95?{l:'Elite / Pro',c:C.teal}:v>=90?{l:'High D1 / Pro Fringe',c:C.gold}:v>=85?{l:'D1 Range',c:C.blue}:v>=80?{l:'D2/D3 Range',c:C.textMuted}:{l:'Development',c:C.red}
 
 export default function PublicCMJ(){
-  const [form,setForm]=useState({bodyweight:'',weightUnit:'lbs',fps:'240',startFrame:'',takeoffFrame:'',landingFrame:''})
+  const [form,setForm]=useState({bodyweight:'',weightUnit:'lbs',fps:'240',startTime:'',takeoffTime:'',landingTime:''})
   const [result,setResult]=useState<any>(null)
   const [err,setErr]=useState('')
   const [saveForm,setSaveForm]=useState({name:'',age:'',level:'',actualVelocity:''})
@@ -41,18 +53,17 @@ export default function PublicCMJ(){
   const calculate=()=>{
     setErr('');setResult(null);setSaved(false)
     const bw=parseFloat(form.bodyweight)
-    const fps=parseFloat(form.fps)
-    const sf=parseFloat(form.startFrame)
-    const tf=parseFloat(form.takeoffFrame)
-    const lf=parseFloat(form.landingFrame)
-    if (!bw||isNaN(sf)||isNaN(tf)||isNaN(lf)){setErr('Please fill in all fields.');return}
-    if (tf<=sf){setErr('Takeoff frame must be after start frame.');return}
-    if (lf<=tf){setErr('Landing frame must be after takeoff frame.');return}
-    const ft=(lf-tf)/fps
-    if (ft>1.0){setErr('Flight time over 1 second — please check your frame numbers. Common mistake: using timestamps instead of frame numbers.');return}
-    if (ft<0.2){setErr('Flight time under 0.2 seconds — please check your frame numbers.');return}
+    const st=parseTime(form.startTime)
+    const tt=parseTime(form.takeoffTime)
+    const lt=parseTime(form.landingTime)
+    if (!bw||isNaN(st)||isNaN(tt)||isNaN(lt)){setErr('Please fill in all fields.');return}
+    if (tt<=st){setErr('Takeoff time must be after start time.');return}
+    if (lt<=tt){setErr('Landing time must be after takeoff time.');return}
+    const ft=lt-tt
+    if (ft>1.0){setErr('Flight time over 1 second — please check your timestamps.');return}
+    if (ft<0.2){setErr('Flight time under 0.2 seconds — please check your timestamps.');return}
     const massKg=form.weightUnit==='lbs'?bw*0.453592:bw
-    setResult(calcCMJ({startFrame:sf,takeoffFrame:tf,landingFrame:lf,fps,massKg}))
+    setResult(calcCMJ({startTime:st,takeoffTime:tt,landingTime:lt,massKg}))
   }
 
   const save=async()=>{
@@ -60,15 +71,16 @@ export default function PublicCMJ(){
     setSaving(true)
     const bw=parseFloat(form.bodyweight)
     const massKg=form.weightUnit==='lbs'?bw*0.453592:bw
+    const fps=parseFloat(form.fps)
     await supabase.from('public_cmj_submissions').insert({
       name:saveForm.name.trim(),
       age:parseInt(saveForm.age)||null,
       level:saveForm.level||null,
       actual_velocity:parseFloat(saveForm.actualVelocity)||null,
       bodyweight:bw,weight_unit:form.weightUnit,fps:parseInt(form.fps),
-      start_frame:parseInt(form.startFrame),
-      takeoff_frame:parseInt(form.takeoffFrame),
-      landing_frame:parseInt(form.landingFrame),
+      start_frame:Math.round(parseTime(form.startTime)*fps),
+      takeoff_frame:Math.round(parseTime(form.takeoffTime)*fps),
+      landing_frame:Math.round(parseTime(form.landingTime)*fps),
       flight_time:result.flightTime,
       jump_height_in:result.jumpHeightIn,
       rsi_mod:result.rsiMod,
@@ -81,7 +93,7 @@ export default function PublicCMJ(){
   }
 
   const reset=()=>{
-    setForm({bodyweight:'',weightUnit:'lbs',fps:'240',startFrame:'',takeoffFrame:'',landingFrame:''})
+    setForm({bodyweight:'',weightUnit:'lbs',fps:'240',startTime:'',takeoffTime:'',landingTime:''})
     setResult(null);setErr('');setSaved(false)
     setSaveForm({name:'',age:'',level:'',actualVelocity:''})
   }
@@ -107,7 +119,7 @@ export default function PublicCMJ(){
         {/* Hero */}
         <div style={{textAlign:'center',marginBottom:28}}>
           <div style={{fontSize:24,fontWeight:700,color:C.white,marginBottom:8}}>What's Your Velocity Capacity?</div>
-          <div style={{fontSize:14,color:C.textMuted,lineHeight:1.6}}>Film a Countermovement Jump at 240fps on your iPhone, enter the frame numbers below, and find out your estimated throwing velocity capacity.</div>
+          <div style={{fontSize:14,color:C.textMuted,lineHeight:1.6}}>Film a Countermovement Jump at 240fps on your iPhone, enter the timestamps below, and find out your estimated throwing velocity capacity.</div>
         </div>
 
         {/* How to film */}
@@ -117,8 +129,8 @@ export default function PublicCMJ(){
             'Open iPhone Camera → swipe to SLO-MO → set to 240fps',
             'Stand sideways to camera, feet shoulder-width',
             'Hands on your hips, squat down then jump as high as possible (DO NOT SWING YOUR ARMS IN THE JUMP)',
-            'Open Photos app, tap Edit, find each moment by scrubbing, multiply the timestamp by 240 to get the frame number (example: 0:03.2 seconds times 240 = frame 768) Do this for: first downward movement, feet leaving ground, and feet landing',
-            'Record: frame you start down, frame feet leave ground, frame feet land',
+            'Open Photos app, tap Edit, find each moment by scrubbing, and read the timestamp shown (example: 0:03.20). Do this for: first downward movement, feet leaving ground, and feet landing',
+            'Record: timestamp you start down, timestamp feet leave ground, timestamp feet land',
           ].map((s,i)=>(
             <div key={i} style={{display:'flex',gap:10,marginBottom:6,alignItems:'flex-start'}}>
               <div style={{width:20,height:20,borderRadius:'50%',background:'rgba(88,166,255,0.15)',border:'1px solid rgba(88,166,255,0.3)',color:C.blue,fontSize:11,fontWeight:700,display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0,marginTop:1}}>{i+1}</div>
@@ -148,14 +160,14 @@ export default function PublicCMJ(){
               <option value="480">480 FPS</option>
             </select>
 
-            <label style={lbl}>Start Frame</label>
-            <input type="text" inputMode="numeric" pattern="[0-9]*" style={inp} placeholder="Frame when you start going down" value={form.startFrame} onChange={e=>setForm(f=>({...f,startFrame:e.target.value}))}/>
+            <label style={lbl}>Start Time</label>
+            <input type="text" style={inp} placeholder="e.g. 0:03.20" value={form.startTime} onChange={e=>setForm(f=>({...f,startTime:e.target.value}))}/>
 
-            <label style={lbl}>Takeoff Frame</label>
-            <input type="text" inputMode="numeric" pattern="[0-9]*" style={inp} placeholder="Frame when feet leave the ground" value={form.takeoffFrame} onChange={e=>setForm(f=>({...f,takeoffFrame:e.target.value}))}/>
+            <label style={lbl}>Takeoff Time</label>
+            <input type="text" style={inp} placeholder="e.g. 0:03.20" value={form.takeoffTime} onChange={e=>setForm(f=>({...f,takeoffTime:e.target.value}))}/>
 
-            <label style={lbl}>Landing Frame</label>
-            <input type="text" inputMode="numeric" pattern="[0-9]*" style={inp} placeholder="Frame when feet hit the ground" value={form.landingFrame} onChange={e=>setForm(f=>({...f,landingFrame:e.target.value}))}/>
+            <label style={lbl}>Landing Time</label>
+            <input type="text" style={inp} placeholder="e.g. 0:03.20" value={form.landingTime} onChange={e=>setForm(f=>({...f,landingTime:e.target.value}))}/>
 
             {err&&(
               <div style={{color:C.red,fontSize:13,marginTop:12,padding:'12px 14px',background:'rgba(248,81,73,0.08)',border:'1px solid rgba(248,81,73,0.2)',borderRadius:8,lineHeight:1.5}}>{err}</div>
