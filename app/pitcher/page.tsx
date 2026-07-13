@@ -160,6 +160,17 @@ function scoreColor(score:number){
 
 const BLANK_MEAL={description:'',protein:'',carbs:'',fat:'',giOption:'low',proMetabolicFoods:[] as string[]}
 
+const FrameInputs=({form,setForm,fields,inp,lbl}:{form:any,setForm:any,fields:{key:string,label:string,placeholder:string}[],inp:any,lbl:any})=>(
+  <div>
+    {fields.map(f=>(
+      <div key={f.key}>
+        <label style={lbl}>{f.label}</label>
+        <input type="text" style={inp} placeholder={f.placeholder} value={form[f.key]} onChange={e=>setForm((prev:any)=>({...prev,[f.key]:e.target.value}))}/>
+      </div>
+    ))}
+  </div>
+)
+
 export default function PitcherDashboard(){
   const [profile,setProfile]=useState<any>(null)
   const [tab,setTab]=useState('program')
@@ -451,17 +462,6 @@ export default function PitcherDashboard(){
     return <span style={{background:ok?'rgba(57,211,83,0.12)':'rgba(248,81,73,0.12)',border:`1px solid ${ok?'rgba(57,211,83,0.4)':'rgba(248,81,73,0.4)'}`,color:ok?C.teal:C.red,fontSize:10,fontWeight:700,padding:'3px 8px',borderRadius:4}}>{lsi.toFixed(1)}% LSI {ok?'✓':'⚠'}</span>
   }
 
-  const FrameInputs=({form,setForm,fields}:{form:any,setForm:any,fields:{key:string,label:string,placeholder:string}[]})=>(
-    <div>
-      {fields.map(f=>(
-        <div key={f.key}>
-          <label style={lbl}>{f.label}</label>
-          <input type="text" style={inp} placeholder={f.placeholder} value={form[f.key]} onChange={e=>setForm((prev:any)=>({...prev,[f.key]:e.target.value}))}/>
-        </div>
-      ))}
-    </div>
-  )
-
   return(
     <div style={{fontFamily:'system-ui,-apple-system,sans-serif',background:C.bg,minHeight:'100vh',color:C.text,maxWidth:480,margin:'0 auto'}}>
       {/* Header */}
@@ -752,8 +752,8 @@ export default function PitcherDashboard(){
                     <select style={{...inp,width:80}} value={cmjForm.weightUnit} onChange={e=>setCmjForm(f=>({...f,weightUnit:e.target.value}))}><option value="lbs">lbs</option><option value="kg">kg</option></select>
                   </div>
                   <label style={lbl}>FPS</label>
-                  <select style={inp} value={cmjForm.fps} onChange={e=>setCmjForm(f=>({...f,fps:e.target.value}))}><option value="240">240 FPS (iPhone)</option><option value="120">120 FPS</option><option value="480">480 FPS</option></select>
-                  <FrameInputs form={cmjForm} setForm={setCmjForm} fields={[{key:'startTime',label:'Start Time',placeholder:'e.g. 0:03.20'},{key:'takeoffTime',label:'Takeoff Time',placeholder:'e.g. 0:03.20'},{key:'landingTime',label:'Landing Time',placeholder:'e.g. 0:03.20'}]}/>
+                  <select style={inp} value={cmjForm.fps} onChange={e=>setCmjForm(f=>({...f,fps:e.target.value}))}><option value="240">240 FPS (iPhone)</option><option value="120">120 FPS</option><option value="480">480 FPS</option><option value="30">30 FPS (Real Time)</option></select>
+                  <FrameInputs form={cmjForm} setForm={setCmjForm} inp={inp} lbl={lbl} fields={[{key:'startTime',label:'Start Time',placeholder:'e.g. 0:03.20'},{key:'takeoffTime',label:'Takeoff Time',placeholder:'e.g. 0:03.20'},{key:'landingTime',label:'Landing Time',placeholder:'e.g. 0:03.20'}]}/>
                   {cmjErr&&<div style={{color:C.red,fontSize:13,marginTop:8,padding:'10px',background:'rgba(248,81,73,0.1)',borderRadius:8}}>{cmjErr}</div>}
                   <button style={btn('gold')} onClick={calcCMJHandler}>Calculate</button>
                 </div>
@@ -808,8 +808,8 @@ export default function PitcherDashboard(){
                     <select style={{...inp,width:80}} value={sjForm.weightUnit} onChange={e=>setSjForm(f=>({...f,weightUnit:e.target.value}))}><option value="lbs">lbs</option><option value="kg">kg</option></select>
                   </div>
                   <label style={lbl}>FPS</label>
-                  <select style={inp} value={sjForm.fps} onChange={e=>setSjForm(f=>({...f,fps:e.target.value}))}><option value="240">240 FPS</option><option value="120">120 FPS</option></select>
-                  <FrameInputs form={sjForm} setForm={setSjForm} fields={[{key:'startTime',label:'Start Time',placeholder:'e.g. 0:03.20'},{key:'takeoffTime',label:'Takeoff Time',placeholder:'e.g. 0:03.20'},{key:'landingTime',label:'Landing Time',placeholder:'e.g. 0:03.20'}]}/>
+                  <select style={inp} value={sjForm.fps} onChange={e=>setSjForm(f=>({...f,fps:e.target.value}))}><option value="240">240 FPS</option><option value="120">120 FPS</option><option value="30">30 FPS (Real Time)</option></select>
+                  <FrameInputs form={sjForm} setForm={setSjForm} inp={inp} lbl={lbl} fields={[{key:'startTime',label:'Start Time',placeholder:'e.g. 0:03.20'},{key:'takeoffTime',label:'Takeoff Time',placeholder:'e.g. 0:03.20'},{key:'landingTime',label:'Landing Time',placeholder:'e.g. 0:03.20'}]}/>
                   {sjErr&&<div style={{color:C.red,fontSize:13,marginTop:8,padding:'10px',background:'rgba(248,81,73,0.1)',borderRadius:8}}>{sjErr}</div>}
                   <button style={btn('gold')} onClick={calcSJHandler}>Calculate</button>
                 </div>
@@ -851,11 +851,11 @@ export default function PitcherDashboard(){
                   <label style={lbl}>Date</label>
                   <input type="date" style={inp} value={slForm.date} onChange={e=>setSlForm(f=>({...f,date:e.target.value}))}/>
                   <label style={lbl}>FPS</label>
-                  <select style={inp} value={slForm.fps} onChange={e=>setSlForm(f=>({...f,fps:e.target.value}))}><option value="240">240 FPS</option><option value="120">120 FPS</option></select>
+                  <select style={inp} value={slForm.fps} onChange={e=>setSlForm(f=>({...f,fps:e.target.value}))}><option value="240">240 FPS</option><option value="120">120 FPS</option><option value="30">30 FPS (Real Time)</option></select>
                   <div style={{fontSize:11,color:C.teal,fontWeight:700,textTransform:'uppercase' as const,letterSpacing:'0.5px',marginTop:14,marginBottom:8}}>Left Leg</div>
-                  <FrameInputs form={slForm} setForm={setSlForm} fields={[{key:'leftTakeoffTime',label:'Left Takeoff Time',placeholder:'e.g. 0:03.20'},{key:'leftLandingTime',label:'Left Landing Time',placeholder:'e.g. 0:03.20'}]}/>
+                  <FrameInputs form={slForm} setForm={setSlForm} inp={inp} lbl={lbl} fields={[{key:'leftTakeoffTime',label:'Left Takeoff Time',placeholder:'e.g. 0:03.20'},{key:'leftLandingTime',label:'Left Landing Time',placeholder:'e.g. 0:03.20'}]}/>
                   <div style={{fontSize:11,color:C.red,fontWeight:700,textTransform:'uppercase' as const,letterSpacing:'0.5px',marginTop:14,marginBottom:8}}>Right Leg</div>
-                  <FrameInputs form={slForm} setForm={setSlForm} fields={[{key:'rightTakeoffTime',label:'Right Takeoff Time',placeholder:'e.g. 0:03.20'},{key:'rightLandingTime',label:'Right Landing Time',placeholder:'e.g. 0:03.20'}]}/>
+                  <FrameInputs form={slForm} setForm={setSlForm} inp={inp} lbl={lbl} fields={[{key:'rightTakeoffTime',label:'Right Takeoff Time',placeholder:'e.g. 0:03.20'},{key:'rightLandingTime',label:'Right Landing Time',placeholder:'e.g. 0:03.20'}]}/>
                   {slErr&&<div style={{color:C.red,fontSize:13,marginTop:8,padding:'10px',background:'rgba(248,81,73,0.1)',borderRadius:8}}>{slErr}</div>}
                   <button style={btn('gold')} onClick={calcSLHandler}>Calculate</button>
                 </div>
@@ -957,8 +957,8 @@ export default function PitcherDashboard(){
                   <label style={lbl}>Date</label>
                   <input type="date" style={inp} value={plyoForm.date} onChange={e=>setPlyoForm(f=>({...f,date:e.target.value}))}/>
                   <label style={lbl}>FPS</label>
-                  <select style={inp} value={plyoForm.fps} onChange={e=>setPlyoForm(f=>({...f,fps:e.target.value}))}><option value="240">240 FPS</option><option value="120">120 FPS</option></select>
-                  <FrameInputs form={plyoForm} setForm={setPlyoForm} fields={[{key:'takeoffTime',label:'Takeoff Time',placeholder:'e.g. 0:03.20'},{key:'landingTime',label:'Landing Time',placeholder:'e.g. 0:03.20'}]}/>
+                  <select style={inp} value={plyoForm.fps} onChange={e=>setPlyoForm(f=>({...f,fps:e.target.value}))}><option value="240">240 FPS</option><option value="120">120 FPS</option><option value="30">30 FPS (Real Time)</option></select>
+                  <FrameInputs form={plyoForm} setForm={setPlyoForm} inp={inp} lbl={lbl} fields={[{key:'takeoffTime',label:'Takeoff Time',placeholder:'e.g. 0:03.20'},{key:'landingTime',label:'Landing Time',placeholder:'e.g. 0:03.20'}]}/>
                   {plyoErr&&<div style={{color:C.red,fontSize:13,marginTop:8,padding:'10px',background:'rgba(248,81,73,0.1)',borderRadius:8}}>{plyoErr}</div>}
                   <button style={btn('gold')} onClick={calcPlyoHandler}>Calculate</button>
                 </div>
