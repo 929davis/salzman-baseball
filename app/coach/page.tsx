@@ -36,6 +36,25 @@ const CNS_COLORS:Record<string,{bg:string,border:string,text:string,dot:string}>
 
 const DAYS = ['Monday','Tuesday','Wednesday','Thursday','Friday','Saturday','Sunday']
 
+const serializeWeek=(structured:any)=>{
+  const blocks:string[]=[]
+  for(const day of DAYS){
+    const dayLines:string[]=[]
+    for(const cat of CATEGORIES){
+      const key=`${day}___${cat.key}`
+      const items=structured[key]||[]
+      for(const ex of items){
+        const loadStr=ex.load?` @${ex.load}%`:''
+        dayLines.push(`${cat.key} | ${ex.name} | ${ex.sets}x${ex.reps}${loadStr}`)
+      }
+    }
+    if(dayLines.length>0){
+      blocks.push(`${day.toUpperCase()}\n${dayLines.join('\n')}`)
+    }
+  }
+  return blocks.join('\n\n')
+}
+
 const CMJ_THRESHOLDS = {
   jumpHeight:{ aboveAverage:21, good:18, developing:15 },
   ppKg:{ aboveAverage:70, good:62, developing:55 },
@@ -242,6 +261,7 @@ export default function CoachDashboard(){
   const [importModal,setImportModal]=useState(false)
   const [importText,setImportText]=useState('')
   const [importSaving,setImportSaving]=useState(false)
+  const [copySuccess,setCopySuccess]=useState(false)
   const [importResult,setImportResult]=useState<string|null>(null)
   const [showPicker,setShowPicker]=useState(false)
   const [pickerCell,setPickerCell]=useState<{day:string,cat:string}|null>(null)
@@ -539,6 +559,18 @@ Write next week's program by day and category (Pre-Throwing, Throwing, Post-Thro
     navigator.clipboard.writeText(prompt).catch(()=>{})
     window.open('https://claude.ai','_blank')
     alert('Prompt copied! Paste into Claude.')
+  }
+
+  const copyWeekToClipboard=async()=>{
+    const text=serializeWeek(structuredDays)
+    if(!text){alert('No exercises in this program yet.');return}
+    try{
+      await navigator.clipboard.writeText(text)
+      setCopySuccess(true)
+      setTimeout(()=>setCopySuccess(false),2000)
+    }catch{
+      alert('Copy failed — clipboard access blocked.')
+    }
   }
 
   const getRecommendedExercises=(classification:string)=>{
@@ -862,6 +894,7 @@ Write next week's program by day and category (Pre-Throwing, Throwing, Post-Thro
                     </div>
                     <button style={S.btn('gold')} onClick={buildPrompt}>Claude</button>
                     <button style={{...S.btn(),background:'rgba(88,166,255,0.1)',color:'#58a6ff',border:'1px solid rgba(88,166,255,0.3)'}} onClick={()=>{setImportModal(true);setImportResult(null)}}>Import</button>
+                    <button onClick={copyWeekToClipboard} style={S.btn()}>{copySuccess?'✓ Copied':'Copy Week'}</button>
                   </div>
                   <div style={{overflowX:'auto' as const}}>
                     <div style={{minWidth:900}}>
