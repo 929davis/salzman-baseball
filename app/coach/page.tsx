@@ -18,6 +18,12 @@ const C = {
 
 const armCare = (n:number,v:number) => (!n||!v)?0:Math.round(n*Math.pow(v,2)*0.01*1.25*1.25)
 
+const getEffectiveVelocity = (selected: any, cmjResults: any[]) => {
+  const predictedV = cmjResults?.[0]?.estimated_velocity
+  if (predictedV) return predictedV
+  return selected?.avg_velocity || 0
+}
+
 const CATEGORIES = [
   { key:'Pre-Throwing',   color:'#38bdf8', bg:'rgba(56,189,248,0.10)',  border:'rgba(56,189,248,0.35)'  },
   { key:'Throwing',       color:'#39d353', bg:'rgba(57,211,83,0.10)',   border:'rgba(57,211,83,0.35)'   },
@@ -569,7 +575,7 @@ export default function CoachDashboard(){
   }
 
   const buildPrompt=()=>{
-    const jiP=armCare(selected?.weekly_pitches||0,selected?.avg_velocity||0)
+    const jiP=armCare(selected?.weekly_pitches||0,getEffectiveVelocity(selected,cmjResults))
     const lastCMJ=cmjResults[0]
     const {classification}=classifyCMJ(lastCMJ)
     const rule=recommendationRules.find(r=>r.classification===classification)
@@ -708,7 +714,7 @@ Write next week's program by day and category (Pre-Throwing, Throwing, Post-Thro
                   </div>
                   <div style={{background:C.goldBg,border:`1px solid ${C.goldDim}`,borderRadius:8,padding:'10px 14px',textAlign:'center'}}>
                     <div style={{fontSize:10,color:C.gold,textTransform:'uppercase' as const,letterSpacing:'0.5px',marginBottom:4}}>Arm Care Min</div>
-                    <div style={{fontSize:18,fontWeight:700,color:C.gold}}>{armCare(selected.weekly_pitches,selected.avg_velocity)?armCare(selected.weekly_pitches,selected.avg_velocity).toLocaleString():'—'}<span style={{fontSize:10,color:C.goldDim}}> ft·lb</span></div>
+                    <div style={{fontSize:18,fontWeight:700,color:C.gold}}>{armCare(selected.weekly_pitches,getEffectiveVelocity(selected,cmjResults))?armCare(selected.weekly_pitches,getEffectiveVelocity(selected,cmjResults)).toLocaleString():'—'}<span style={{fontSize:10,color:C.goldDim}}> ft·lb</span></div>
                   </div>
                 </div>
               </div>
