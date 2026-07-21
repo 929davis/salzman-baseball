@@ -4,6 +4,7 @@ import { useEffect, useState, useRef } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { useRouter } from 'next/navigation'
 import PitchingIQ from '@/app/components/PitchingIQ'
+import { parseTime, calcJumpHeight, calcCMJFn } from '@/lib/cmj'
 
 const C = {
   bg:'#0d1117',bg2:'#161b22',bg3:'#1c2333',border:'#30363d',
@@ -85,38 +86,6 @@ const CLASS_COLORS:Record<string,{bg:string,border:string,text:string,desc:strin
   'Both Limited':{bg:'rgba(248,81,73,0.1)',border:'rgba(248,81,73,0.35)',text:'#f85149',desc:'Both strength and rate of force development need work. Training starts with building a strength base before adding speed work.'},
   'Developing':{bg:'rgba(163,113,247,0.1)',border:'rgba(163,113,247,0.35)',text:'#a371f7',desc:'Your training profile is still developing. Complete more CMJ tests to get a clearer picture.'},
   'No Data':{bg:'rgba(72,79,88,0.1)',border:'rgba(72,79,88,0.35)',text:'#7d8590',desc:'No CMJ data yet. Complete a CMJ test to see your neuromuscular profile.'},
-}
-
-const parseTime=(s:string):number=>{
-  const t=s.trim()
-  if (t.includes(':')){
-    const [m,sec]=t.split(':')
-    const mins=parseFloat(m)
-    const secs=parseFloat(sec)
-    if (isNaN(mins)||isNaN(secs))return NaN
-    return mins*60+secs
-  }
-  return parseFloat(t)
-}
-
-const calcJumpHeight=(takeoff:number,landing:number)=>{
-  const ft=landing-takeoff
-  return (9.81*ft*ft)/8*39.3701
-}
-
-const calcCMJFn=({startTime,takeoffTime,landingTime,massKg}:{startTime:number,takeoffTime:number,landingTime:number,massKg:number})=>{
-  const ft=landingTime-takeoffTime
-  const ttt=takeoffTime-startTime
-  const jh=(9.81*ft*ft)/8
-  const jhc=jh*100
-  const jhi=jh*39.3701
-  const rsi=jh/ttt
-  const pp=(60.7*jhc)+(45.3*massKg)-2055
-  const ppkg=pp/massKg
-  const tv=Math.sqrt(2*9.81*jh)
-  const ei=rsi*ppkg
-  const ev=47+(0.70*ppkg)+(10*rsi)+(0.02*ei)
-  return{flightTime:ft,jumpHeightIn:jhi,rsiMod:rsi,peakPowerPerKg:ppkg,takeoffVelocity:tv,explosiveIndex:ei,estimatedVelocity:ev}
 }
 
 function scoreMeal(protein:number,carbs:number,fat:number,giOption:string,proMetabolicFoods:string[],mealType:string,foodQualityOverride?:number){

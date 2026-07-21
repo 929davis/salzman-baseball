@@ -4,6 +4,7 @@ import { useEffect, useState, useMemo } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { useRouter } from 'next/navigation'
 import PitchingIQ from '@/app/components/PitchingIQ'
+import { parseTime, calcCMJFn } from '@/lib/cmj'
 
 const C = {
   bg:'#0d1117',bg2:'#161b22',bg3:'#1c2333',border:'#30363d',
@@ -248,6 +249,11 @@ export default function CoachDashboard(){
   const [msgText,setMsgText]=useState('')
   const [logs,setLogs]=useState<any[]>([])
   const [cmjResults,setCmjResults]=useState<any[]>([])
+  const [cmjModal,setCmjModal]=useState(false)
+  const [cmjForm,setCmjForm]=useState({date:new Date().toISOString().split('T')[0],bodyweight:'',weightUnit:'lbs',fps:'240',startTime:'',takeoffTime:'',landingTime:''})
+  const [cmjCalc,setCmjCalc]=useState<any>(null)
+  const [cmjErr,setCmjErr]=useState('')
+  const [cmjSaving,setCmjSaving]=useState(false)
   const [principles,setPrinciples]=useState('')
   const [princText,setPrincText]=useState('')
   const [princSaved,setPrincSaved]=useState(false)
@@ -348,6 +354,35 @@ export default function CoachDashboard(){
     setTodayFoodLogs(foodRes.data||[])
     setTodayFuelScore(fuelRes.data||null)
     setWeekFuelScores(weekFuelRes.data||[])
+  }
+
+  const calcCoachCMJ=()=>{
+    setCmjErr('')
+    const bw=parseFloat(cmjForm.bodyweight)
+    const st=parseTime(cmjForm.startTime),tt=parseTime(cmjForm.takeoffTime),lt=parseTime(cmjForm.landingTime)
+    if (!bw||isNaN(st)||isNaN(tt)||isNaN(lt)||tt<=st||lt<=tt){setCmjErr('Check your inputs.');return}
+    const massKg=cmjForm.weightUnit==='lbs'?bw*0.453592:bw
+    setCmjCalc(calcCMJFn({startTime:st,takeoffTime:tt,landingTime:lt,massKg}))
+  }
+
+  const saveCoachCMJ=async()=>{
+    if (!cmjCalc||!selected)return
+    setCmjSaving(true)
+    const bw=parseFloat(cmjForm.bodyweight)
+    const massKg=cmjForm.weightUnit==='lbs'?bw*0.453592:bw
+    const fps=parseFloat(cmjForm.fps)
+    await supabase.from('cmj_results').insert({
+      pitcher_id:selected.id,test_date:cmjForm.date,bodyweight:bw,weight_unit:cmjForm.weightUnit,
+      fps:parseInt(cmjForm.fps),start_frame:Math.round(parseTime(cmjForm.startTime)*fps),
+      takeoff_frame:Math.round(parseTime(cmjForm.takeoffTime)*fps),landing_frame:Math.round(parseTime(cmjForm.landingTime)*fps),
+      flight_time:cmjCalc.flightTime,jump_height_in:cmjCalc.jumpHeightIn,rsi_mod:cmjCalc.rsiMod,
+      peak_power_per_kg:cmjCalc.peakPowerPerKg,takeoff_velocity:cmjCalc.takeoffVelocity,
+      explosive_index:cmjCalc.explosiveIndex,estimated_velocity:cmjCalc.estimatedVelocity,
+    })
+    const {data}=await supabase.from('cmj_results').select('*').eq('pitcher_id',selected.id).order('test_date',{ascending:false})
+    setCmjResults(data||[])
+    setCmjSaving(false);setCmjModal(false);setCmjCalc(null)
+    setCmjForm({date:new Date().toISOString().split('T')[0],bodyweight:'',weightUnit:'lbs',fps:'240',startTime:'',takeoffTime:'',landingTime:''})
   }
 
   const signOut=async()=>{await supabase.auth.signOut();router.push('/auth/login')}
@@ -696,6 +731,9 @@ Write next week's program by day and category (Pre-Throwing, Throwing, Post-Thro
                   </div>
 
                   {/* Neuro Classification */}
+                  <div style={{display:'flex',justifyContent:'flex-end',marginBottom:8}}>
+                    <button onClick={()=>{setCmjErr('');setCmjCalc(null);setCmjModal(true)}} style={S.btn('gold')}>+ Log CMJ</button>
+                  </div>
                   {latestCMJ?(
                     <div style={{...S.card,border:`1px solid ${classCol.border}`,background:classCol.bg,marginBottom:12}}>
                       <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',marginBottom:12}}>
@@ -1343,6 +1381,62 @@ Accessory | Single Arm DB Row | 3 x 6 @ 70%`}
               {copySaving?'Copying...':'Copy Exercise'}
             </button>
           </div>
+        </div>
+      </div>
+    )}
+    {cmjModal&&selected&&(
+      <div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.7)',zIndex:9999,display:'flex',alignItems:'center',justifyContent:'center'}} onClick={()=>setCmjModal(false)}>
+        <div style={{background:C.bg2,border:`1px solid ${C.border}`,borderRadius:12,padding:24,width:420,maxWidth:'90vw',maxHeight:'85vh',overflowY:'auto' as const}} onClick={e=>e.stopPropagation()}>
+          <div style={{fontSize:15,fontWeight:700,color:C.white,marginBottom:4}}>Log CMJ — {selected.full_name}</div>
+          <div style={{fontSize:12,color:C.textMuted,marginBottom:16}}>Film at 240fps, scrub in Photos app, enter timestamps below.</div>
+
+          <div style={{fontSize:11,color:C.textMuted,fontWeight:600,marginBottom:6,textTransform:'uppercase' as const,letterSpacing:'0.5px'}}>Date</div>
+          <input type="date" style={{...S.input,marginBottom:12}} value={cmjForm.date} onChange={e=>setCmjForm(f=>({...f,date:e.target.value}))}/>
+
+          <div style={{fontSize:11,color:C.textMuted,fontWeight:600,marginBottom:6,textTransform:'uppercase' as const,letterSpacing:'0.5px'}}>Body Weight</div>
+          <div style={{display:'flex',gap:8,marginBottom:12}}>
+            <input type="text" inputMode="numeric" pattern="[0-9]*" style={{...S.input,flex:1}} placeholder="e.g. 195" value={cmjForm.bodyweight} onChange={e=>setCmjForm(f=>({...f,bodyweight:e.target.value}))}/>
+            <select style={{...S.input,width:80}} value={cmjForm.weightUnit} onChange={e=>setCmjForm(f=>({...f,weightUnit:e.target.value}))}><option value="lbs">lbs</option><option value="kg">kg</option></select>
+          </div>
+
+          <div style={{fontSize:11,color:C.textMuted,fontWeight:600,marginBottom:6,textTransform:'uppercase' as const,letterSpacing:'0.5px'}}>FPS</div>
+          <select style={{...S.input,marginBottom:12}} value={cmjForm.fps} onChange={e=>setCmjForm(f=>({...f,fps:e.target.value}))}>
+            <option value="240">240 FPS (iPhone)</option><option value="120">120 FPS</option><option value="480">480 FPS</option><option value="30">30 FPS (Real Time)</option>
+          </select>
+
+          {[{key:'startTime',label:'Start Time'},{key:'takeoffTime',label:'Takeoff Time'},{key:'landingTime',label:'Landing Time'}].map(f=>(
+            <div key={f.key}>
+              <div style={{fontSize:11,color:C.textMuted,fontWeight:600,marginBottom:6,textTransform:'uppercase' as const,letterSpacing:'0.5px'}}>{f.label}</div>
+              <input type="text" style={{...S.input,marginBottom:12}} placeholder="e.g. 0:03.20" value={(cmjForm as any)[f.key]} onChange={e=>setCmjForm(fm=>({...fm,[f.key]:e.target.value}))}/>
+            </div>
+          ))}
+
+          {cmjErr&&<div style={{color:C.red,fontSize:13,marginBottom:12,padding:'10px',background:C.redBg,borderRadius:8}}>{cmjErr}</div>}
+
+          {!cmjCalc?(
+            <div style={{display:'flex',gap:8}}>
+              <button onClick={()=>setCmjModal(false)} style={{...S.btn(),flex:1}}>Cancel</button>
+              <button onClick={calcCoachCMJ} style={{...S.btn('gold'),flex:2}}>Calculate</button>
+            </div>
+          ):(
+            <div>
+              <div style={{background:C.purpleBg,border:'1px solid rgba(163,113,247,0.3)',borderRadius:8,padding:12,marginBottom:12,textAlign:'center'}}>
+                <div style={{fontSize:28,fontWeight:700,color:C.white}}>{cmjCalc.estimatedVelocity.toFixed(1)}<span style={{fontSize:13,color:C.textMuted,fontWeight:400}}> mph capacity</span></div>
+                <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:8,marginTop:10}}>
+                  {[{l:'Jump Height',v:`${cmjCalc.jumpHeightIn.toFixed(1)} in`},{l:'RSI-Mod',v:cmjCalc.rsiMod.toFixed(2)},{l:'PP/kg',v:`${cmjCalc.peakPowerPerKg.toFixed(1)} W/kg`}].map(m=>(
+                    <div key={m.l} style={{background:'rgba(0,0,0,0.2)',borderRadius:6,padding:'6px 8px'}}>
+                      <div style={{fontSize:9,color:C.textMuted}}>{m.l}</div>
+                      <div style={{fontSize:13,fontWeight:700,color:C.white}}>{m.v}</div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+              <div style={{display:'flex',gap:8}}>
+                <button onClick={()=>setCmjCalc(null)} style={{...S.btn(),flex:1}}>Back</button>
+                <button onClick={saveCoachCMJ} disabled={cmjSaving} style={{...S.btn('gold'),flex:2}}>{cmjSaving?'Saving...':'Save to Profile'}</button>
+              </div>
+            </div>
+          )}
         </div>
       </div>
     )}
