@@ -24,6 +24,10 @@ const getEffectiveVelocity = (selected: any, cmjResults: any[]) => {
   return selected?.avg_velocity || 0
 }
 
+const getEffectiveThrowCount = (selected: any) => {
+  return selected?.weekly_pitches || selected?.weekly_high_effort || 0
+}
+
 const CATEGORIES = [
   { key:'Pre-Throwing',   color:'#38bdf8', bg:'rgba(56,189,248,0.10)',  border:'rgba(56,189,248,0.35)'  },
   { key:'Throwing',       color:'#39d353', bg:'rgba(57,211,83,0.10)',   border:'rgba(57,211,83,0.35)'   },
@@ -244,6 +248,8 @@ export default function CoachDashboard(){
   const [user,setUser]=useState<any>(null)
   const [pitchers,setPitchers]=useState<any[]>([])
   const [selected,setSelected]=useState<any>(null)
+  const [editingThrowCounts,setEditingThrowCounts]=useState(false)
+  const [throwCountDraft,setThrowCountDraft]=useState({weekly_pitches:'',weekly_high_effort:''})
   const [tab,setTab]=useState('overview')
   const [view,setView]=useState('roster')
   const [loading,setLoading]=useState(true)
@@ -360,6 +366,20 @@ export default function CoachDashboard(){
     setTodayFoodLogs(foodRes.data||[])
     setTodayFuelScore(fuelRes.data||null)
     setWeekFuelScores(weekFuelRes.data||[])
+  }
+
+  const startEditThrowCounts=()=>{
+    setThrowCountDraft({weekly_pitches:String(selected?.weekly_pitches||''),weekly_high_effort:String(selected?.weekly_high_effort||'')})
+    setEditingThrowCounts(true)
+  }
+
+  const saveThrowCounts=async()=>{
+    if (!selected)return
+    const weekly_pitches=parseInt(throwCountDraft.weekly_pitches)||0
+    const weekly_high_effort=parseInt(throwCountDraft.weekly_high_effort)||0
+    await supabase.from('profiles').update({weekly_pitches,weekly_high_effort}).eq('id',selected.id)
+    setSelected((prev:any)=>({...prev,weekly_pitches,weekly_high_effort}))
+    setEditingThrowCounts(false)
   }
 
   const calcCoachCMJ=()=>{
@@ -575,7 +595,7 @@ export default function CoachDashboard(){
   }
 
   const buildPrompt=()=>{
-    const jiP=armCare(selected?.weekly_pitches||0,getEffectiveVelocity(selected,cmjResults))
+    const jiP=armCare(getEffectiveThrowCount(selected),getEffectiveVelocity(selected,cmjResults))
     const lastCMJ=cmjResults[0]
     const {classification}=classifyCMJ(lastCMJ)
     const rule=recommendationRules.find(r=>r.classification===classification)
@@ -701,22 +721,37 @@ Write next week's program by day and category (Pre-Throwing, Throwing, Post-Thro
 
             return(
             <div>
-              <div style={{display:'flex',alignItems:'center',gap:16,marginBottom:20,paddingBottom:16,borderBottom:`1px solid ${C.border}`}}>
+              <div style={{display:'flex',alignItems:'center',gap:16,marginBottom:20,paddingBottom:16,borderBottom:`1px solid ${C.border}`,flexWrap:'wrap' as const}}>
                 <Avatar name={selected.full_name||'?'} size={48}/>
                 <div style={{flex:1}}>
                   <div style={{fontSize:20,fontWeight:700,color:C.white}}>{selected.full_name?.toUpperCase()}</div>
                   <div style={{fontSize:11,color:C.textMuted,textTransform:'uppercase' as const,letterSpacing:'1px'}}>Pitcher · Salzman Baseball</div>
                 </div>
-                <div style={{display:'flex',gap:8}}>
+                <div style={{display:'flex',gap:8,alignItems:'center'}}>
                   <div style={{background:C.bg3,border:`1px solid ${C.border}`,borderRadius:8,padding:'10px 14px',textAlign:'center'}}>
                     <div style={{fontSize:10,color:C.textMuted,textTransform:'uppercase' as const,letterSpacing:'0.5px',marginBottom:4}}>Velocity</div>
                     <div style={{fontSize:20,fontWeight:700,color:C.white}}>{getEffectiveVelocity(selected,cmjResults)||'—'}<span style={{fontSize:11,color:C.textMuted}}> mph</span></div>
                   </div>
                   <div style={{background:C.goldBg,border:`1px solid ${C.goldDim}`,borderRadius:8,padding:'10px 14px',textAlign:'center'}}>
                     <div style={{fontSize:10,color:C.gold,textTransform:'uppercase' as const,letterSpacing:'0.5px',marginBottom:4}}>Arm Care Min</div>
-                    <div style={{fontSize:18,fontWeight:700,color:C.gold}}>{armCare(selected.weekly_pitches,getEffectiveVelocity(selected,cmjResults))?armCare(selected.weekly_pitches,getEffectiveVelocity(selected,cmjResults)).toLocaleString():'—'}<span style={{fontSize:10,color:C.goldDim}}> ft·lb</span></div>
+                    <div style={{fontSize:18,fontWeight:700,color:C.gold}}>{armCare(getEffectiveThrowCount(selected),getEffectiveVelocity(selected,cmjResults))?armCare(getEffectiveThrowCount(selected),getEffectiveVelocity(selected,cmjResults)).toLocaleString():'—'}<span style={{fontSize:10,color:C.goldDim}}> ft·lb</span></div>
                   </div>
+                  <button onClick={()=>editingThrowCounts?setEditingThrowCounts(false):startEditThrowCounts()} title="Edit weekly throw counts" style={{background:'transparent',border:`1px solid ${C.border}`,borderRadius:8,width:32,height:32,display:'flex',alignItems:'center',justifyContent:'center',color:C.textMuted,cursor:'pointer',fontSize:14,flexShrink:0}}>✎</button>
                 </div>
+                {editingThrowCounts&&(
+                  <div style={{width:'100%',display:'flex',gap:8,alignItems:'flex-end',flexWrap:'wrap' as const}}>
+                    <div>
+                      <div style={{fontSize:10,color:C.textMuted,textTransform:'uppercase' as const,letterSpacing:'0.5px',marginBottom:4}}>Weekly Pitches</div>
+                      <input type="number" style={{...S.input,width:120}} value={throwCountDraft.weekly_pitches} onChange={e=>setThrowCountDraft(d=>({...d,weekly_pitches:e.target.value}))}/>
+                    </div>
+                    <div>
+                      <div style={{fontSize:10,color:C.textMuted,textTransform:'uppercase' as const,letterSpacing:'0.5px',marginBottom:4}}>Weekly HE Throws</div>
+                      <input type="number" style={{...S.input,width:120}} value={throwCountDraft.weekly_high_effort} onChange={e=>setThrowCountDraft(d=>({...d,weekly_high_effort:e.target.value}))}/>
+                    </div>
+                    <button onClick={saveThrowCounts} style={S.btn('gold')}>Save</button>
+                    <button onClick={()=>setEditingThrowCounts(false)} style={S.btn()}>Cancel</button>
+                  </div>
+                )}
               </div>
 
               <div style={{display:'flex',gap:6,marginBottom:16,flexWrap:'wrap' as const}}>
