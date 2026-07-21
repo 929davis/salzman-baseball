@@ -24,8 +24,29 @@ const getEffectiveVelocity = (selected: any, cmjResults: any[]) => {
   return selected?.avg_velocity || 0
 }
 
+// Effort-to-torque multipliers, derived from motion-capture research (Fleisig, Melugin,
+// Slenker) showing elbow/shoulder torque drops much less than perceived effort suggests —
+// e.g. 80% perceived effort still produces ~90% of max torque. Not linear with effort %.
+const EFFORT_MULTIPLIERS: Record<string, number> = {
+  '80-90': 0.92,
+  '90-95': 0.97,
+  '95+': 1.0,
+}
+
+// Mound vs. flat-ground multiplier. Best-supported figure (~6%) comes from an adolescent
+// population (Nissen et al.) — collegiate-level studies found smaller/no significant
+// difference, and long-toss at distance can match or exceed mound loads. Treated here as
+// an upper-bound estimate, not a precisely validated figure for this roster's age group.
+const SURFACE_MULTIPLIERS: Record<string, number> = {
+  mound: 1.06,
+  flat: 1.0,
+}
+
 const getEffectiveThrowCount = (selected: any) => {
-  return selected?.weekly_pitches || selected?.weekly_high_effort || 0
+  const raw = selected?.weekly_pitches || selected?.weekly_high_effort || 0
+  const effortMult = EFFORT_MULTIPLIERS[selected?.effort_tier] ?? 1
+  const surfaceMult = SURFACE_MULTIPLIERS[selected?.throw_surface] ?? 1
+  return raw * effortMult * surfaceMult
 }
 
 const CATEGORIES = [
@@ -249,7 +270,7 @@ export default function CoachDashboard(){
   const [pitchers,setPitchers]=useState<any[]>([])
   const [selected,setSelected]=useState<any>(null)
   const [editingThrowCounts,setEditingThrowCounts]=useState(false)
-  const [throwCountDraft,setThrowCountDraft]=useState({weekly_pitches:'',weekly_high_effort:''})
+  const [throwCountDraft,setThrowCountDraft]=useState({weekly_pitches:'',weekly_high_effort:'',effort_tier:'',throw_surface:''})
   const [tab,setTab]=useState('overview')
   const [view,setView]=useState('roster')
   const [loading,setLoading]=useState(true)
@@ -369,7 +390,7 @@ export default function CoachDashboard(){
   }
 
   const startEditThrowCounts=()=>{
-    setThrowCountDraft({weekly_pitches:String(selected?.weekly_pitches||''),weekly_high_effort:String(selected?.weekly_high_effort||'')})
+    setThrowCountDraft({weekly_pitches:String(selected?.weekly_pitches||''),weekly_high_effort:String(selected?.weekly_high_effort||''),effort_tier:selected?.effort_tier||'',throw_surface:selected?.throw_surface||''})
     setEditingThrowCounts(true)
   }
 
@@ -377,8 +398,10 @@ export default function CoachDashboard(){
     if (!selected)return
     const weekly_pitches=parseInt(throwCountDraft.weekly_pitches)||0
     const weekly_high_effort=parseInt(throwCountDraft.weekly_high_effort)||0
-    await supabase.from('profiles').update({weekly_pitches,weekly_high_effort}).eq('id',selected.id)
-    setSelected((prev:any)=>({...prev,weekly_pitches,weekly_high_effort}))
+    const effort_tier=throwCountDraft.effort_tier||null
+    const throw_surface=throwCountDraft.throw_surface||null
+    await supabase.from('profiles').update({weekly_pitches,weekly_high_effort,effort_tier,throw_surface}).eq('id',selected.id)
+    setSelected((prev:any)=>({...prev,weekly_pitches,weekly_high_effort,effort_tier,throw_surface}))
     setEditingThrowCounts(false)
   }
 
@@ -739,17 +762,37 @@ Write next week's program by day and category (Pre-Throwing, Throwing, Post-Thro
                   <button onClick={()=>editingThrowCounts?setEditingThrowCounts(false):startEditThrowCounts()} title="Edit weekly throw counts" style={{background:'transparent',border:`1px solid ${C.border}`,borderRadius:8,width:32,height:32,display:'flex',alignItems:'center',justifyContent:'center',color:C.textMuted,cursor:'pointer',fontSize:14,flexShrink:0}}>✎</button>
                 </div>
                 {editingThrowCounts&&(
-                  <div style={{width:'100%',display:'flex',gap:8,alignItems:'flex-end',flexWrap:'wrap' as const}}>
-                    <div>
-                      <div style={{fontSize:10,color:C.textMuted,textTransform:'uppercase' as const,letterSpacing:'0.5px',marginBottom:4}}>Weekly Pitches</div>
-                      <input type="number" style={{...S.input,width:120}} value={throwCountDraft.weekly_pitches} onChange={e=>setThrowCountDraft(d=>({...d,weekly_pitches:e.target.value}))}/>
+                  <div style={{width:'100%'}}>
+                    <div style={{display:'flex',gap:8,alignItems:'flex-end',flexWrap:'wrap' as const}}>
+                      <div>
+                        <div style={{fontSize:10,color:C.textMuted,textTransform:'uppercase' as const,letterSpacing:'0.5px',marginBottom:4}}>Weekly Pitches</div>
+                        <input type="number" style={{...S.input,width:120}} value={throwCountDraft.weekly_pitches} onChange={e=>setThrowCountDraft(d=>({...d,weekly_pitches:e.target.value}))}/>
+                      </div>
+                      <div>
+                        <div style={{fontSize:10,color:C.textMuted,textTransform:'uppercase' as const,letterSpacing:'0.5px',marginBottom:4}}>Weekly HE Throws</div>
+                        <input type="number" style={{...S.input,width:120}} value={throwCountDraft.weekly_high_effort} onChange={e=>setThrowCountDraft(d=>({...d,weekly_high_effort:e.target.value}))}/>
+                      </div>
+                      <div>
+                        <div style={{fontSize:10,color:C.textMuted,textTransform:'uppercase' as const,letterSpacing:'0.5px',marginBottom:4}}>Effort Tier</div>
+                        <select style={{...S.input,width:120}} value={throwCountDraft.effort_tier} onChange={e=>setThrowCountDraft(d=>({...d,effort_tier:e.target.value}))}>
+                          <option value="">—</option>
+                          <option value="80-90">80-90%</option>
+                          <option value="90-95">90-95%</option>
+                          <option value="95+">95%+</option>
+                        </select>
+                      </div>
+                      <div>
+                        <div style={{fontSize:10,color:C.textMuted,textTransform:'uppercase' as const,letterSpacing:'0.5px',marginBottom:4}}>Throw Surface</div>
+                        <select style={{...S.input,width:120}} value={throwCountDraft.throw_surface} onChange={e=>setThrowCountDraft(d=>({...d,throw_surface:e.target.value}))}>
+                          <option value="">—</option>
+                          <option value="mound">Mound</option>
+                          <option value="flat">Flat Ground</option>
+                        </select>
+                      </div>
+                      <button onClick={saveThrowCounts} style={S.btn('gold')}>Save</button>
+                      <button onClick={()=>setEditingThrowCounts(false)} style={S.btn()}>Cancel</button>
                     </div>
-                    <div>
-                      <div style={{fontSize:10,color:C.textMuted,textTransform:'uppercase' as const,letterSpacing:'0.5px',marginBottom:4}}>Weekly HE Throws</div>
-                      <input type="number" style={{...S.input,width:120}} value={throwCountDraft.weekly_high_effort} onChange={e=>setThrowCountDraft(d=>({...d,weekly_high_effort:e.target.value}))}/>
-                    </div>
-                    <button onClick={saveThrowCounts} style={S.btn('gold')}>Save</button>
-                    <button onClick={()=>setEditingThrowCounts(false)} style={S.btn()}>Cancel</button>
+                    <div style={{fontSize:10,color:C.textDim,marginTop:6}}>Effort and surface multipliers are estimates from published research, not exact measurements for this athlete.</div>
                   </div>
                 )}
               </div>
