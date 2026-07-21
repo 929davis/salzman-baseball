@@ -42,7 +42,15 @@ const SURFACE_MULTIPLIERS: Record<string, number> = {
   flat: 1.0,
 }
 
-const getEffectiveThrowCount = (selected: any) => {
+const getEffectiveThrowCount = (selected: any, throwEntries: any[]) => {
+  if (throwEntries && throwEntries.length > 0) {
+    return throwEntries.reduce((sum, entry) => {
+      const effortMult = EFFORT_MULTIPLIERS[entry.effort_tier] ?? 1
+      const surfaceMult = SURFACE_MULTIPLIERS[entry.surface] ?? 1
+      return sum + (entry.weekly_count * effortMult * surfaceMult)
+    }, 0)
+  }
+  // Fallback for pitchers without any entries yet
   const raw = selected?.weekly_pitches || selected?.weekly_high_effort || 0
   const effortMult = EFFORT_MULTIPLIERS[selected?.effort_tier] ?? 1
   const surfaceMult = SURFACE_MULTIPLIERS[selected?.throw_surface] ?? 1
@@ -269,8 +277,9 @@ export default function CoachDashboard(){
   const [user,setUser]=useState<any>(null)
   const [pitchers,setPitchers]=useState<any[]>([])
   const [selected,setSelected]=useState<any>(null)
-  const [editingThrowCounts,setEditingThrowCounts]=useState(false)
-  const [throwCountDraft,setThrowCountDraft]=useState({weekly_pitches:'',weekly_high_effort:'',effort_tier:'',throw_surface:''})
+  const [throwEntries, setThrowEntries] = useState<any[]>([])
+  const [showThrowEntries,setShowThrowEntries]=useState(false)
+  const [newThrowEntry,setNewThrowEntry]=useState({label:'',weekly_count:'',surface:'',effort_tier:''})
   const [tab,setTab]=useState('overview')
   const [view,setView]=useState('roster')
   const [loading,setLoading]=useState(true)
@@ -368,7 +377,7 @@ export default function CoachDashboard(){
   const selectPitcher=async(p:any)=>{
     setSelected(p);setTab('overview');setView('roster')
     const sevenDaysAgo=new Date(Date.now()-7*24*60*60*1000).toISOString().split('T')[0]
-    const [logsRes,notesRes,msgsRes,cmjRes,progRes,foodRes,fuelRes,weekFuelRes]=await Promise.all([
+    const [logsRes,notesRes,msgsRes,cmjRes,progRes,foodRes,fuelRes,weekFuelRes,throwRes]=await Promise.all([
       supabase.from('session_logs').select('*').eq('pitcher_id',p.id).order('log_date',{ascending:false}),
       supabase.from('coach_notes').select('*').eq('pitcher_id',p.id).order('created_at',{ascending:false}),
       supabase.from('messages').select('*').eq('pitcher_id',p.id).order('created_at'),
@@ -377,6 +386,7 @@ export default function CoachDashboard(){
       supabase.from('food_logs').select('*').eq('pitcher_id',p.id).eq('log_date',today).order('created_at'),
       supabase.from('daily_fuel_scores').select('*').eq('pitcher_id',p.id).eq('log_date',today).maybeSingle(),
       supabase.from('daily_fuel_scores').select('*').eq('pitcher_id',p.id).gte('log_date',sevenDaysAgo).order('log_date'),
+      supabase.from('throw_volume_entries').select('*').eq('pitcher_id',p.id).order('created_at'),
     ])
     setLogs(logsRes.data||[])
     setNotes(notesRes.data||[])
@@ -387,22 +397,31 @@ export default function CoachDashboard(){
     setTodayFoodLogs(foodRes.data||[])
     setTodayFuelScore(fuelRes.data||null)
     setWeekFuelScores(weekFuelRes.data||[])
+    setThrowEntries(throwRes.data||[])
   }
 
-  const startEditThrowCounts=()=>{
-    setThrowCountDraft({weekly_pitches:String(selected?.weekly_pitches||''),weekly_high_effort:String(selected?.weekly_high_effort||''),effort_tier:selected?.effort_tier||'',throw_surface:selected?.throw_surface||''})
-    setEditingThrowCounts(true)
-  }
-
-  const saveThrowCounts=async()=>{
+  const refetchThrowEntries=async()=>{
     if (!selected)return
-    const weekly_pitches=parseInt(throwCountDraft.weekly_pitches)||0
-    const weekly_high_effort=parseInt(throwCountDraft.weekly_high_effort)||0
-    const effort_tier=throwCountDraft.effort_tier||null
-    const throw_surface=throwCountDraft.throw_surface||null
-    await supabase.from('profiles').update({weekly_pitches,weekly_high_effort,effort_tier,throw_surface}).eq('id',selected.id)
-    setSelected((prev:any)=>({...prev,weekly_pitches,weekly_high_effort,effort_tier,throw_surface}))
-    setEditingThrowCounts(false)
+    const {data}=await supabase.from('throw_volume_entries').select('*').eq('pitcher_id',selected.id).order('created_at')
+    setThrowEntries(data||[])
+  }
+
+  const addThrowEntry=async()=>{
+    if (!selected||!newThrowEntry.label.trim()||!newThrowEntry.weekly_count||!newThrowEntry.surface||!newThrowEntry.effort_tier)return
+    await supabase.from('throw_volume_entries').insert({
+      pitcher_id:selected.id,
+      label:newThrowEntry.label.trim(),
+      weekly_count:parseFloat(newThrowEntry.weekly_count)||0,
+      surface:newThrowEntry.surface,
+      effort_tier:newThrowEntry.effort_tier,
+    })
+    setNewThrowEntry({label:'',weekly_count:'',surface:'',effort_tier:''})
+    await refetchThrowEntries()
+  }
+
+  const deleteThrowEntry=async(id:string)=>{
+    await supabase.from('throw_volume_entries').delete().eq('id',id)
+    await refetchThrowEntries()
   }
 
   const calcCoachCMJ=()=>{
@@ -618,7 +637,7 @@ export default function CoachDashboard(){
   }
 
   const buildPrompt=()=>{
-    const jiP=armCare(getEffectiveThrowCount(selected),getEffectiveVelocity(selected,cmjResults))
+    const jiP=armCare(getEffectiveThrowCount(selected,throwEntries),getEffectiveVelocity(selected,cmjResults))
     const lastCMJ=cmjResults[0]
     const {classification}=classifyCMJ(lastCMJ)
     const rule=recommendationRules.find(r=>r.classification===classification)
@@ -757,40 +776,52 @@ Write next week's program by day and category (Pre-Throwing, Throwing, Post-Thro
                   </div>
                   <div style={{background:C.goldBg,border:`1px solid ${C.goldDim}`,borderRadius:8,padding:'10px 14px',textAlign:'center'}}>
                     <div style={{fontSize:10,color:C.gold,textTransform:'uppercase' as const,letterSpacing:'0.5px',marginBottom:4}}>Arm Care Min</div>
-                    <div style={{fontSize:18,fontWeight:700,color:C.gold}}>{armCare(getEffectiveThrowCount(selected),getEffectiveVelocity(selected,cmjResults))?armCare(getEffectiveThrowCount(selected),getEffectiveVelocity(selected,cmjResults)).toLocaleString():'—'}<span style={{fontSize:10,color:C.goldDim}}> ft·lb</span></div>
+                    <div style={{fontSize:18,fontWeight:700,color:C.gold}}>{armCare(getEffectiveThrowCount(selected,throwEntries),getEffectiveVelocity(selected,cmjResults))?armCare(getEffectiveThrowCount(selected,throwEntries),getEffectiveVelocity(selected,cmjResults)).toLocaleString():'—'}<span style={{fontSize:10,color:C.goldDim}}> ft·lb</span></div>
                   </div>
-                  <button onClick={()=>editingThrowCounts?setEditingThrowCounts(false):startEditThrowCounts()} title="Edit weekly throw counts" style={{background:'transparent',border:`1px solid ${C.border}`,borderRadius:8,width:32,height:32,display:'flex',alignItems:'center',justifyContent:'center',color:C.textMuted,cursor:'pointer',fontSize:14,flexShrink:0}}>✎</button>
+                  <button onClick={()=>setShowThrowEntries(s=>!s)} title="Manage throw volume entries" style={{background:'transparent',border:`1px solid ${C.border}`,borderRadius:8,width:32,height:32,display:'flex',alignItems:'center',justifyContent:'center',color:C.textMuted,cursor:'pointer',fontSize:14,flexShrink:0}}>✎</button>
                 </div>
-                {editingThrowCounts&&(
+                {showThrowEntries&&(
                   <div style={{width:'100%'}}>
+                    {throwEntries.length>0&&(
+                      <div style={{display:'flex',flexDirection:'column' as const,gap:6,marginBottom:10}}>
+                        {throwEntries.map((entry:any)=>(
+                          <div key={entry.id} style={{display:'flex',alignItems:'center',gap:12,background:C.bg3,border:`1px solid ${C.border}`,borderRadius:8,padding:'8px 12px'}}>
+                            <div style={{flex:1,fontSize:13,color:C.white,fontWeight:600}}>{entry.label}</div>
+                            <div style={{fontSize:12,color:C.textMuted,minWidth:60}}>{entry.weekly_count}/wk</div>
+                            <div style={{fontSize:11,color:C.textMuted,textTransform:'capitalize' as const,minWidth:70}}>{entry.surface}</div>
+                            <div style={{fontSize:11,color:C.textMuted,minWidth:50}}>{entry.effort_tier}</div>
+                            <button onClick={()=>deleteThrowEntry(entry.id)} style={{background:'transparent',border:'none',color:C.red,cursor:'pointer',fontSize:14}}>✕</button>
+                          </div>
+                        ))}
+                      </div>
+                    )}
                     <div style={{display:'flex',gap:8,alignItems:'flex-end',flexWrap:'wrap' as const}}>
                       <div>
-                        <div style={{fontSize:10,color:C.textMuted,textTransform:'uppercase' as const,letterSpacing:'0.5px',marginBottom:4}}>Weekly Pitches</div>
-                        <input type="number" style={{...S.input,width:120}} value={throwCountDraft.weekly_pitches} onChange={e=>setThrowCountDraft(d=>({...d,weekly_pitches:e.target.value}))}/>
+                        <div style={{fontSize:10,color:C.textMuted,textTransform:'uppercase' as const,letterSpacing:'0.5px',marginBottom:4}}>Label</div>
+                        <input type="text" style={{...S.input,width:160}} placeholder="e.g. Bullpen" value={newThrowEntry.label} onChange={e=>setNewThrowEntry(d=>({...d,label:e.target.value}))}/>
                       </div>
                       <div>
-                        <div style={{fontSize:10,color:C.textMuted,textTransform:'uppercase' as const,letterSpacing:'0.5px',marginBottom:4}}>Weekly HE Throws</div>
-                        <input type="number" style={{...S.input,width:120}} value={throwCountDraft.weekly_high_effort} onChange={e=>setThrowCountDraft(d=>({...d,weekly_high_effort:e.target.value}))}/>
+                        <div style={{fontSize:10,color:C.textMuted,textTransform:'uppercase' as const,letterSpacing:'0.5px',marginBottom:4}}>Weekly Count</div>
+                        <input type="number" style={{...S.input,width:100}} value={newThrowEntry.weekly_count} onChange={e=>setNewThrowEntry(d=>({...d,weekly_count:e.target.value}))}/>
+                      </div>
+                      <div>
+                        <div style={{fontSize:10,color:C.textMuted,textTransform:'uppercase' as const,letterSpacing:'0.5px',marginBottom:4}}>Surface</div>
+                        <select style={{...S.input,width:120}} value={newThrowEntry.surface} onChange={e=>setNewThrowEntry(d=>({...d,surface:e.target.value}))}>
+                          <option value="">—</option>
+                          <option value="mound">Mound</option>
+                          <option value="flat">Flat Ground</option>
+                        </select>
                       </div>
                       <div>
                         <div style={{fontSize:10,color:C.textMuted,textTransform:'uppercase' as const,letterSpacing:'0.5px',marginBottom:4}}>Effort Tier</div>
-                        <select style={{...S.input,width:120}} value={throwCountDraft.effort_tier} onChange={e=>setThrowCountDraft(d=>({...d,effort_tier:e.target.value}))}>
+                        <select style={{...S.input,width:120}} value={newThrowEntry.effort_tier} onChange={e=>setNewThrowEntry(d=>({...d,effort_tier:e.target.value}))}>
                           <option value="">—</option>
                           <option value="80-90">80-90%</option>
                           <option value="90-95">90-95%</option>
                           <option value="95+">95%+</option>
                         </select>
                       </div>
-                      <div>
-                        <div style={{fontSize:10,color:C.textMuted,textTransform:'uppercase' as const,letterSpacing:'0.5px',marginBottom:4}}>Throw Surface</div>
-                        <select style={{...S.input,width:120}} value={throwCountDraft.throw_surface} onChange={e=>setThrowCountDraft(d=>({...d,throw_surface:e.target.value}))}>
-                          <option value="">—</option>
-                          <option value="mound">Mound</option>
-                          <option value="flat">Flat Ground</option>
-                        </select>
-                      </div>
-                      <button onClick={saveThrowCounts} style={S.btn('gold')}>Save</button>
-                      <button onClick={()=>setEditingThrowCounts(false)} style={S.btn()}>Cancel</button>
+                      <button onClick={addThrowEntry} style={S.btn('gold')}>Add</button>
                     </div>
                     <div style={{fontSize:10,color:C.textDim,marginTop:6}}>Effort and surface multipliers are estimates from published research, not exact measurements for this athlete.</div>
                   </div>
