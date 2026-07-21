@@ -709,8 +709,8 @@ Write next week's program by day and category (Pre-Throwing, Throwing, Post-Thro
                 </div>
                 <div style={{display:'flex',gap:8}}>
                   <div style={{background:C.bg3,border:`1px solid ${C.border}`,borderRadius:8,padding:'10px 14px',textAlign:'center'}}>
-                    <div style={{fontSize:10,color:C.textMuted,textTransform:'uppercase' as const,letterSpacing:'0.5px',marginBottom:4}}>Avg Vel</div>
-                    <div style={{fontSize:20,fontWeight:700,color:C.white}}>{selected.avg_velocity||'—'}<span style={{fontSize:11,color:C.textMuted}}> mph</span></div>
+                    <div style={{fontSize:10,color:C.textMuted,textTransform:'uppercase' as const,letterSpacing:'0.5px',marginBottom:4}}>Velocity</div>
+                    <div style={{fontSize:20,fontWeight:700,color:C.white}}>{getEffectiveVelocity(selected,cmjResults)||'—'}<span style={{fontSize:11,color:C.textMuted}}> mph</span></div>
                   </div>
                   <div style={{background:C.goldBg,border:`1px solid ${C.goldDim}`,borderRadius:8,padding:'10px 14px',textAlign:'center'}}>
                     <div style={{fontSize:10,color:C.gold,textTransform:'uppercase' as const,letterSpacing:'0.5px',marginBottom:4}}>Arm Care Min</div>
