@@ -142,6 +142,7 @@ const FrameInputs=({form,setForm,fields,inp,lbl}:{form:any,setForm:any,fields:{k
 
 export default function PitcherDashboard(){
   const [profile,setProfile]=useState<any>(null)
+  const [exerciseVideos,setExerciseVideos]=useState<Record<string,string>>({})
   const [tab,setTab]=useState('program')
   const [program,setProgram]=useState<any>(null)
   const [logs,setLogs]=useState<any[]>([])
@@ -195,7 +196,7 @@ export default function PitcherDashboard(){
       const {data:prof}=await supabase.from('profiles').select('*').eq('id',user.id).single()
       if (!prof||prof.role==='coach'){router.push('/coach');return}
       setProfile(prof)
-      const [progRes,logsRes,msgsRes,notesRes,cmjRes,sjRes,slRes,hopRes,plyoRes,foodRes,fuelRes]=await Promise.all([
+      const [progRes,logsRes,msgsRes,notesRes,cmjRes,sjRes,slRes,hopRes,plyoRes,foodRes,fuelRes,videosRes]=await Promise.all([
         supabase.from('programs').select('*').eq('pitcher_id',prof.id).order('week_of',{ascending:false}).limit(1),
         supabase.from('session_logs').select('*').eq('pitcher_id',prof.id).order('log_date',{ascending:false}).limit(20),
         supabase.from('messages').select('*').eq('pitcher_id',prof.id).order('created_at'),
@@ -207,6 +208,7 @@ export default function PitcherDashboard(){
         supabase.from('plyo_pushup_results').select('*').eq('pitcher_id',prof.id).order('test_date',{ascending:false}),
         supabase.from('food_logs').select('*').eq('pitcher_id',prof.id).eq('log_date',today).order('created_at'),
         supabase.from('daily_fuel_scores').select('*').eq('pitcher_id',prof.id).eq('log_date',today).single(),
+        supabase.from('exercise_videos').select('*'),
       ])
       setProgram(progRes.data?.[0]||null)
       setLogs(logsRes.data||[])
@@ -219,6 +221,9 @@ export default function PitcherDashboard(){
       setPlyoPushupResults(plyoRes.data||[])
       setFoodLogs(foodRes.data||[])
       setDailyFuelScore(fuelRes.data||null)
+      const videoMap: Record<string, string> = {}
+      ;(videosRes.data || []).forEach((v: any) => { videoMap[v.exercise_id] = v.video_url })
+      setExerciseVideos(videoMap)
       setLoading(false)
     }
     init()
@@ -523,6 +528,7 @@ export default function PitcherDashboard(){
                               <div style={{fontSize:13,fontWeight:600,color:C.white,marginBottom:2}}>{ex.name}</div>
                               <div style={{fontSize:12,color:catCol,fontWeight:600}}>{ex.sets}×{ex.reps}{ex.load?` @ ${ex.load}%`:''}</div>
                               {ex.notes&&<div style={{fontSize:11,color:C.textMuted,marginTop:2,fontStyle:'italic'}}>{ex.notes}</div>}
+                              {exerciseVideos[ex.id]&&<a href={exerciseVideos[ex.id]} target="_blank" rel="noopener noreferrer" style={{fontSize:11,color:C.blue,marginTop:4,display:'inline-block',textDecoration:'none'}}>▶ Watch Video</a>}
                             </div>
                           ))}
                           {note&&<div style={{fontSize:12,color:C.textMuted,fontStyle:'italic',padding:'6px 10px',background:C.bg3,borderRadius:6}}>{note}</div>}
