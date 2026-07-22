@@ -41,10 +41,19 @@ type ZoneData = Record<number,{whiff:number,chase:number,hard_hit:number,xwoba:n
 type ChaseRow = {pitch_type:string,chase_pct:number,whiff_pct:number,hard_hit_pct:number,xwoba:number,count:number}
 type PitchRank = {pitch_type:string,value:number,count:number}
 
-const buildSavantLink = (zone: number, countBucket: string, pitchFilter: string, minDate: string, maxDate: string) => {
+const buildSavantLink = (zone: number, countBucket: string, pitchFilter: string) => {
+  const today = new Date()
+  const yesterday = new Date(today)
+  yesterday.setDate(today.getDate() - 1)
+  const weekAgo = new Date(today)
+  weekAgo.setDate(today.getDate() - 7)
+
+  const fmt = (d: Date) => d.toISOString().split('T')[0]
+
   const params = new URLSearchParams({
     hfGT: 'R|',
     hfNewZones: `${zone}|`,
+    hfSea: '2026|',
     player_type: 'pitcher',
     group_by: 'name-date',
     min_pitches: '0',
@@ -52,9 +61,9 @@ const buildSavantLink = (zone: number, countBucket: string, pitchFilter: string,
     min_pas: '0',
     sort_col: 'pitches',
     sort_order: 'desc',
+    game_date_gt: fmt(weekAgo),
+    game_date_lt: fmt(yesterday),
   })
-  if (minDate) params.set('game_date_gt', minDate)
-  if (maxDate) params.set('game_date_lt', maxDate)
   if (countBucket !== 'all') {
     const [balls, strikes] = countBucket.split('-')
     params.set('hfC', `${balls}${strikes}|`)
@@ -93,8 +102,6 @@ export default function PitchingIQ() {
   const [pitchRanks,setPitchRanks]=useState<PitchRank[]>([])
   const [pitchTypes,setPitchTypes]=useState<string[]>([])
   const [lastUpdated,setLastUpdated]=useState('')
-  const [minDate,setMinDate]=useState('')
-  const [maxDate,setMaxDate]=useState('')
   const [selectedChase,setSelectedChase]=useState<ChaseRow|null>(null)
   const [insight,setInsight]=useState('')
 
@@ -124,8 +131,6 @@ export default function PitchingIQ() {
       if (dates.length>0){
         const d=new Date(dates[dates.length-1])
         setLastUpdated(d.toLocaleDateString('en-US',{month:'long',day:'numeric',year:'numeric'}))
-        setMinDate(dates[0])
-        setMaxDate(dates[dates.length-1])
       }
 
       const types=[...new Set(data.map((r:any)=>r.pitch_type).filter(Boolean))].sort()
@@ -315,7 +320,7 @@ export default function PitchingIQ() {
                       const fg=d&&val>0?textForBg(val,minVal,maxVal):C.textDim
                       const displayVal=metric==='xwoba'?val.toFixed(3):val.toFixed(0)+'%'
                       return (
-                        <a key={`${ri}-${ci}`} href={buildSavantLink(zone,countBucket,pitchFilter,minDate,maxDate)} target="_blank" rel="noopener noreferrer" style={{textDecoration:'none',cursor:'pointer'}}>
+                        <a key={`${ri}-${ci}`} href={buildSavantLink(zone,countBucket,pitchFilter)} target="_blank" rel="noopener noreferrer" style={{textDecoration:'none',cursor:'pointer'}}>
                           <div style={{width:52,height:52,borderRadius:4,background:bg,border:`${isInZone?'1.5px':'1px'} solid ${isInZone?'rgba(255,255,255,0.2)':C.border}`,display:'flex',flexDirection:'column' as const,alignItems:'center',justifyContent:'center',opacity:isInZone?1:0.75,position:'relative' as const}}>
                             <div style={{fontSize:8,position:'absolute' as const,top:2,left:3,color:fg,opacity:0.6}}>{zone}</div>
                             <div style={{fontSize:11,fontWeight:700,color:fg}}>{d&&d.count>0?displayVal:'—'}</div>
