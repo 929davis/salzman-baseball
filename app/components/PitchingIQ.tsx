@@ -41,6 +41,27 @@ type ZoneData = Record<number,{whiff:number,chase:number,hard_hit:number,xwoba:n
 type ChaseRow = {pitch_type:string,chase_pct:number,whiff_pct:number,hard_hit_pct:number,xwoba:number,count:number}
 type PitchRank = {pitch_type:string,value:number,count:number}
 
+const buildSavantLink = (zone: number, countBucket: string, pitchFilter: string) => {
+  const params = new URLSearchParams({
+    hfGT: 'R|',
+    hfSea: '2026|',
+    hfNewZones: `${zone}|`,
+    player_type: 'pitcher',
+    group_by: 'name-date',
+    min_pitches: '0',
+    min_results: '0',
+    min_pas: '0',
+    sort_col: 'pitches',
+    sort_order: 'desc',
+  })
+  if (countBucket !== 'all') {
+    const [balls, strikes] = countBucket.split('-')
+    params.set('hfC', `${balls}${strikes}|`)
+  }
+  if (pitchFilter !== 'all') params.set('hfPT', `${pitchFilter}|`)
+  return `https://baseballsavant.mlb.com/statcast_search?${params.toString()}#results`
+}
+
 function heatColor(val:number,min:number,max:number):string {
   if (max===min) return '#1c2333'
   const t=(val-min)/(max-min)
@@ -289,10 +310,12 @@ export default function PitchingIQ() {
                       const fg=d&&val>0?textForBg(val,minVal,maxVal):C.textDim
                       const displayVal=metric==='xwoba'?val.toFixed(3):val.toFixed(0)+'%'
                       return (
-                        <div key={`${ri}-${ci}`} style={{width:52,height:52,borderRadius:4,background:bg,border:`${isInZone?'1.5px':'1px'} solid ${isInZone?'rgba(255,255,255,0.2)':C.border}`,display:'flex',flexDirection:'column' as const,alignItems:'center',justifyContent:'center',opacity:isInZone?1:0.75,position:'relative' as const}}>
-                          <div style={{fontSize:8,position:'absolute' as const,top:2,left:3,color:fg,opacity:0.6}}>{zone}</div>
-                          <div style={{fontSize:11,fontWeight:700,color:fg}}>{d&&d.count>0?displayVal:'—'}</div>
-                        </div>
+                        <a key={`${ri}-${ci}`} href={buildSavantLink(zone,countBucket,pitchFilter)} target="_blank" rel="noopener noreferrer" style={{textDecoration:'none',cursor:'pointer'}}>
+                          <div style={{width:52,height:52,borderRadius:4,background:bg,border:`${isInZone?'1.5px':'1px'} solid ${isInZone?'rgba(255,255,255,0.2)':C.border}`,display:'flex',flexDirection:'column' as const,alignItems:'center',justifyContent:'center',opacity:isInZone?1:0.75,position:'relative' as const}}>
+                            <div style={{fontSize:8,position:'absolute' as const,top:2,left:3,color:fg,opacity:0.6}}>{zone}</div>
+                            <div style={{fontSize:11,fontWeight:700,color:fg}}>{d&&d.count>0?displayVal:'—'}</div>
+                          </div>
+                        </a>
                       )
                     })}
                   </div>
@@ -405,7 +428,8 @@ export default function PitchingIQ() {
         </div>
       </div>
       <div style={{background:C.bg3,border:`1px solid ${C.border}`,borderRadius:8,padding:'12px 14px',marginTop:10}}>
-        <div style={{fontSize:11,fontWeight:700,color:C.textMuted,textTransform:'uppercase' as const,letterSpacing:'0.5px',marginBottom:8}}>Swing path guide</div>
+        <div style={{fontSize:11,fontWeight:700,color:C.textMuted,textTransform:'uppercase' as const,letterSpacing:'0.5px',marginBottom:4}}>Swing path guide</div>
+        <div style={{fontSize:10,color:C.textDim,marginBottom:8,fontStyle:'italic'}}>Based on attack angle (vertical bat angle at contact) — not swing path tilt.</div>
         <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(200px,1fr))',gap:6}}>
           {[
             {label:'Flat',range:'Below 10°',desc:'Level or downward swing path. Pitches up in the zone are nearly untouchable. Low pitches get topped for weak grounders. Go up early in counts.'},
