@@ -20,13 +20,7 @@ function classifyArmAngle(angle: number | null): string {
 }
 
 function classifyCount(balls: number, strikes: number): string {
-  if (strikes === 2 && balls === 0) return '0-2'
-  if (strikes === 2 && balls === 1) return '1-2'
-  if (strikes === 2 && balls === 2) return '2-2'
-  if (strikes === 2 && balls === 3) return '3-2'
-  if (balls === strikes) return 'even'
-  if (strikes > balls) return 'ahead'
-  return 'behind'
+  return `${balls}-${strikes}`
 }
 
 function parseCSVLine(line: string): string[] {
@@ -142,6 +136,7 @@ export async function GET(request: Request) {
       count_bucket:      classifyCount(balls, strikes),
       inning:            int(col(row, 'inning')),
       attack_angle:      num(col(row, 'attack_angle')),
+      attack_direction:  num(col(row, 'attack_direction')),
     })
   }
 

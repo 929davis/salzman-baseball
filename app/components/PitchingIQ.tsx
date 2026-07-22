@@ -10,14 +10,18 @@ const C = {
 }
 const ARM_BUCKETS = ['all','submarine','sidearm','low_three_quarter','three_quarter','high_three_quarter','overhand']
 const ARM_LABELS:Record<string,string> = {
-  all:'All',submarine:'Submarine',sidearm:'Sidearm',
-  low_three_quarter:'Low 3/4',three_quarter:'3/4',
-  high_three_quarter:'High 3/4',overhand:'Overhand',
+  all:'All',
+  submarine:'Submarine (<0°)',
+  sidearm:'Sidearm (0-15°)',
+  low_three_quarter:'Low 3/4 (16-30°)',
+  three_quarter:'3/4 (31-49°)',
+  high_three_quarter:'High 3/4 (50-62°)',
+  overhand:'Overhand (63°+)',
 }
-const COUNT_BUCKETS = ['all','0-2','1-2','2-2','3-2','even','ahead','behind']
-const METRICS = ['whiff','chase','hard_hit','xwoba']
+const COUNT_BUCKETS = ['all','0-0','0-1','1-0','1-1','2-0','0-2','2-1','1-2','3-0','2-2','3-1','3-2']
+const METRICS = ['whiff','chase','hard_hit','xwoba','home_run']
 const METRIC_LABELS:Record<string,string> = {
-  whiff:'Whiff %',chase:'Chase %',hard_hit:'Hard-hit %',xwoba:'xwOBA',
+  whiff:'Whiff %',chase:'Chase %',hard_hit:'Hard-hit %',xwoba:'xwOBA',home_run:'HR %',
 }
 const ZONE_GRID = [
   [null,11,12,13,null],
@@ -33,7 +37,7 @@ const ZONE_LABELS:Record<number,string> = {
   11:'High (above zone)',12:'High-middle (above zone)',
   13:'High-away (above zone)',14:'Shadow/chase zone (off plate — all sides including low)',
 }
-type ZoneData = Record<number,{whiff:number,chase:number,hard_hit:number,xwoba:number,count:number}>
+type ZoneData = Record<number,{whiff:number,chase:number,hard_hit:number,xwoba:number,home_run:number,count:number}>
 type ChaseRow = {pitch_type:string,chase_pct:number,whiff_pct:number,hard_hit_pct:number,xwoba:number,count:number}
 type PitchRank = {pitch_type:string,value:number,count:number}
 
@@ -61,6 +65,7 @@ export default function PitchingIQ() {
   const [pitchFilter,setPitchFilter]=useState('all')
   const [pThrows,setPThrows]=useState('all')
   const [swingPath,setSwingPath]=useState('all')
+  const [attackDirection,setAttackDirection]=useState('all')
   const [zoneData,setZoneData]=useState<ZoneData>({})
   const [chaseRows,setChaseRows]=useState<ChaseRow[]>([])
   const [pitchRanks,setPitchRanks]=useState<PitchRank[]>([])
@@ -77,7 +82,7 @@ export default function PitchingIQ() {
       if (countBucket!=='all') filters.count_bucket=countBucket
       if (pitchFilter!=='all') filters.pitch_type=pitchFilter
 
-      let q=supabase.from('statcast_pitches').select('zone,description,launch_speed,estimated_woba,arm_angle_bucket,count_bucket,pitch_type,game_date,attack_angle,p_throws').eq('bats',bats)
+      let q=supabase.from('statcast_pitches').select('zone,description,launch_speed,estimated_woba,arm_angle_bucket,count_bucket,pitch_type,game_date,attack_angle,attack_direction,p_throws,events').eq('bats',bats)
       if (armBucket!=='all') q=q.eq('arm_angle_bucket',armBucket)
       if (countBucket!=='all') q=q.eq('count_bucket',countBucket)
       if (pitchFilter!=='all') q=q.eq('pitch_type',pitchFilter)
@@ -85,6 +90,9 @@ export default function PitchingIQ() {
       if (swingPath==='flat') q=q.lt('attack_angle',10)
       else if (swingPath==='slight') q=q.gte('attack_angle',10).lt('attack_angle',25)
       else if (swingPath==='uppercut') q=q.gte('attack_angle',25)
+      if (attackDirection==='pull') q=q.gt('attack_direction',5)
+      else if (attackDirection==='straight') q=q.gte('attack_direction',-5).lte('attack_direction',5)
+      else if (attackDirection==='oppo') q=q.lt('attack_direction',-5)
       const {data,error}=await q.limit(50000)
       if (error||!data){setLoading(false);return}
 
@@ -98,7 +106,7 @@ export default function PitchingIQ() {
       setPitchTypes(types as string[])
 
       const zd:ZoneData={}
-      const pitchMap:Record<string,{whiffs:number,swings:number,chases:number,outOfZone:number,hardHits:number,contact:number,xwobaSum:number,xwobaCount:number}>={}
+      const pitchMap:Record<string,{whiffs:number,swings:number,chases:number,outOfZone:number,hardHits:number,contact:number,xwobaSum:number,xwobaCount:number,homeRuns:number}>={}
 
       for (const row of data as any[]) {
         const zone=row.zone
@@ -109,24 +117,27 @@ export default function PitchingIQ() {
         const isWhiff=['swinging_strike','swinging_strike_blocked'].includes(desc)
         const isContact=['hit_into_play','hit_into_play_no_out','hit_into_play_score'].includes(desc)
         const isHardHit=isContact&&ev!==null&&ev>=95
+        const isHomeRun=row.events==='home_run'
         const isOutOfZone=zone>=10
         const isChase=isSwing&&isOutOfZone
         if (!zone) continue
-        if (!zd[zone]) zd[zone]={whiff:0,chase:0,hard_hit:0,xwoba:0,count:0}
+        if (!zd[zone]) zd[zone]={whiff:0,chase:0,hard_hit:0,xwoba:0,home_run:0,count:0}
         zd[zone].count++
         if (isWhiff) zd[zone].whiff++
         if (isChase) zd[zone].chase++
         if (isHardHit) zd[zone].hard_hit++
+        if (isHomeRun) zd[zone].home_run++
         if (xwoba!==null) zd[zone].xwoba+=xwoba
         const pt=row.pitch_type
         if (!pt) continue
-        if (!pitchMap[pt]) pitchMap[pt]={whiffs:0,swings:0,chases:0,outOfZone:0,hardHits:0,contact:0,xwobaSum:0,xwobaCount:0}
+        if (!pitchMap[pt]) pitchMap[pt]={whiffs:0,swings:0,chases:0,outOfZone:0,hardHits:0,contact:0,xwobaSum:0,xwobaCount:0,homeRuns:0}
         if (isSwing) pitchMap[pt].swings++
         if (isWhiff) pitchMap[pt].whiffs++
         if (isOutOfZone) pitchMap[pt].outOfZone++
         if (isChase) pitchMap[pt].chases++
         if (isContact) pitchMap[pt].contact++
         if (isHardHit) pitchMap[pt].hardHits++
+        if (isHomeRun) pitchMap[pt].homeRuns++
         if (xwoba!==null){pitchMap[pt].xwobaSum+=xwoba;pitchMap[pt].xwobaCount++}
       }
 
@@ -139,6 +150,7 @@ export default function PitchingIQ() {
           chase:isOut&&d.count>0?(d.chase/d.count)*100:0,
           hard_hit:d.count>0?(d.hard_hit/d.count)*100:0,
           xwoba:d.count>0?d.xwoba/d.count:0,
+          home_run:d.count>0?(d.home_run/d.count)*100:0,
           count:d.count,
         }
       }
@@ -168,6 +180,7 @@ export default function PitchingIQ() {
         else if (metric==='chase') value=d.outOfZone>0?(d.chases/d.outOfZone)*100:0
         else if (metric==='hard_hit') value=d.contact>0?(d.hardHits/d.contact)*100:0
         else if (metric==='xwoba') value=d.xwobaCount>0?d.xwobaSum/d.xwobaCount:0
+        else if (metric==='home_run') value=d.contact>0?(d.homeRuns/d.contact)*100:0
         ranks.push({pitch_type:pt,value,count:d.swings})
       }
       ranks.sort((a,b)=>metric==='xwoba'?a.value-b.value:b.value-a.value)
@@ -182,7 +195,7 @@ export default function PitchingIQ() {
       }
     } catch(e){console.error(e)}
     setLoading(false)
-  },[bats,armBucket,countBucket,metric,pitchFilter,pThrows,swingPath])
+  },[bats,armBucket,countBucket,metric,pitchFilter,pThrows,swingPath,attackDirection])
 
   useEffect(()=>{fetchData()},[fetchData])
 
@@ -201,7 +214,7 @@ export default function PitchingIQ() {
     <div style={{color:C.text,fontSize:13}}>
       <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:12,flexWrap:'wrap' as const,gap:8}}>
         <div style={{fontSize:16,fontWeight:700,color:C.gold}}>Pitching IQ</div>
-        {lastUpdated&&<div style={{fontSize:11,color:C.textMuted}}>Updated {lastUpdated} · yesterday's games</div>}
+        {lastUpdated&&<div style={{fontSize:11,color:C.textMuted}}>Updated through {lastUpdated}</div>}
       </div>
       <div style={{background:C.bg3,border:`1px solid ${C.border}`,borderRadius:8,padding:'10px 12px',marginBottom:12}}>
         <div style={{display:'flex',flexWrap:'wrap' as const,gap:12}}>
@@ -220,6 +233,24 @@ export default function PitchingIQ() {
           <div>
             <div style={{fontSize:10,color:C.textMuted,textTransform:'uppercase' as const,letterSpacing:'0.5px',marginBottom:4}}>Count</div>
             <div style={{display:'flex',gap:4,flexWrap:'wrap' as const}}>{COUNT_BUCKETS.map(b=>pill(b==='all'?'All':b,countBucket===b,()=>setCountBucket(b)))}</div>
+          </div>
+          <div>
+            <div style={{fontSize:10,color:C.textMuted,textTransform:'uppercase' as const,letterSpacing:'0.5px',marginBottom:4}}>Swing path</div>
+            <div style={{display:'flex',gap:4}}>
+              {pill('All',swingPath==='all',()=>setSwingPath('all'))}
+              {pill('Flat',swingPath==='flat',()=>setSwingPath('flat'))}
+              {pill('Slight',swingPath==='slight',()=>setSwingPath('slight'))}
+              {pill('Uppercut',swingPath==='uppercut',()=>setSwingPath('uppercut'))}
+            </div>
+          </div>
+          <div>
+            <div style={{fontSize:10,color:C.textMuted,textTransform:'uppercase' as const,letterSpacing:'0.5px',marginBottom:4}}>Attack direction</div>
+            <div style={{display:'flex',gap:4}}>
+              {pill('All',attackDirection==='all',()=>setAttackDirection('all'))}
+              {pill('Pull',attackDirection==='pull',()=>setAttackDirection('pull'))}
+              {pill('Straight',attackDirection==='straight',()=>setAttackDirection('straight'))}
+              {pill('Oppo',attackDirection==='oppo',()=>setAttackDirection('oppo'))}
+            </div>
           </div>
           <div style={{display:'flex',gap:12,flexWrap:'wrap' as const}}>
             <div>
@@ -380,6 +411,21 @@ export default function PitchingIQ() {
             {label:'Flat',range:'Below 10°',desc:'Level or downward swing path. Pitches up in the zone are nearly untouchable. Low pitches get topped for weak grounders. Go up early in counts.'},
             {label:'Slight Uppercut',range:'10° – 25°',desc:'Slight lift through the zone. Most dangerous swing type — stays on the ball a long time. Change speeds and work both edges. Do not leave pitches middle-middle.'},
             {label:'Uppercut',range:'25°+',desc:'Steep lift swing — either a barrel or a miss. Low breaking balls are a trap, they match the swing plane. Elevate hard stuff and bury breaking balls below the zone for chases.'},
+          ].map(a=>(
+            <div key={a.label} style={{background:C.bg2,borderRadius:6,padding:'8px 10px'}}>
+              <div style={{fontSize:12,fontWeight:600,color:C.gold,marginBottom:2}}>{a.label} <span style={{fontSize:10,color:C.textMuted,fontWeight:400}}>({a.range})</span></div>
+              <div style={{fontSize:11,color:C.textMuted,lineHeight:1.5}}>{a.desc}</div>
+            </div>
+          ))}
+        </div>
+      </div>
+      <div style={{background:C.bg3,border:`1px solid ${C.border}`,borderRadius:8,padding:'12px 14px',marginTop:10}}>
+        <div style={{fontSize:11,fontWeight:700,color:C.textMuted,textTransform:'uppercase' as const,letterSpacing:'0.5px',marginBottom:8}}>Attack direction guide</div>
+        <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(200px,1fr))',gap:6}}>
+          {[
+            {label:'Pull',range:'>5°',desc:'Hitter is turning on the ball and pulling it toward their side of the field. Often paired with an uppercut swing — pulled fly balls carry the most home run risk.'},
+            {label:'Straight',range:'-5° to 5°',desc:'Batted ball trajectory is roughly back up the middle. Neutral read — no strong directional bias in the swing.'},
+            {label:'Oppo',range:'<-5°',desc:'Hitter is going the other way, staying on the ball longer. Often a sign of being late or deliberately shortening up — usually lower power, but can still find gaps.'},
           ].map(a=>(
             <div key={a.label} style={{background:C.bg2,borderRadius:6,padding:'8px 10px'}}>
               <div style={{fontSize:12,fontWeight:600,color:C.gold,marginBottom:2}}>{a.label} <span style={{fontSize:10,color:C.textMuted,fontWeight:400}}>({a.range})</span></div>
