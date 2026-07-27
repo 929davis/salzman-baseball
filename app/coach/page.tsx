@@ -631,6 +631,13 @@ export default function CoachDashboard(){
     setStructuredDays(updated);await saveProgram(updated,cellNotes)
   }
 
+  const clearWeek=async()=>{
+    if (!program)return
+    if (!window.confirm(`Clear all exercises for ${selected?.full_name||'this pitcher'}'s current week? This cannot be undone.`))return
+    setStructuredDays({});setCellNotes({})
+    await saveProgram({},{})
+  }
+
   const updateCellNote=async(day:string,cat:string,val:string)=>{
     const key=`${day}___${cat}`;const updated={...cellNotes,[key]:val}
     setCellNotes(updated);await saveProgram(structuredDays,updated)
@@ -1048,6 +1055,7 @@ Write next week's program by day and category (Pre-Throwing, Throwing, Post-Thro
                     <button style={S.btn('gold')} onClick={buildPrompt}>Claude</button>
                     <button style={{...S.btn(),background:'rgba(88,166,255,0.1)',color:'#58a6ff',border:'1px solid rgba(88,166,255,0.3)'}} onClick={()=>{setImportModal(true);setImportResult(null)}}>Import</button>
                     <button onClick={copyWeekToClipboard} style={S.btn()}>{copySuccess?'✓ Copied':'Copy Week'}</button>
+                    <button onClick={clearWeek} style={{...S.btn(),background:'rgba(248,81,73,0.1)',color:C.red,border:'1px solid rgba(248,81,73,0.3)'}}>Clear Week</button>
                   </div>
                   <div style={{overflowX:'auto' as const}}>
                     <div style={{minWidth:900}}>
