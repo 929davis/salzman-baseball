@@ -296,6 +296,8 @@ export default function CoachDashboard(){
   const [cmjCalc,setCmjCalc]=useState<any>(null)
   const [cmjErr,setCmjErr]=useState('')
   const [cmjSaving,setCmjSaving]=useState(false)
+  const [cmjEditingId,setCmjEditingId]=useState<string|null>(null)
+  const [showCmjHistory,setShowCmjHistory]=useState(false)
   const [principles,setPrinciples]=useState('')
   const [princText,setPrincText]=useState('')
   const [princSaved,setPrincSaved]=useState(false)
@@ -439,18 +441,49 @@ export default function CoachDashboard(){
     const bw=parseFloat(cmjForm.bodyweight)
     const massKg=cmjForm.weightUnit==='lbs'?bw*0.453592:bw
     const fps=parseFloat(cmjForm.fps)
-    await supabase.from('cmj_results').insert({
+    const row={
       pitcher_id:selected.id,test_date:cmjForm.date,bodyweight:bw,weight_unit:cmjForm.weightUnit,
       fps:parseInt(cmjForm.fps),start_frame:Math.round(parseTime(cmjForm.startTime)*fps),
       takeoff_frame:Math.round(parseTime(cmjForm.takeoffTime)*fps),landing_frame:Math.round(parseTime(cmjForm.landingTime)*fps),
       flight_time:cmjCalc.flightTime,jump_height_in:cmjCalc.jumpHeightIn,rsi_mod:cmjCalc.rsiMod,
       peak_power_per_kg:cmjCalc.peakPowerPerKg,takeoff_velocity:cmjCalc.takeoffVelocity,
       explosive_index:cmjCalc.explosiveIndex,estimated_velocity:cmjCalc.estimatedVelocity,
-    })
+    }
+    if (cmjEditingId){
+      await supabase.from('cmj_results').update(row).eq('id',cmjEditingId)
+    } else {
+      await supabase.from('cmj_results').insert(row)
+    }
     const {data}=await supabase.from('cmj_results').select('*').eq('pitcher_id',selected.id).order('test_date',{ascending:false})
     setCmjResults(data||[])
-    setCmjSaving(false);setCmjModal(false);setCmjCalc(null)
+    setCmjSaving(false);setCmjModal(false);setCmjCalc(null);setCmjEditingId(null)
     setCmjForm({date:new Date().toISOString().split('T')[0],bodyweight:'',weightUnit:'lbs',fps:'240',startTime:'',takeoffTime:'',landingTime:''})
+  }
+
+  const framesToTimeStr=(frame:number,fps:number)=>{
+    const seconds=frame/fps
+    const mins=Math.floor(seconds/60)
+    const secs=seconds-mins*60
+    return `${mins}:${secs.toFixed(6)}`
+  }
+
+  const openEditCmj=(row:any)=>{
+    setCmjErr('');setCmjCalc(null);setCmjEditingId(row.id)
+    setCmjForm({
+      date:row.test_date,bodyweight:String(row.bodyweight),weightUnit:row.weight_unit,fps:String(row.fps),
+      startTime:framesToTimeStr(row.start_frame,row.fps),
+      takeoffTime:framesToTimeStr(row.takeoff_frame,row.fps),
+      landingTime:framesToTimeStr(row.landing_frame,row.fps),
+    })
+    setCmjModal(true)
+  }
+
+  const deleteCmjResult=async(row:any)=>{
+    if (!selected)return
+    if (!window.confirm(`Delete the CMJ test from ${row.test_date} for ${selected.full_name}? This cannot be undone.`))return
+    await supabase.from('cmj_results').delete().eq('id',row.id)
+    const {data}=await supabase.from('cmj_results').select('*').eq('pitcher_id',selected.id).order('test_date',{ascending:false})
+    setCmjResults(data||[])
   }
 
   const signOut=async()=>{await supabase.auth.signOut();router.push('/auth/login')}
@@ -853,9 +886,26 @@ Write next week's program by day and category (Pre-Throwing, Throwing, Post-Thro
                   </div>
 
                   {/* Neuro Classification */}
-                  <div style={{display:'flex',justifyContent:'flex-end',marginBottom:8}}>
-                    <button onClick={()=>{setCmjErr('');setCmjCalc(null);setCmjModal(true)}} style={S.btn('gold')}>+ Log CMJ</button>
+                  <div style={{display:'flex',justifyContent:'flex-end',gap:8,marginBottom:8}}>
+                    {cmjResults.length>0&&(
+                      <button onClick={()=>setShowCmjHistory(s=>!s)} style={S.btn()}>{showCmjHistory?'Hide':'Manage'} CMJ History</button>
+                    )}
+                    <button onClick={()=>{setCmjErr('');setCmjCalc(null);setCmjEditingId(null);setCmjModal(true)}} style={S.btn('gold')}>+ Log CMJ</button>
                   </div>
+                  {showCmjHistory&&cmjResults.length>0&&(
+                    <div style={{display:'flex',flexDirection:'column' as const,gap:6,marginBottom:12}}>
+                      {cmjResults.map((row:any)=>(
+                        <div key={row.id} style={{display:'flex',alignItems:'center',gap:12,background:C.bg3,border:`1px solid ${C.border}`,borderRadius:8,padding:'8px 12px'}}>
+                          <div style={{fontSize:12,color:C.white,fontWeight:600,minWidth:80}}>{row.test_date}</div>
+                          <div style={{fontSize:11,color:C.textMuted,minWidth:90}}>{row.jump_height_in?.toFixed(1)} in jump</div>
+                          <div style={{fontSize:11,color:C.textMuted,minWidth:90}}>{row.peak_power_per_kg?.toFixed(1)} W/kg</div>
+                          <div style={{fontSize:11,color:C.textMuted,flex:1}}>RSI {row.rsi_mod?.toFixed(2)}</div>
+                          <button onClick={()=>openEditCmj(row)} title="Edit this entry" style={{background:'transparent',border:'none',color:C.textMuted,cursor:'pointer',fontSize:13}}>✎</button>
+                          <button onClick={()=>deleteCmjResult(row)} title="Delete this entry" style={{background:'transparent',border:'none',color:C.red,cursor:'pointer',fontSize:14}}>✕</button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
                   {latestCMJ?(
                     <div style={{...S.card,border:`1px solid ${classCol.border}`,background:classCol.bg,marginBottom:12}}>
                       <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',marginBottom:12}}>
@@ -1508,10 +1558,10 @@ Accessory | Single Arm DB Row | 3 x 6 @ 70%`}
       </div>
     )}
     {cmjModal&&selected&&(
-      <div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.7)',zIndex:9999,display:'flex',alignItems:'center',justifyContent:'center'}} onClick={()=>setCmjModal(false)}>
+      <div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.7)',zIndex:9999,display:'flex',alignItems:'center',justifyContent:'center'}} onClick={()=>{setCmjModal(false);setCmjEditingId(null)}}>
         <div style={{background:C.bg2,border:`1px solid ${C.border}`,borderRadius:12,padding:24,width:420,maxWidth:'90vw',maxHeight:'85vh',overflowY:'auto' as const}} onClick={e=>e.stopPropagation()}>
-          <div style={{fontSize:15,fontWeight:700,color:C.white,marginBottom:4}}>Log CMJ — {selected.full_name}</div>
-          <div style={{fontSize:12,color:C.textMuted,marginBottom:16}}>Film at 240fps, scrub in Photos app, enter timestamps below.</div>
+          <div style={{fontSize:15,fontWeight:700,color:C.white,marginBottom:4}}>{cmjEditingId?'Edit CMJ':'Log CMJ'} — {selected.full_name}</div>
+          <div style={{fontSize:12,color:C.textMuted,marginBottom:16}}>{cmjEditingId?'Correcting a previously logged test. Re-check the frame timestamps and recalculate.':'Film at 240fps, scrub in Photos app, enter timestamps below.'}</div>
 
           <div style={{fontSize:11,color:C.textMuted,fontWeight:600,marginBottom:6,textTransform:'uppercase' as const,letterSpacing:'0.5px'}}>Date</div>
           <input type="date" style={{...S.input,marginBottom:12}} value={cmjForm.date} onChange={e=>setCmjForm(f=>({...f,date:e.target.value}))}/>
@@ -1538,7 +1588,7 @@ Accessory | Single Arm DB Row | 3 x 6 @ 70%`}
 
           {!cmjCalc?(
             <div style={{display:'flex',gap:8}}>
-              <button onClick={()=>setCmjModal(false)} style={{...S.btn(),flex:1}}>Cancel</button>
+              <button onClick={()=>{setCmjModal(false);setCmjEditingId(null)}} style={{...S.btn(),flex:1}}>Cancel</button>
               <button onClick={calcCoachCMJ} style={{...S.btn('gold'),flex:2}}>Calculate</button>
             </div>
           ):(
@@ -1556,7 +1606,7 @@ Accessory | Single Arm DB Row | 3 x 6 @ 70%`}
               </div>
               <div style={{display:'flex',gap:8}}>
                 <button onClick={()=>setCmjCalc(null)} style={{...S.btn(),flex:1}}>Back</button>
-                <button onClick={saveCoachCMJ} disabled={cmjSaving} style={{...S.btn('gold'),flex:2}}>{cmjSaving?'Saving...':'Save to Profile'}</button>
+                <button onClick={saveCoachCMJ} disabled={cmjSaving} style={{...S.btn('gold'),flex:2}}>{cmjSaving?'Saving...':cmjEditingId?'Save Correction':'Save to Profile'}</button>
               </div>
             </div>
           )}
