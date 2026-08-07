@@ -40,8 +40,18 @@ const ZONE_LABELS:Record<number,string> = {
 type ZoneData = Record<number,{whiff:number,chase:number,hard_hit:number,xwoba:number,home_run:number,count:number}>
 type ChaseRow = {pitch_type:string,chase_pct:number,whiff_pct:number,hard_hit_pct:number,xwoba:number,count:number}
 type PitchRank = {pitch_type:string,value:number,count:number}
+type ZonePanelState = {zone:number,loading:boolean,total:number,matched:any[],breakdown:{whiff:number,hardHit:number,homeRun:number,chase:number}}
 
-const buildSavantLink = (zone: number, countBucket: string, pitchFilter: string) => {
+// Mirrors the description sets used in fetchData's aggregation loop below —
+// kept as named constants so the zone panel's client-side filtering can't drift from the heatmap's own definitions.
+const WHIFF_DESCRIPTIONS = ['swinging_strike','swinging_strike_blocked']
+const CONTACT_DESCRIPTIONS = ['hit_into_play','hit_into_play_no_out','hit_into_play_score']
+const SWING_DESCRIPTIONS = ['swinging_strike','swinging_strike_blocked','foul','foul_tip','hit_into_play','hit_into_play_no_out','hit_into_play_score']
+const METRIC_PANEL_LABELS:Record<string,string> = {
+  whiff:'Whiffs',hard_hit:'Hard-hit balls (95+ mph)',home_run:'Home runs',chase:'Chases (swings out of zone)',
+}
+
+const buildSavantLink = (zone: number, countBucket: string, pitchFilter: string, metric?: string) => {
   const today = new Date()
   const yesterday = new Date(today)
   yesterday.setDate(today.getDate() - 1)
@@ -69,6 +79,10 @@ const buildSavantLink = (zone: number, countBucket: string, pitchFilter: string)
     params.set('hfC', `${balls}${strikes}|`)
   }
   if (pitchFilter !== 'all') params.set('hfPT', `${pitchFilter}|`)
+  // hfPR (pitch result) and hfFlag (Statcast flag) verified against Savant's live CSV export —
+  // confirmed hfPR filters strictly by description, hfFlag's hardhit value strictly by launch_speed>=95 on balls in play.
+  if (metric === 'whiff') params.set('hfPR', 'swinging\\.\\.strike|swinging\\.\\.strike\\.\\.blocked|')
+  else if (metric === 'hard_hit') params.set('hfFlag', 'is\\.\\.hit\\.\\.into\\.\\.play\\.\\.hardhit|')
   return `https://baseballsavant.mlb.com/statcast_search?${params.toString()}#results`
 }
 
@@ -104,6 +118,37 @@ export default function PitchingIQ() {
   const [lastUpdated,setLastUpdated]=useState('')
   const [selectedChase,setSelectedChase]=useState<ChaseRow|null>(null)
   const [insight,setInsight]=useState('')
+  const [zonePanel,setZonePanel]=useState<ZonePanelState|null>(null)
+
+  const openZonePanel=async(zone:number)=>{
+    setZonePanel({zone,loading:true,total:0,matched:[],breakdown:{whiff:0,hardHit:0,homeRun:0,chase:0}})
+    let q=supabase.from('statcast_pitches').select('game_date,pitch_type,description,launch_speed,estimated_woba,events').eq('bats',bats).eq('zone',zone)
+    if (armBucket!=='all') q=q.eq('arm_angle_bucket',armBucket)
+    if (countBucket!=='all') q=q.eq('count_bucket',countBucket)
+    if (pitchFilter!=='all') q=q.eq('pitch_type',pitchFilter)
+    if (pThrows!=='all') q=q.eq('p_throws',pThrows)
+    if (swingPath==='flat') q=q.lt('attack_angle',10)
+    else if (swingPath==='slight') q=q.gte('attack_angle',10).lt('attack_angle',25)
+    else if (swingPath==='uppercut') q=q.gte('attack_angle',25)
+    if (attackDirection==='pull') q=q.gt('attack_direction',5)
+    else if (attackDirection==='straight') q=q.gte('attack_direction',-5).lte('attack_direction',5)
+    else if (attackDirection==='oppo') q=q.lt('attack_direction',-5)
+    const {data}=await q.order('game_date',{ascending:false}).limit(2000)
+    const rows=(data||[]) as any[]
+    const isOut=zone>=10
+    const breakdown={
+      whiff:rows.filter(r=>WHIFF_DESCRIPTIONS.includes(r.description)).length,
+      hardHit:rows.filter(r=>CONTACT_DESCRIPTIONS.includes(r.description)&&r.launch_speed!=null&&r.launch_speed>=95).length,
+      homeRun:rows.filter(r=>r.events==='home_run').length,
+      chase:isOut?rows.filter(r=>SWING_DESCRIPTIONS.includes(r.description)).length:0,
+    }
+    let matched=rows
+    if (metric==='whiff') matched=rows.filter(r=>WHIFF_DESCRIPTIONS.includes(r.description))
+    else if (metric==='hard_hit') matched=rows.filter(r=>CONTACT_DESCRIPTIONS.includes(r.description)&&r.launch_speed!=null&&r.launch_speed>=95)
+    else if (metric==='home_run') matched=rows.filter(r=>r.events==='home_run')
+    else if (metric==='chase') matched=isOut?rows.filter(r=>SWING_DESCRIPTIONS.includes(r.description)):[]
+    setZonePanel({zone,loading:false,total:rows.length,matched,breakdown})
+  }
 
   const fetchData=useCallback(async()=>{
     setLoading(true)
@@ -320,12 +365,15 @@ export default function PitchingIQ() {
                       const fg=d&&val>0?textForBg(val,minVal,maxVal):C.textDim
                       const displayVal=metric==='xwoba'?val.toFixed(3):val.toFixed(0)+'%'
                       return (
-                        <a key={`${ri}-${ci}`} href={buildSavantLink(zone,countBucket,pitchFilter)} target="_blank" rel="noopener noreferrer" style={{textDecoration:'none',cursor:'pointer'}}>
-                          <div style={{width:52,height:52,borderRadius:4,background:bg,border:`${isInZone?'1.5px':'1px'} solid ${isInZone?'rgba(255,255,255,0.2)':C.border}`,display:'flex',flexDirection:'column' as const,alignItems:'center',justifyContent:'center',opacity:isInZone?1:0.75,position:'relative' as const}}>
-                            <div style={{fontSize:8,position:'absolute' as const,top:2,left:3,color:fg,opacity:0.6}}>{zone}</div>
-                            <div style={{fontSize:11,fontWeight:700,color:fg}}>{d&&d.count>0?displayVal:'—'}</div>
-                          </div>
-                        </a>
+                        <div key={`${ri}-${ci}`} style={{position:'relative' as const}}>
+                          <a href={buildSavantLink(zone,countBucket,pitchFilter,metric)} target="_blank" rel="noopener noreferrer" style={{textDecoration:'none',cursor:'pointer'}}>
+                            <div style={{width:52,height:52,borderRadius:4,background:bg,border:`${isInZone?'1.5px':'1px'} solid ${isInZone?'rgba(255,255,255,0.2)':C.border}`,display:'flex',flexDirection:'column' as const,alignItems:'center',justifyContent:'center',opacity:isInZone?1:0.75,position:'relative' as const}}>
+                              <div style={{fontSize:8,position:'absolute' as const,top:2,left:3,color:fg,opacity:0.6}}>{zone}</div>
+                              <div style={{fontSize:11,fontWeight:700,color:fg}}>{d&&d.count>0?displayVal:'—'}</div>
+                            </div>
+                          </a>
+                          <button onClick={()=>openZonePanel(zone)} title="View matching pitches in-app" style={{position:'absolute' as const,top:2,right:2,width:14,height:14,padding:0,background:'rgba(0,0,0,0.4)',border:'none',borderRadius:3,color:fg,fontSize:8,lineHeight:'14px',cursor:'pointer'}}>▤</button>
+                        </div>
                       )
                     })}
                   </div>
@@ -468,6 +516,72 @@ export default function PitchingIQ() {
           ))}
         </div>
       </div>
+      {zonePanel&&(
+        <div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.7)',zIndex:9999,display:'flex',alignItems:'center',justifyContent:'center'}} onClick={()=>setZonePanel(null)}>
+          <div style={{background:C.bg2,border:`1px solid ${C.border}`,borderRadius:12,padding:20,width:480,maxWidth:'92vw',maxHeight:'80vh',overflowY:'auto' as const}} onClick={e=>e.stopPropagation()}>
+            <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',marginBottom:4}}>
+              <div>
+                <div style={{fontSize:15,fontWeight:700,color:C.white}}>Zone {zonePanel.zone}</div>
+                <div style={{fontSize:11,color:C.textMuted}}>{ZONE_LABELS[zonePanel.zone]}</div>
+              </div>
+              <button onClick={()=>setZonePanel(null)} style={{background:'transparent',border:'none',color:C.textMuted,cursor:'pointer',fontSize:16}}>✕</button>
+            </div>
+            <div style={{height:1,background:C.border,margin:'10px 0 14px'}}/>
+            {zonePanel.loading?(
+              <div style={{padding:30,textAlign:'center' as const,color:C.textMuted,fontSize:12}}>Loading pitches...</div>
+            ):metric==='xwoba'?(
+              <>
+                <div style={{fontSize:12,color:C.textMuted,marginBottom:12}}>No single outcome filter is active (xwOBA is a rate stat, not a per-pitch result) — showing the outcome breakdown for this zone instead.</div>
+                {zonePanel.total===0?(
+                  <div style={{padding:20,textAlign:'center' as const,color:C.textDim,fontSize:12,background:C.bg3,borderRadius:8}}>No pitches recorded in this zone under the current filters.</div>
+                ):(
+                  <div style={{display:'flex',flexDirection:'column' as const,gap:8}}>
+                    <div style={{fontSize:11,color:C.textMuted,marginBottom:2}}>{zonePanel.total} pitches total</div>
+                    {[
+                      {label:'Whiffs',count:zonePanel.breakdown.whiff},
+                      {label:'Hard-hit balls (95+ mph)',count:zonePanel.breakdown.hardHit},
+                      {label:'Home runs',count:zonePanel.breakdown.homeRun},
+                      ...(zonePanel.zone>=10?[{label:'Chases (swings out of zone)',count:zonePanel.breakdown.chase}]:[]),
+                    ].map(row=>(
+                      <div key={row.label} style={{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'8px 10px',background:C.bg3,borderRadius:6}}>
+                        <span style={{fontSize:12,color:C.textMuted}}>{row.label}</span>
+                        <span style={{fontSize:13,fontWeight:700,color:C.white}}>{row.count} <span style={{fontSize:11,color:C.textMuted,fontWeight:400}}>({zonePanel.total>0?((row.count/zonePanel.total)*100).toFixed(0):0}%)</span></span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </>
+            ):(
+              <>
+                <div style={{fontSize:13,color:C.text,marginBottom:12}}>
+                  {METRIC_PANEL_LABELS[metric]} only: <strong>{zonePanel.matched.length} of {zonePanel.total}</strong> pitches ({zonePanel.total>0?((zonePanel.matched.length/zonePanel.total)*100).toFixed(0):0}%)
+                </div>
+                {metric==='chase'&&zonePanel.zone<=9?(
+                  <div style={{padding:20,textAlign:'center' as const,color:C.textDim,fontSize:12,background:C.bg3,borderRadius:8}}>Chase is only tracked for pitches outside the strike zone — zone {zonePanel.zone} is in-zone.</div>
+                ):zonePanel.matched.length===0?(
+                  <div style={{padding:20,textAlign:'center' as const,color:C.textDim,fontSize:12,background:C.bg3,borderRadius:8}}>
+                    {zonePanel.total===0?'No pitches recorded in this zone under the current filters.':`No ${METRIC_PANEL_LABELS[metric].toLowerCase()} in this zone under the current filters.`}
+                  </div>
+                ):(
+                  <div style={{display:'flex',flexDirection:'column' as const,gap:4,maxHeight:320,overflowY:'auto' as const}}>
+                    {zonePanel.matched.map((p,i)=>(
+                      <div key={i} style={{display:'flex',gap:10,alignItems:'center',fontSize:11,padding:'6px 8px',background:C.bg3,borderRadius:6}}>
+                        <span style={{color:C.textMuted,width:80,flexShrink:0}}>{p.game_date}</span>
+                        <span style={{color:C.text,width:36,flexShrink:0}}>{p.pitch_type}</span>
+                        <span style={{color:C.textMuted,flex:1}}>{(p.description||'').replace(/_/g,' ')}</span>
+                        {p.launch_speed!=null&&<span style={{color:C.gold,flexShrink:0}}>{Number(p.launch_speed).toFixed(1)} mph</span>}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </>
+            )}
+            <div style={{marginTop:14,display:'flex',justifyContent:'flex-end'}}>
+              <a href={buildSavantLink(zonePanel.zone,countBucket,pitchFilter,metric)} target="_blank" rel="noopener noreferrer" style={{fontSize:11,color:C.blue}}>View on Baseball Savant ↗</a>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
