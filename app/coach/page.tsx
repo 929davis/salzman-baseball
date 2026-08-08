@@ -146,6 +146,16 @@ const MEAL_TYPE_COLORS:Record<string,string> = {
   'Pre-Training':'#58a6ff','Post-Training':'#39d353','Recovery Meal':'#a371f7','Regular Meal':'#e8b84b'
 }
 
+const READINESS_OPTIONS = [
+  {value:'trusts_it',label:'Trusts It'},
+  {value:'hesitant',label:'Hesitant'},
+  {value:'guarding',label:'Guarding'},
+]
+const READINESS_COLORS:Record<string,string> = {trusts_it:'#39d353',hesitant:'#e8b84b',guarding:'#f85149'}
+const RTT_PHASES = ['protective','retraining','integration','performance']
+const RTT_PHASE_LABELS:Record<string,string> = {protective:'Protective',retraining:'Retraining',integration:'Integration',performance:'Performance'}
+const RTT_PHASE_COLORS:Record<string,string> = {protective:'#f85149',retraining:'#e8b84b',integration:'#58a6ff',performance:'#39d353'}
+
 function scoreColor(score:number){
   if (score>=80) return '#39d353'
   if (score>=60) return '#e8b84b'
@@ -424,6 +434,14 @@ export default function CoachDashboard(){
   const deleteThrowEntry=async(id:string)=>{
     await supabase.from('throw_volume_entries').delete().eq('id',id)
     await refetchThrowEntries()
+  }
+
+  const updateRTTPhase=async(phase:string)=>{
+    if (!selected)return
+    const value=phase||null
+    await supabase.from('profiles').update({rtt_phase:value}).eq('id',selected.id)
+    setSelected((p:any)=>({...p,rtt_phase:value}))
+    setPitchers((ps:any[])=>ps.map(p=>p.id===selected.id?{...p,rtt_phase:value}:p))
   }
 
   const calcCoachCMJ=()=>{
@@ -807,7 +825,17 @@ Write next week's program by day and category (Pre-Throwing, Throwing, Post-Thro
                 <Avatar name={selected.full_name||'?'} size={48}/>
                 <div style={{flex:1}}>
                   <div style={{fontSize:20,fontWeight:700,color:C.white}}>{selected.full_name?.toUpperCase()}</div>
-                  <div style={{fontSize:11,color:C.textMuted,textTransform:'uppercase' as const,letterSpacing:'1px'}}>Pitcher · Salzman Baseball</div>
+                  <div style={{display:'flex',alignItems:'center',gap:8,marginTop:2}}>
+                    <div style={{fontSize:11,color:C.textMuted,textTransform:'uppercase' as const,letterSpacing:'1px'}}>Pitcher · Salzman Baseball</div>
+                    <select
+                      value={selected.rtt_phase||''}
+                      onChange={e=>updateRTTPhase(e.target.value)}
+                      style={{background:selected.rtt_phase?`${RTT_PHASE_COLORS[selected.rtt_phase]}1A`:'transparent',color:selected.rtt_phase?RTT_PHASE_COLORS[selected.rtt_phase]:C.textDim,border:`1px solid ${selected.rtt_phase?RTT_PHASE_COLORS[selected.rtt_phase]+'66':C.border}`,borderRadius:12,padding:'2px 8px',fontSize:10,fontWeight:600,cursor:'pointer'}}
+                    >
+                      <option value="">Not in RTT</option>
+                      {RTT_PHASES.map(p=><option key={p} value={p}>{RTT_PHASE_LABELS[p]} Phase</option>)}
+                    </select>
+                  </div>
                 </div>
                 <div style={{display:'flex',gap:8,alignItems:'center'}}>
                   <div style={{background:C.bg3,border:`1px solid ${C.border}`,borderRadius:8,padding:'10px 14px',textAlign:'center'}}>
@@ -817,6 +845,10 @@ Write next week's program by day and category (Pre-Throwing, Throwing, Post-Thro
                   <div style={{background:C.goldBg,border:`1px solid ${C.goldDim}`,borderRadius:8,padding:'10px 14px',textAlign:'center'}}>
                     <div style={{fontSize:10,color:C.gold,textTransform:'uppercase' as const,letterSpacing:'0.5px',marginBottom:4}}>Arm Care Min</div>
                     <div style={{fontSize:18,fontWeight:700,color:C.gold}}>{armCare(getEffectiveThrowCount(selected,throwEntries),getEffectiveVelocity(selected,cmjResults))?armCare(getEffectiveThrowCount(selected,throwEntries),getEffectiveVelocity(selected,cmjResults)).toLocaleString():'—'}<span style={{fontSize:10,color:C.goldDim}}> ft·lb</span></div>
+                  </div>
+                  <div style={{background:C.bg3,border:`1px solid ${C.border}`,borderRadius:8,padding:'10px 14px',textAlign:'center'}}>
+                    <div style={{fontSize:10,color:C.textMuted,textTransform:'uppercase' as const,letterSpacing:'0.5px',marginBottom:4}}>Readiness</div>
+                    <div style={{fontSize:14,fontWeight:700,color:logs[0]?.readiness?READINESS_COLORS[logs[0].readiness]:C.textDim}}>{logs[0]?.readiness?READINESS_OPTIONS.find(o=>o.value===logs[0].readiness)?.label:'—'}</div>
                   </div>
                   <button onClick={()=>setShowThrowEntries(s=>!s)} title="Manage throw volume entries" style={{background:'transparent',border:`1px solid ${C.border}`,borderRadius:8,width:32,height:32,display:'flex',alignItems:'center',justifyContent:'center',color:C.textMuted,cursor:'pointer',fontSize:14,flexShrink:0}}>✎</button>
                 </div>
@@ -1064,7 +1096,7 @@ Write next week's program by day and category (Pre-Throwing, Throwing, Post-Thro
                   <div style={{overflowX:'auto' as const}}>
                     <table style={{width:'100%',borderCollapse:'collapse' as const,fontSize:12}}>
                       <thead><tr style={{borderBottom:`1px solid ${C.border}`}}>
-                        {['Date','Vel','Sprint','Pitches','HE','Feeling','Soreness'].map(h=><th key={h} style={{padding:'8px 10px',textAlign:'left' as const,color:C.textMuted,fontSize:10,textTransform:'uppercase' as const}}>{h}</th>)}
+                        {['Date','Vel','Sprint','Pitches','HE','Feeling','Readiness','Soreness'].map(h=><th key={h} style={{padding:'8px 10px',textAlign:'left' as const,color:C.textMuted,fontSize:10,textTransform:'uppercase' as const}}>{h}</th>)}
                       </tr></thead>
                       <tbody>
                         {logs.map((log:any,i:number)=>(
@@ -1075,6 +1107,7 @@ Write next week's program by day and category (Pre-Throwing, Throwing, Post-Thro
                             <td style={{padding:'8px 10px'}}>{log.pitch_count||'—'}</td>
                             <td style={{padding:'8px 10px'}}>{log.high_effort_throws||'—'}</td>
                             <td style={{padding:'8px 10px'}}><span style={{color:log.feeling>=7?C.teal:log.feeling>=4?C.gold:C.red,fontWeight:600}}>{log.feeling?`${log.feeling}/10`:'—'}</span></td>
+                            <td style={{padding:'8px 10px'}}>{log.readiness?<span style={{color:READINESS_COLORS[log.readiness]}}>{READINESS_OPTIONS.find(o=>o.value===log.readiness)?.label}</span>:'—'}</td>
                             <td style={{padding:'8px 10px',color:C.red}}>{log.soreness?.join(', ')||'—'}</td>
                           </tr>
                         ))}

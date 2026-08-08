@@ -14,6 +14,14 @@ const C = {
 }
 
 const SORENESS = ['Shoulder','Elbow','Forearm','Wrist','Back','Hip','Knee','Hamstring','Quad','Other']
+const READINESS_OPTIONS = [
+  {value:'trusts_it',label:'Trusts It'},
+  {value:'hesitant',label:'Hesitant'},
+  {value:'guarding',label:'Guarding'},
+]
+const READINESS_COLORS:Record<string,string> = {trusts_it:'#39d353',hesitant:'#e8b84b',guarding:'#f85149'}
+const RTT_PHASE_LABELS:Record<string,string> = {protective:'Protective',retraining:'Retraining',integration:'Integration',performance:'Performance'}
+const RTT_PHASE_COLORS:Record<string,string> = {protective:'#f85149',retraining:'#e8b84b',integration:'#58a6ff',performance:'#39d353'}
 const DAYS = ['Monday','Tuesday','Wednesday','Thursday','Friday','Saturday','Sunday']
 const NEW_CATS = ['Pre-Throwing','Throwing','Post-Throwing','Main Exercises','Accessory','Conditioning','Recovery']
 const CAT_COLORS:Record<string,string> = {
@@ -157,7 +165,7 @@ export default function PitcherDashboard(){
   const [dailyFuelScore,setDailyFuelScore]=useState<any>(null)
   const [loading,setLoading]=useState(true)
   const [msgText,setMsgText]=useState('')
-  const [logForm,setLogForm]=useState({date:new Date().toISOString().split('T')[0],velocity:'',weightLifted:'',sprintTime:'',pitchCount:'',highEffortThrows:'',feeling:7,soreness:[] as string[],notes:''})
+  const [logForm,setLogForm]=useState({date:new Date().toISOString().split('T')[0],velocity:'',weightLifted:'',sprintTime:'',pitchCount:'',highEffortThrows:'',feeling:7,soreness:[] as string[],readiness:'',notes:''})
   const [logSaved,setLogSaved]=useState(false)
 
   // Food log state
@@ -238,11 +246,11 @@ export default function PitcherDashboard(){
       velocity:parseFloat(logForm.velocity)||null,weight_lifted:parseFloat(logForm.weightLifted)||null,
       sprint_time:parseFloat(logForm.sprintTime)||null,pitch_count:parseInt(logForm.pitchCount)||null,
       high_effort_throws:parseInt(logForm.highEffortThrows)||null,feeling:logForm.feeling,
-      soreness:logForm.soreness,notes:logForm.notes||null
+      soreness:logForm.soreness,readiness:logForm.readiness||null,notes:logForm.notes||null
     })
     const {data}=await supabase.from('session_logs').select('*').eq('pitcher_id',profile.id).order('log_date',{ascending:false}).limit(20)
     setLogs(data||[])
-    setLogForm({date:new Date().toISOString().split('T')[0],velocity:'',weightLifted:'',sprintTime:'',pitchCount:'',highEffortThrows:'',feeling:7,soreness:[],notes:''})
+    setLogForm({date:new Date().toISOString().split('T')[0],velocity:'',weightLifted:'',sprintTime:'',pitchCount:'',highEffortThrows:'',feeling:7,soreness:[],readiness:'',notes:''})
     setLogSaved(true);setTimeout(()=>setLogSaved(false),2000)
   }
 
@@ -253,6 +261,7 @@ export default function PitcherDashboard(){
   }
 
   const toggleSoreness=(a:string)=>setLogForm(f=>({...f,soreness:f.soreness.includes(a)?f.soreness.filter(x=>x!==a):[...f.soreness,a]}))
+  const setReadiness=(v:string)=>setLogForm(f=>({...f,readiness:f.readiness===v?'':v}))
 
   const toggleProMetabolic=(food:string)=>setMealForm((f:any)=>({...f,proMetabolicFoods:f.proMetabolicFoods.includes(food)?f.proMetabolicFoods.filter((x:string)=>x!==food):[...f.proMetabolicFoods,food]}))
 
@@ -977,6 +986,12 @@ export default function PitcherDashboard(){
         {tab==='log'&&(
           <div>
             <div style={{fontSize:18,fontWeight:700,color:C.white,marginBottom:16}}>Log Session</div>
+            {profile?.rtt_phase&&(
+              <div style={{background:`${RTT_PHASE_COLORS[profile.rtt_phase]}1A`,border:`1px solid ${RTT_PHASE_COLORS[profile.rtt_phase]}66`,borderRadius:8,padding:'10px 14px',marginBottom:14}}>
+                <div style={{fontSize:10,color:RTT_PHASE_COLORS[profile.rtt_phase],fontWeight:700,textTransform:'uppercase' as const,letterSpacing:'0.5px',marginBottom:2}}>Return-to-Throw</div>
+                <div style={{fontSize:14,fontWeight:600,color:C.white}}>{RTT_PHASE_LABELS[profile.rtt_phase]} Phase</div>
+              </div>
+            )}
             <div style={card}>
               <label style={lbl}>Date</label>
               <input type="date" style={inp} value={logForm.date} onChange={e=>setLogForm(f=>({...f,date:e.target.value}))}/>
@@ -993,6 +1008,12 @@ export default function PitcherDashboard(){
               <label style={lbl}>Overall Feeling — <span style={{color:C.gold,fontSize:16,fontWeight:700}}>{logForm.feeling}/10</span></label>
               <input type="range" min="1" max="10" style={{width:'100%',accentColor:C.gold,marginBottom:4}} value={logForm.feeling} onChange={e=>setLogForm(f=>({...f,feeling:parseInt(e.target.value)}))}/>
               <div style={{display:'flex',justifyContent:'space-between',fontSize:11,color:C.textDim,marginBottom:14}}><span>Poor</span><span>Great</span></div>
+              <label style={lbl}>Arm Readiness <span style={{color:C.textDim,fontWeight:400}}>(optional)</span></label>
+              <div style={{display:'flex',flexWrap:'wrap' as const,gap:8,marginBottom:14}}>
+                {READINESS_OPTIONS.map(o=>(
+                  <button key={o.value} onClick={()=>setReadiness(o.value)} style={{background:logForm.readiness===o.value?`${READINESS_COLORS[o.value]}26`:'transparent',color:logForm.readiness===o.value?READINESS_COLORS[o.value]:C.textMuted,border:`1px solid ${logForm.readiness===o.value?READINESS_COLORS[o.value]:C.border}`,borderRadius:20,padding:'6px 12px',fontSize:12,cursor:'pointer'}}>{o.label}</button>
+                ))}
+              </div>
               <label style={lbl}>Soreness</label>
               <div style={{display:'flex',flexWrap:'wrap' as const,gap:8,marginBottom:14}}>
                 {SORENESS.map(a=>(
@@ -1017,6 +1038,7 @@ export default function PitcherDashboard(){
                       {log.velocity&&<span style={{fontSize:12,color:C.gold}}>⚡ {log.velocity} mph</span>}
                       {log.weight_lifted&&<span style={{fontSize:12,color:C.teal}}>🏋 {log.weight_lifted} lbs</span>}
                       {log.sprint_time&&<span style={{fontSize:12,color:C.blue}}>🏃 {log.sprint_time}s</span>}
+                      {log.readiness&&<span style={{fontSize:12,color:READINESS_COLORS[log.readiness]||C.textMuted}}>● {READINESS_OPTIONS.find(o=>o.value===log.readiness)?.label||log.readiness}</span>}
                       {log.soreness?.length>0&&<span style={{fontSize:12,color:C.red}}>🩺 {log.soreness.join(', ')}</span>}
                     </div>
                   </div>
