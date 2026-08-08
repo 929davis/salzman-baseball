@@ -784,6 +784,7 @@ Write next week's program by day and category (Pre-Throwing, Throwing, Post-Thro
           {['roster','library','principles'].map(v=>(
             <button key={v} onClick={()=>{setView(v);setSelected(null)}} style={{...S.btn(),background:view===v?C.goldBg:'transparent',color:view===v?C.gold:C.textMuted,border:`1px solid ${view===v?C.goldDim:'transparent'}`,fontSize:11,padding:'5px 12px'}}>{v.toUpperCase()}</button>
           ))}
+          <button onClick={()=>router.push('/anatomy')} style={{...S.btn(),background:'transparent',color:C.textMuted,border:'1px solid transparent',fontSize:11,padding:'5px 12px'}}>ANATOMY</button>
           <button onClick={signOut} style={{...S.btn(),fontSize:11,padding:'5px 12px',color:C.textMuted}}>Sign Out</button>
         </div>
       </header>

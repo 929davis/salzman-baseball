@@ -1,5 +1,6 @@
 'use client'
 import { useState } from 'react'
+import { useRouter } from 'next/navigation'
 import { ANATOMY_REGIONS, type AnatomyRegion, type BodyView } from '@/lib/anatomy'
 
 const C = {
@@ -31,6 +32,7 @@ function BodySilhouette(){
 }
 
 export default function AnatomyPage(){
+  const router=useRouter()
   const [view,setView]=useState<BodyView>('front')
   const [selectedId,setSelectedId]=useState<string|null>(null)
 
@@ -53,6 +55,7 @@ export default function AnatomyPage(){
   return (
     <div style={{minHeight:'100vh',background:C.bg,color:C.text,fontFamily:'system-ui,-apple-system,sans-serif',padding:'24px 20px'}}>
       <div style={{maxWidth:960,margin:'0 auto'}}>
+        <button onClick={()=>router.back()} style={{background:'transparent',border:'none',color:C.textMuted,fontSize:12,cursor:'pointer',padding:0,marginBottom:12}}>← Back</button>
         <div style={{fontSize:22,fontWeight:700,color:C.gold,marginBottom:4}}>Delivery Anatomy Chart</div>
         <div style={{fontSize:13,color:C.textMuted,marginBottom:20}}>Click a highlighted region to see its role in the delivery, strengthening work, mobility/stability work, and soreness relief.</div>
 

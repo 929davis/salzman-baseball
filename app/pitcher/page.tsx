@@ -478,8 +478,9 @@ export default function PitcherDashboard(){
           {id:'messages',icon:'💬',label:unread>0?`(${unread})`:'Chat'},
           {id:'notes',icon:'📌',label:'Notes'},
           {id:'iq',icon:'🎯',label:'Pitching IQ'},
+          {id:'anatomy',icon:'🦴',label:'Anatomy',external:true},
         ].map(t=>(
-          <button key={t.id} onClick={()=>setTab(t.id)} style={{flex:1,background:'transparent',border:'none',borderBottom:`2px solid ${tab===t.id?C.gold:'transparent'}`,padding:'8px 2px',cursor:'pointer',color:tab===t.id?C.gold:C.textMuted,fontSize:9,fontWeight:tab===t.id?700:400,textTransform:'uppercase' as const,letterSpacing:'0.3px',whiteSpace:'nowrap' as const}}>
+          <button key={t.id} onClick={()=>t.external?router.push('/anatomy'):setTab(t.id)} style={{flex:1,background:'transparent',border:'none',borderBottom:`2px solid ${tab===t.id?C.gold:'transparent'}`,padding:'8px 2px',cursor:'pointer',color:tab===t.id?C.gold:C.textMuted,fontSize:9,fontWeight:tab===t.id?700:400,textTransform:'uppercase' as const,letterSpacing:'0.3px',whiteSpace:'nowrap' as const}}>
             <div style={{fontSize:15,marginBottom:2}}>{t.icon}</div>
             {t.label}
           </button>
