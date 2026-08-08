@@ -4,6 +4,7 @@ import { useEffect, useState, useMemo } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { useRouter } from 'next/navigation'
 import PitchingIQ from '@/app/components/PitchingIQ'
+import AthleticBenchmarks from '@/app/components/AthleticBenchmarks'
 import { parseTime, calcCMJFn } from '@/lib/cmj'
 
 const C = {
@@ -901,7 +902,7 @@ Write next week's program by day and category (Pre-Throwing, Throwing, Post-Thro
               </div>
 
               <div style={{display:'flex',gap:6,marginBottom:16,flexWrap:'wrap' as const}}>
-                {['overview','logs','program','notes','messages','iq'].map(t=>(
+                {['overview','logs','program','notes','messages','iq','benchmarks'].map(t=>(
                   <button key={t} style={S.tab(tab===t)} onClick={()=>setTab(t)}>{t}</button>
                 ))}
               </div>
@@ -1228,6 +1229,10 @@ Write next week's program by day and category (Pre-Throwing, Throwing, Post-Thro
               )}
               {tab==='iq'&&(
                 <div style={{padding:4}}><PitchingIQ/></div>
+              )}
+
+              {tab==='benchmarks'&&(
+                <div style={{padding:4}}><AthleticBenchmarks pitcherId={selected.id}/></div>
               )}
             </div>
             )
