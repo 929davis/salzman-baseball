@@ -44,23 +44,23 @@ function BenchmarkBar({def,value}:{def:BenchmarkDef,value:number|null|undefined}
           <div style={{position:'absolute' as const,left:`${scalePct(def,def.normalRange[0])}%`,width:`${scalePct(def,def.normalRange[1])-scalePct(def,def.normalRange[0])}%`,top:0,bottom:0,background:'rgba(57,211,83,0.12)',borderLeft:'1px dashed rgba(57,211,83,0.5)',borderRight:'1px dashed rgba(57,211,83,0.5)'}}/>
         )}
         <div style={{position:'absolute' as const,left:0,top:0,bottom:0,width:`${fillPct}%`,background:status?status.color:C.border,borderRadius:4,transition:'width 0.2s'}}/>
-        <div style={{position:'absolute' as const,left:`${p50Pct}%`,top:-2,bottom:-2,width:1,background:C.white,opacity:0.6}} title={`p50: ${def.p50}${def.unit}`}/>
+        <div style={{position:'absolute' as const,left:`${p50Pct}%`,top:-2,bottom:-2,width:1,background:C.white,opacity:0.6}} title={`Average: ${def.p50}${def.unit}`}/>
         {def.p75!=null&&(
-          <div style={{position:'absolute' as const,left:`${scalePct(def,def.p75)}%`,top:-2,bottom:-2,width:1,background:C.teal}} title={`p75: ${def.p75}${def.unit}`}/>
+          <div style={{position:'absolute' as const,left:`${scalePct(def,def.p75)}%`,top:-2,bottom:-2,width:1,background:C.teal}} title={`Strong: ${def.p75}${def.unit}`}/>
         )}
         {def.elite!=null&&(
           <div style={{position:'absolute' as const,left:`${scalePct(def,def.elite)}%`,top:-2,bottom:-2,width:1,background:C.teal}} title={`Elite: ${def.elite}${def.unit}`}/>
         )}
         {def.mlbAvg!=null&&(
-          <div style={{position:'absolute' as const,left:`${scalePct(def,def.mlbAvg)}%`,top:-2,bottom:-2,width:1,background:C.purple}} title={`MLB avg: ${def.mlbAvg}${def.unit}`}/>
+          <div style={{position:'absolute' as const,left:`${scalePct(def,def.mlbAvg)}%`,top:-2,bottom:-2,width:1,background:C.purple}} title={`MLB average: ${def.mlbAvg}${def.unit}`}/>
         )}
       </div>
       <div style={{display:'flex',gap:10,fontSize:9,color:C.textDim,marginTop:3,flexWrap:'wrap' as const}}>
-        <span>p50: {def.p50}{def.unit}</span>
-        {def.p75!=null&&<span style={{color:C.teal}}>p75: {def.p75}{def.unit}</span>}
-        {def.elite!=null&&<span style={{color:C.teal}}>elite: {def.elite}{def.unit}</span>}
-        {def.mlbAvg!=null&&<span style={{color:C.purple}}>MLB avg: {def.mlbAvg}{def.unit}</span>}
-        {def.normalRange&&<span style={{color:C.teal}}>normal range: {def.normalRange[0]}–{def.normalRange[1]}{def.unit}</span>}
+        <span>Average: {def.p50}{def.unit}</span>
+        {def.p75!=null&&<span style={{color:C.teal}}>Strong: {def.p75}{def.unit}</span>}
+        {def.elite!=null&&<span style={{color:C.teal}}>Elite: {def.elite}{def.unit}</span>}
+        {def.mlbAvg!=null&&<span style={{color:C.purple}}>MLB average: {def.mlbAvg}{def.unit}</span>}
+        {def.normalRange&&<span style={{color:C.teal}}>Healthy range: {def.normalRange[0]}–{def.normalRange[1]}{def.unit}</span>}
       </div>
     </div>
   )
@@ -119,7 +119,7 @@ export default function AthleticBenchmarks({pitcherId}:{pitcherId:string}){
         <div style={{fontSize:16,fontWeight:700,color:C.gold}}>Athletic Benchmarks</div>
         <button onClick={()=>setShowForm(s=>!s)} style={{background:showForm?C.bg3:C.gold,color:showForm?C.textMuted:C.bg,border:`1px solid ${showForm?C.border:C.gold}`,borderRadius:8,padding:'8px 14px',fontSize:12,fontWeight:700,cursor:'pointer'}}>{showForm?'Cancel':'+ Log Assessment'}</button>
       </div>
-      <div style={{fontSize:11,color:C.textMuted,marginBottom:16}}>TopVelocity.org reference ranges — p50 marked in white, p75/elite in teal, MLB average in purple.{latest&&<span> Showing most recent test: {latest.test_date}.</span>}</div>
+      <div style={{fontSize:11,color:C.textMuted,marginBottom:16}}>Reference ranges from athletic testing data — white line = average, teal line = strong/elite level, purple line = MLB average.{latest&&<span> Showing most recent test: {latest.test_date}.</span>}</div>
 
       {showForm&&(
         <div style={{background:C.bg2,border:`1px solid ${C.border}`,borderRadius:8,padding:16,marginBottom:16}}>

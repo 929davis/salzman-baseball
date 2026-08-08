@@ -21,7 +21,7 @@ export type BenchmarkDef = {
 }
 
 // scaleMin/scaleMax are a display convenience (roughly 1.3x the highest reference point) —
-// not part of the TopVelocity data itself, just a sane bar range per metric.
+// not part of the source benchmark data itself, just a sane bar range per metric.
 export const BENCHMARKS: BenchmarkDef[] = [
   {key:'broad_jump_in',label:'Broad Jump',unit:'in',tier:1,p50:96,scaleMin:0,scaleMax:130},
   {key:'lateral_broad_jump_lr_in',label:'Lateral Broad Jump (L+R)',unit:'in',tier:1,p50:156,scaleMin:0,scaleMax:210},
@@ -39,7 +39,7 @@ export const BENCHMARKS: BenchmarkDef[] = [
 ]
 
 export const TIER_INFO: Record<1|2|3,{label:string,desc:string}> = {
-  1:{label:'Tier 1 — Highest Predictive Power',desc:'Broad jump and lateral broad jump carry the strongest signal in the TopVelocity model.'},
+  1:{label:'Tier 1 — Highest Predictive Power',desc:'Broad jump and lateral broad jump carry the strongest predictive signal of the metrics tracked here.'},
   2:{label:'Tier 2 — High Predictive Power',desc:'Sprint speed, strength, grip, and jump metrics.'},
   3:{label:'Tier 3 — Mobility Metrics',desc:'Lower predictive power on their own, but flag restriction that can cap the metrics above.'},
 }
@@ -50,9 +50,9 @@ export function benchmarkStatus(def: BenchmarkDef, value: number | null | undefi
   const v = value*dir
   const eliteThreshold = def.elite!=null ? def.elite*dir : (def.p75!=null ? def.p75*dir : null)
   const p50 = def.p50*dir
-  if (eliteThreshold!=null && v>=eliteThreshold) return {label: def.elite!=null?'Elite':'At/above p75', color:'#39d353'}
-  if (v>=p50) return {label:'At/above p50', color:'#58a6ff'}
-  return {label:'Below p50', color:'#f85149'}
+  if (eliteThreshold!=null && v>=eliteThreshold) return {label: def.elite!=null?'Elite':'Strong', color:'#39d353'}
+  if (v>=p50) return {label:'Average or better', color:'#58a6ff'}
+  return {label:'Below average', color:'#f85149'}
 }
 
 export function scalePct(def: BenchmarkDef, value: number): number {
