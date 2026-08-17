@@ -59,3 +59,80 @@ export function scalePct(def: BenchmarkDef, value: number): number {
   const clamped = Math.max(def.scaleMin, Math.min(def.scaleMax, value))
   return ((clamped - def.scaleMin) / (def.scaleMax - def.scaleMin)) * 100
 }
+
+// ---------------------------------------------------------------------------
+// Power Tests — additive, separate tier model (Tour/Good/Marginal/Deficit),
+// not part of the TopVelocity Tier 1/2/3 percentile system above.
+//
+// Sourcing: only a single top-tier "excellent"/"standard" anchor value was
+// findable per test (TPI-adjacent, via web search — no full norms table with
+// Good/Marginal/Deficit breakpoints is publicly available). Tour = that
+// anchor; Good/Marginal are constructed as 90%/75% bands below it, confirmed
+// with the coach rather than sourced. Not a claim these are official numbers.
+// ---------------------------------------------------------------------------
+
+export type PowerTestTier = 'Tour' | 'Good' | 'Marginal' | 'Deficit'
+
+export type PowerTestDef = {
+  key: string
+  label: string
+  unit: string
+  tourMin: number
+  goodMin: number
+  marginalMin: number
+  // Vertical Jump reuses the existing Tier 2 benchmark's stored value instead of
+  // asking a coach to log the same physical test twice under two grading systems.
+  reuseKey?: BenchmarkKey
+}
+
+export const POWER_TESTS: PowerTestDef[] = [
+  {key:'vertical_jump_power_in',label:'Vertical Jump',unit:'in',tourMin:22,goodMin:19.8,marginalMin:16.5,reuseKey:'vertical_jump_in'},
+  {key:'mb_seated_chest_pass_ft',label:'MB Seated Chest Pass',unit:'ft',tourMin:17,goodMin:15.3,marginalMin:12.75},
+  {key:'mb_situp_throw_ft',label:'MB Sit-Up & Throw',unit:'ft',tourMin:22,goodMin:19.8,marginalMin:16.5},
+  {key:'mb_rotational_pass_ft',label:'MB Rotational Pass',unit:'ft',tourMin:33,goodMin:29.7,marginalMin:24.75},
+]
+
+export function powerTestTier(def: PowerTestDef, value: number | null | undefined): PowerTestTier | null {
+  if (value==null || isNaN(value)) return null
+  if (value>=def.tourMin) return 'Tour'
+  if (value>=def.goodMin) return 'Good'
+  if (value>=def.marginalMin) return 'Marginal'
+  return 'Deficit'
+}
+
+export const POWER_TIER_COLORS: Record<PowerTestTier,string> = {
+  Tour:'#39d353', Good:'#58a6ff', Marginal:'#e8b84b', Deficit:'#f85149',
+}
+
+// ---------------------------------------------------------------------------
+// Mobility/Stability Screens — pass/fail-style qualitative screens (the TPI
+// screening battery), modeled as a status per screen rather than forced into
+// the numeric benchmark bar above. `key` matches the column name on the
+// mobility_screens table.
+// ---------------------------------------------------------------------------
+
+export type ScreenStatus = 'Pass' | 'Limited' | 'Fail'
+
+export type MobilityScreenDef = { key: string, label: string }
+
+export const MOBILITY_SCREENS: MobilityScreenDef[] = [
+  {key:'pelvic_tilt',label:'Pelvic Tilt'},
+  {key:'pelvic_rotation',label:'Pelvic Rotation'},
+  {key:'lower_quarter_rotation',label:'Lower Quarter Rotation'},
+  {key:'toe_touch',label:'Toe Touch'},
+  {key:'seated_trunk_rotation',label:'Seated Trunk Rotation'},
+  {key:'torso_rotation',label:'Torso Rotation'},
+  {key:'lat_length',label:'Lat Length'},
+  {key:'shoulder_90_90',label:'90/90 Shoulder'},
+  {key:'single_leg_balance',label:'Single Leg Balance'},
+  {key:'overhead_deep_squat',label:'Overhead Deep Squat'},
+  {key:'bridge_leg_extension',label:'Bridge + Leg Extension'},
+  {key:'cervical_rotation',label:'Cervical Rotation'},
+  {key:'forearm_rotation',label:'Forearm Rotation'},
+  {key:'wrist_hinge',label:'Wrist Hinge'},
+  {key:'wrist_flex_ext',label:'Wrist Flex/Ext'},
+]
+
+export const SCREEN_STATUS_COLORS: Record<ScreenStatus,string> = {
+  Pass:'#39d353', Limited:'#e8b84b', Fail:'#f85149',
+}
