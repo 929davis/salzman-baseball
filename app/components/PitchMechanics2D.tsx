@@ -1,6 +1,7 @@
 'use client'
 import { useState, useRef, useEffect, useCallback } from 'react'
 import { createClient } from '@/lib/supabase/client'
+import { angleAt } from '@/lib/angles'
 
 const C = {
   bg:'#0d1117',bg2:'#161b22',bg3:'#1c2333',border:'#30363d',
@@ -74,13 +75,6 @@ function getCanvasPoint(e:{clientX:number,clientY:number}, canvas:HTMLCanvasElem
   return {x:(e.clientX-rect.left)*(canvas.width/rect.width), y:(e.clientY-rect.top)*(canvas.height/rect.height)}
 }
 
-function angleAt(A:{x:number,y:number},B:{x:number,y:number},C:{x:number,y:number}){
-  const v1={x:A.x-B.x,y:A.y-B.y}, v2={x:C.x-B.x,y:C.y-B.y}
-  const dot=v1.x*v2.x+v1.y*v2.y
-  const m1=Math.hypot(v1.x,v1.y), m2=Math.hypot(v2.x,v2.y)
-  const cos=Math.max(-1,Math.min(1,dot/(m1*m2)))
-  return Math.acos(cos)*180/Math.PI
-}
 function lineAngleFromVertical(P1:{x:number,y:number},P2:{x:number,y:number}){
   const dx=P2.x-P1.x, dy=P2.y-P1.y
   return Math.atan2(Math.abs(dx),Math.abs(dy))*180/Math.PI
