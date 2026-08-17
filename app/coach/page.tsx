@@ -6,6 +6,7 @@ import { useRouter } from 'next/navigation'
 import PitchingIQ from '@/app/components/PitchingIQ'
 import AthleticBenchmarks from '@/app/components/AthleticBenchmarks'
 import PitchMechanics2D from '@/app/components/PitchMechanics2D'
+import ProgressOverview from '@/app/components/ProgressOverview'
 import { angleAt } from '@/lib/angles'
 import {
   calcStrengthVelocityRatio, calcBodyweightPct, bodyweightPctStatus,
@@ -1013,6 +1014,8 @@ Write next week's program by day and category (Pre-Throwing, Throwing, Post-Thro
                   </div>
                 )}
               </div>
+
+              <ProgressOverview pitcherId={selected.id} mode="coach"/>
 
               <div style={{display:'flex',gap:6,marginBottom:16,flexWrap:'wrap' as const}}>
                 {['overview','logs','program','notes','messages','iq','benchmarks','mechanics'].map(t=>(

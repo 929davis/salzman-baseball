@@ -5,6 +5,7 @@ import { createClient } from '@/lib/supabase/client'
 import { useRouter } from 'next/navigation'
 import PitchingIQ from '@/app/components/PitchingIQ'
 import AthleticBenchmarks from '@/app/components/AthleticBenchmarks'
+import ProgressOverview from '@/app/components/ProgressOverview'
 import { parseTime, calcJumpHeight, calcCMJFn } from '@/lib/cmj'
 
 const C = {
@@ -152,7 +153,7 @@ const FrameInputs=({form,setForm,fields,inp,lbl}:{form:any,setForm:any,fields:{k
 export default function PitcherDashboard(){
   const [profile,setProfile]=useState<any>(null)
   const [exerciseVideos,setExerciseVideos]=useState<Record<string,string>>({})
-  const [tab,setTab]=useState('program')
+  const [tab,setTab]=useState('overview')
   const [program,setProgram]=useState<any>(null)
   const [logs,setLogs]=useState<any[]>([])
   const [messages,setMessages]=useState<any[]>([])
@@ -471,6 +472,7 @@ export default function PitcherDashboard(){
       {/* Tab bar */}
       <div style={{display:'flex',background:C.bg2,borderBottom:`1px solid ${C.border}`,padding:'0 2px',overflowX:'auto' as const}}>
         {[
+          {id:'overview',icon:'📈',label:'Overview'},
           {id:'program',icon:'📋',label:'Program'},
           {id:'food',icon:'🥗',label:'Food'},
           {id:'assess',icon:'🧪',label:'Assess'},
@@ -488,6 +490,11 @@ export default function PitcherDashboard(){
       </div>
 
       <div style={{padding:'16px'}}>
+
+        {/* OVERVIEW TAB */}
+        {tab==='overview'&&profile&&(
+          <ProgressOverview pitcherId={profile.id} mode="athlete"/>
+        )}
 
         {/* PROGRAM TAB */}
         {tab==='program'&&(
