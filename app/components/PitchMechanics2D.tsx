@@ -14,6 +14,16 @@ const C = {
 const STRIDE_TARGET_PCT_HT:[number,number] = [90,100]
 const HIP_SHOULDER_SEP_TARGET_DEG:[number,number] = [40,60]
 
+const KEY_EVENTS = [
+  'Front Foot Off Ground',
+  'Peak Leg Lift',
+  'Hand Break',
+  'Foot Plant (Weight-Bearing)',
+  'Hip Rotation Stop',
+  'Max External Rotation (MER)',
+  'Release',
+]
+
 type CameraView = 'side' | 'front' | 'back'
 type Handedness = 'R' | 'L'
 
@@ -34,6 +44,7 @@ type LogEntry = {
   hipShoulderSep:number|null
   notes:string|null
   cameraView:string|null
+  keyEvent:string|null
   hipPx:{x:number,y:number}|null // only populated for entries logged this session — not persisted in the DB schema
   savedAt?:string
 }
@@ -49,6 +60,19 @@ const BONES:[number,number][] = [
 ]
 
 function toPx(lm:{x:number,y:number}, w:number, h:number){ return {x:lm.x*w, y:lm.y*h} }
+
+// Resolves every tracked landmark to pixel space, substituting a manually-dragged
+// correction where one exists for this frame instead of MediaPipe's raw position.
+function resolvePoints(lms:any[], overrides:Record<number,{x:number,y:number}>, w:number, h:number):Record<number,{x:number,y:number}>{
+  const pts:Record<number,{x:number,y:number}> = {}
+  for (const idx of Object.values(LM)) pts[idx] = overrides[idx] ?? toPx(lms[idx],w,h)
+  return pts
+}
+
+function getCanvasPoint(e:{clientX:number,clientY:number}, canvas:HTMLCanvasElement):{x:number,y:number}{
+  const rect=canvas.getBoundingClientRect()
+  return {x:(e.clientX-rect.left)*(canvas.width/rect.width), y:(e.clientY-rect.top)*(canvas.height/rect.height)}
+}
 
 function angleAt(A:{x:number,y:number},B:{x:number,y:number},C:{x:number,y:number}){
   const v1={x:A.x-B.x,y:A.y-B.y}, v2={x:C.x-B.x,y:C.y-B.y}
@@ -66,12 +90,12 @@ function lineAngleFromHorizontal(P1:{x:number,y:number},P2:{x:number,y:number}){
   return Math.atan2(Math.abs(dy),Math.abs(dx))*180/Math.PI
 }
 
-function computeMetricsFor(lms:any[], w:number, h:number, cfg:{handedness:Handedness,pxPerInch:number|null,heightIn:string}, currentTime:number):Metrics{
+function computeMetricsFor(pts:Record<number,{x:number,y:number}>, cfg:{handedness:Handedness,pxPerInch:number|null,heightIn:string}, currentTime:number):Metrics{
   const throwsR = cfg.handedness==='R'
   const frontKneeIdx = throwsR ? [LM.lHip,LM.lKnee,LM.lAnkle] : [LM.rHip,LM.rKnee,LM.rAnkle]
   const backKneeIdx  = throwsR ? [LM.rHip,LM.rKnee,LM.rAnkle] : [LM.lHip,LM.lKnee,LM.lAnkle]
   const elbowIdx     = throwsR ? [LM.rShoulder,LM.rElbow,LM.rWrist] : [LM.lShoulder,LM.lElbow,LM.lWrist]
-  const P=(i:number)=>toPx(lms[i],w,h)
+  const P=(i:number)=>pts[i]
   const frontKnee = angleAt(P(frontKneeIdx[0]),P(frontKneeIdx[1]),P(frontKneeIdx[2]))
   const backKnee  = angleAt(P(backKneeIdx[0]),P(backKneeIdx[1]),P(backKneeIdx[2]))
   const elbow     = angleAt(P(elbowIdx[0]),P(elbowIdx[1]),P(elbowIdx[2]))
@@ -88,17 +112,22 @@ function computeMetricsFor(lms:any[], w:number, h:number, cfg:{handedness:Handed
   return {frontKnee,backKnee,elbow,trunkTilt,hipShoulderSep,stridePctHt,strideInches,hipPx:midHip,time:currentTime}
 }
 
-function drawSkeleton(ctx:CanvasRenderingContext2D, lms:any[], w:number, h:number){
+function drawSkeleton(ctx:CanvasRenderingContext2D, pts:Record<number,{x:number,y:number}>, overrides:Record<number,{x:number,y:number}>){
   ctx.lineWidth=3
   ctx.strokeStyle=C.gold
   BONES.forEach(([a,b])=>{
-    const A=toPx(lms[a],w,h), B=toPx(lms[b],w,h)
+    const A=pts[a], B=pts[b]
     ctx.beginPath(); ctx.moveTo(A.x,A.y); ctx.lineTo(B.x,B.y); ctx.stroke()
   })
-  ctx.fillStyle=C.text
   Object.values(LM).forEach(i=>{
-    const P=toPx(lms[i],w,h)
-    ctx.beginPath(); ctx.arc(P.x,P.y,4,0,Math.PI*2); ctx.fill()
+    const P=pts[i]
+    const overridden=!!overrides[i]
+    ctx.fillStyle=overridden?C.red:C.text
+    ctx.beginPath(); ctx.arc(P.x,P.y,overridden?6:4,0,Math.PI*2); ctx.fill()
+    if (overridden){
+      ctx.strokeStyle=C.red; ctx.lineWidth=2
+      ctx.beginPath(); ctx.arc(P.x,P.y,10,0,Math.PI*2); ctx.stroke()
+    }
   })
 }
 
@@ -178,6 +207,7 @@ export default function PitchMechanics2D({pitcherId}:{pitcherId:string}){
   const [convertLabel,setConvertLabel]=useState('Convert video in-browser & retry')
   const [sessionLabel,setSessionLabel]=useState('')
   const [frameNotes,setFrameNotes]=useState('')
+  const [keyEvent,setKeyEvent]=useState('')
   const [saving,setSaving]=useState(false)
 
   const videoRef=useRef<HTMLVideoElement>(null)
@@ -192,6 +222,10 @@ export default function PitchMechanics2D({pitcherId}:{pitcherId:string}){
   const lastFailedFileRef=useRef<File|null>(null)
   const objectUrlRef=useRef<string|null>(null)
   const isPlayingRef=useRef(false)
+  // Manual per-frame marker corrections — pixel-space, reset whenever new MediaPipe
+  // landmarks arrive (i.e. whenever the video moves to a different frame).
+  const markerOverridesRef=useRef<Record<number,{x:number,y:number}>>({})
+  const draggingIndexRef=useRef<number|null>(null)
   const configRef=useRef({handedness,pxPerInch,heightIn,fps,view})
   useEffect(()=>{ configRef.current={handedness,pxPerInch,heightIn,fps,view} })
 
@@ -203,8 +237,9 @@ export default function PitchMechanics2D({pitcherId}:{pitcherId:string}){
     ctx.drawImage(video,0,0,canvas.width,canvas.height)
     const lms=latestLandmarksRef.current
     if (lms){
-      drawSkeleton(ctx,lms,canvas.width,canvas.height)
-      const m=computeMetricsFor(lms,canvas.width,canvas.height,configRef.current,video.currentTime)
+      const pts=resolvePoints(lms,markerOverridesRef.current,canvas.width,canvas.height)
+      drawSkeleton(ctx,pts,markerOverridesRef.current)
+      const m=computeMetricsFor(pts,configRef.current,video.currentTime)
       latestMetricsRef.current=m
       setLatestMetrics(m)
     }
@@ -212,8 +247,32 @@ export default function PitchMechanics2D({pitcherId}:{pitcherId:string}){
 
   const onResults=useCallback((results:any)=>{
     latestLandmarksRef.current=results.poseLandmarks||null
+    markerOverridesRef.current={} // new frame's tracking — clear any prior frame's manual corrections
     drawFrame()
   },[drawFrame])
+
+  const onCanvasPointerDown=(e:React.MouseEvent<HTMLCanvasElement>)=>{
+    const canvas=canvasRef.current, lms=latestLandmarksRef.current
+    if (!canvas||!lms) return
+    const pt=getCanvasPoint(e,canvas)
+    const pts=resolvePoints(lms,markerOverridesRef.current,canvas.width,canvas.height)
+    let nearest:number|null=null, nearestDist=Infinity
+    for (const idx of Object.values(LM)){
+      const d=Math.hypot(pts[idx].x-pt.x,pts[idx].y-pt.y)
+      if (d<nearestDist){ nearestDist=d; nearest=idx }
+    }
+    const hitRadius=Math.max(canvas.width,canvas.height)*0.035
+    if (nearest!=null && nearestDist<=hitRadius) draggingIndexRef.current=nearest
+  }
+  const onCanvasPointerMove=(e:React.MouseEvent<HTMLCanvasElement>)=>{
+    const canvas=canvasRef.current
+    if (draggingIndexRef.current==null||!canvas) return
+    const pt=getCanvasPoint(e,canvas)
+    markerOverridesRef.current={...markerOverridesRef.current,[draggingIndexRef.current]:pt}
+    drawFrame()
+  }
+  const onCanvasPointerUp=()=>{ draggingIndexRef.current=null }
+  const resetCorrections=()=>{ markerOverridesRef.current={}; drawFrame() }
 
   useEffect(()=>{
     let cancelled=false
@@ -246,11 +305,16 @@ export default function PitchMechanics2D({pitcherId}:{pitcherId:string}){
     const rows:LogEntry[]=(data||[]).map((r:any)=>({
       id:r.id, time:r.video_timestamp_sec, frontKnee:r.front_knee_deg, backKnee:r.back_knee_deg,
       trunkTilt:r.trunk_tilt_deg, elbow:r.elbow_deg, stridePctHt:r.stride_pct_ht, strideInches:r.stride_inches,
-      hipShoulderSep:r.hip_shoulder_sep_deg, notes:r.notes, cameraView:r.camera_view, hipPx:null, savedAt:r.created_at,
+      hipShoulderSep:r.hip_shoulder_sep_deg, notes:r.notes, cameraView:r.camera_view, keyEvent:r.key_event, hipPx:null, savedAt:r.created_at,
     }))
     setLogEntries(rows)
     setLogsLoading(false)
   },[pitcherId,supabase])
+
+  const clearLog=()=>{
+    if (!window.confirm('Clear the on-screen log? This only clears this view — nothing is deleted from Supabase, and Refresh will bring it back.')) return
+    setLogEntries([])
+  }
 
   useEffect(()=>{ fetchLogs() },[fetchLogs])
 
@@ -341,9 +405,9 @@ export default function PitchMechanics2D({pitcherId}:{pitcherId:string}){
     if (!lms||!canvas) return
     const h=parseFloat(heightIn)
     if (!h){ setCalibStatus({text:'Enter athlete height first.',calibrated:false}); return }
-    const P=(i:number)=>toPx(lms[i],canvas.width,canvas.height)
-    const anklePx=(P(LM.lAnkle).y+P(LM.rAnkle).y)/2
-    const nosePx=P(LM.nose).y
+    const pts=resolvePoints(lms,markerOverridesRef.current,canvas.width,canvas.height)
+    const anklePx=(pts[LM.lAnkle].y+pts[LM.rAnkle].y)/2
+    const nosePx=pts[LM.nose].y
     const pixelSpan=Math.abs(anklePx-nosePx)*1.06
     const ratio=pixelSpan/h
     setPxPerInch(ratio)
@@ -404,6 +468,7 @@ export default function PitchMechanics2D({pitcherId}:{pitcherId:string}){
       stride_pct_ht:m.stridePctHt,
       stride_inches:m.strideInches,
       hip_shoulder_sep_deg:m.hipShoulderSep,
+      key_event:keyEvent||null,
       notes:frameNotes||null,
     }).select().single()
     setSaving(false)
@@ -411,19 +476,20 @@ export default function PitchMechanics2D({pitcherId}:{pitcherId:string}){
       setLogEntries(prev=>[{
         id:data.id, time:m.time, frontKnee:m.frontKnee, backKnee:m.backKnee, trunkTilt:m.trunkTilt, elbow:m.elbow,
         stridePctHt:m.stridePctHt, strideInches:m.strideInches, hipShoulderSep:m.hipShoulderSep,
-        notes:frameNotes||null, cameraView:view, hipPx:m.hipPx, savedAt:data.created_at,
+        notes:frameNotes||null, cameraView:view, keyEvent:keyEvent||null, hipPx:m.hipPx, savedAt:data.created_at,
       }, ...prev])
       setFrameNotes('')
+      setKeyEvent('')
     }
   }
 
   const exportCsv=()=>{
     if (!logEntries.length) return
-    const header='Time(s),FrontKnee,BackKnee,TrunkTilt,Elbow,Stride%Ht,StrideInches,HipShoulderSep(est),CameraView,Notes\n'
+    const header='Time(s),FrontKnee,BackKnee,TrunkTilt,Elbow,Stride%Ht,StrideInches,HipShoulderSep(est),CameraView,KeyEvent,Notes\n'
     const rows=logEntries.map(e=>[
       e.time?.toFixed(3)??'', e.frontKnee?.toFixed(1)??'', e.backKnee?.toFixed(1)??'', e.trunkTilt?.toFixed(1)??'',
       e.elbow?.toFixed(1)??'', e.stridePctHt?e.stridePctHt.toFixed(1):'', e.strideInches?e.strideInches.toFixed(1):'',
-      e.hipShoulderSep?.toFixed(1)??'', e.cameraView??'', `"${(e.notes??'').replace(/"/g,'""')}"`,
+      e.hipShoulderSep?.toFixed(1)??'', e.cameraView??'', e.keyEvent??'', `"${(e.notes??'').replace(/"/g,'""')}"`,
     ].join(','))
     const csv=header+rows.join('\n')
     const blob=new Blob([csv],{type:'text/csv'})
@@ -440,7 +506,7 @@ export default function PitchMechanics2D({pitcherId}:{pitcherId:string}){
   const statCard=(label:string,value:string,unit:string,metricKey:string,target?:string)=>{
     const badge=confidenceBadge(metricKey,view)
     return (
-      <div key={label} style={{background:C.bg3,border:`1px solid ${C.border}`,borderRadius:8,padding:'12px 14px',position:'relative' as const}}>
+      <div key={`${label}-${unit}`} style={{background:C.bg3,border:`1px solid ${C.border}`,borderRadius:8,padding:'12px 14px',position:'relative' as const}}>
         <span style={{position:'absolute' as const,top:10,right:10,fontSize:9,padding:'2px 6px',borderRadius:3,textTransform:'uppercase' as const,letterSpacing:'0.4px',fontWeight:600,background:badge==='reliable'?'rgba(57,211,83,0.15)':'rgba(224,164,56,0.15)',color:badge==='reliable'?C.teal:C.gold,border:`1px solid ${badge==='reliable'?'rgba(57,211,83,0.3)':'rgba(224,164,56,0.3)'}`}}>{badge==='reliable'?'Reliable':'Est.'}</span>
         <div style={{fontSize:11,color:C.textMuted,textTransform:'uppercase' as const,letterSpacing:'0.4px',marginBottom:6}}>{label}</div>
         <div style={{fontFamily:'monospace',fontSize:24,fontWeight:700,color:C.white,lineHeight:1}}>{value}<span style={{fontSize:12,color:C.textMuted,fontWeight:400,marginLeft:2}}>{unit}</span></div>
@@ -496,8 +562,19 @@ export default function PitchMechanics2D({pitcherId}:{pitcherId:string}){
               </div>
             )}
             <video ref={videoRef} playsInline muted style={{display:videoLoaded?'block':'none',position:'absolute' as const,top:0,left:0,width:'100%',height:'100%',objectFit:'contain' as const}}/>
-            <canvas ref={canvasRef} style={{display:videoLoaded?'block':'none',position:'absolute' as const,top:0,left:0,width:'100%',height:'100%',objectFit:'contain' as const}}/>
+            <canvas
+              ref={canvasRef}
+              onMouseDown={onCanvasPointerDown} onMouseMove={onCanvasPointerMove} onMouseUp={onCanvasPointerUp} onMouseLeave={onCanvasPointerUp}
+              style={{display:videoLoaded?'block':'none',position:'absolute' as const,top:0,left:0,width:'100%',height:'100%',objectFit:'contain' as const,cursor:videoLoaded?'crosshair':'default'}}
+            />
           </div>
+
+          {videoLoaded&&(
+            <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',gap:8,marginTop:8,flexWrap:'wrap' as const}}>
+              <span style={{fontSize:10,color:C.textDim}}>Drag any joint marker to correct MediaPipe's tracking for this frame — corrections reset when you move to a new frame.</span>
+              <button onClick={resetCorrections} style={{...btnStyle(),fontSize:10,padding:'4px 8px',flexShrink:0}}>Reset corrections</button>
+            </div>
+          )}
 
           <div style={{display:'flex',alignItems:'center',gap:8,marginTop:12,flexWrap:'wrap' as const}}>
             <button onClick={togglePlay} disabled={!videoLoaded} style={{...btnStyle(),opacity:videoLoaded?1:0.35}}>{isPlaying?'⏸ Pause':'▶ Play'}</button>
@@ -544,6 +621,13 @@ export default function PitchMechanics2D({pitcherId}:{pitcherId:string}){
               <div style={{fontSize:12,color:calibStatus.calibrated?C.teal:C.textMuted}}>{calibStatus.text}</div>
             </div>
             <div style={{gridColumn:'1/-1'}}>
+              <label style={lbl}>Key Event <span style={{color:C.textDim,fontWeight:400}}>(optional)</span></label>
+              <select value={keyEvent} onChange={e=>setKeyEvent(e.target.value)} style={inp}>
+                <option value="">— None / Other —</option>
+                {KEY_EVENTS.map(k=><option key={k} value={k}>{k}</option>)}
+              </select>
+            </div>
+            <div style={{gridColumn:'1/-1'}}>
               <label style={lbl}>Notes for next logged frame <span style={{color:C.textDim,fontWeight:400}}>(optional)</span></label>
               <input type="text" placeholder="e.g. front foot open at strike" value={frameNotes} onChange={e=>setFrameNotes(e.target.value)} style={inp}/>
             </div>
@@ -578,17 +662,18 @@ export default function PitchMechanics2D({pitcherId}:{pitcherId:string}){
               <div style={{fontSize:11,fontWeight:700,color:C.textMuted,textTransform:'uppercase' as const,letterSpacing:'0.5px'}}>Frame Log</div>
               <span style={{fontSize:11,color:C.textMuted}}>{logsLoading?'Loading…':`${logEntries.length} frame${logEntries.length!==1?'s':''}`}</span>
             </div>
-            <div style={{display:'flex',gap:8,marginBottom:10}}>
+            <div style={{display:'flex',gap:8,marginBottom:10,flexWrap:'wrap' as const}}>
               <button onClick={fetchLogs} style={{...btnStyle(),flex:1}}>Refresh</button>
+              <button onClick={clearLog} style={{...btnStyle(),flex:1}}>Clear Log</button>
               <button onClick={exportCsv} style={{...btnStyle(),flex:1}}>Export CSV</button>
             </div>
-            <div style={{maxHeight:240,overflowY:'auto' as const,border:`1px solid ${C.border}`,borderRadius:8,background:C.bg2}}>
+            <div style={{maxHeight:240,overflowY:'auto' as const,overflowX:'auto' as const,border:`1px solid ${C.border}`,borderRadius:8,background:C.bg2}}>
               {logEntries.length===0?(
                 <div style={{padding:20,textAlign:'center' as const,color:C.textDim,fontSize:12}}>No frames logged yet. Play or step to a key position (foot strike, release) and hit "Log Frame."</div>
               ):(
-                <table style={{width:'100%',borderCollapse:'collapse' as const,fontSize:11,fontFamily:'monospace'}}>
+                <table style={{width:'100%',minWidth:640,borderCollapse:'collapse' as const,fontSize:11,fontFamily:'monospace'}}>
                   <thead><tr style={{borderBottom:`1px solid ${C.border}`}}>
-                    {['t(s)','Fr Knee','Bk Knee','Trunk','Elbow','Stride%','Hip-Shd'].map(h=><th key={h} style={{padding:'6px 8px',textAlign:'left' as const,color:C.textMuted,fontSize:9,textTransform:'uppercase' as const}}>{h}</th>)}
+                    {['t(s)','Fr Knee','Bk Knee','Trunk','Elbow','Stride%','Hip-Shd','Event'].map(h=><th key={h} style={{padding:'6px 8px',textAlign:'left' as const,color:C.textMuted,fontSize:9,textTransform:'uppercase' as const,whiteSpace:'nowrap' as const}}>{h}</th>)}
                   </tr></thead>
                   <tbody>
                     {logEntries.map(e=>(
@@ -600,6 +685,7 @@ export default function PitchMechanics2D({pitcherId}:{pitcherId:string}){
                         <td style={{padding:'6px 8px',color:C.text}}>{e.elbow?.toFixed(0)??'—'}</td>
                         <td style={{padding:'6px 8px',color:C.text}}>{e.stridePctHt?e.stridePctHt.toFixed(0):'—'}</td>
                         <td style={{padding:'6px 8px',color:C.text}}>{e.hipShoulderSep?.toFixed(0)??'—'}</td>
+                        <td style={{padding:'6px 8px',color:C.gold,whiteSpace:'nowrap' as const}}>{e.keyEvent||'—'}</td>
                       </tr>
                     ))}
                   </tbody>
