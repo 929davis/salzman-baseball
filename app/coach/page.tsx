@@ -325,6 +325,10 @@ export default function CoachDashboard(){
   const [importSaving,setImportSaving]=useState(false)
   const [copySuccess,setCopySuccess]=useState(false)
   const [importResult,setImportResult]=useState<string|null>(null)
+  const [exerciseImportModal,setExerciseImportModal]=useState(false)
+  const [exerciseImportText,setExerciseImportText]=useState('')
+  const [exerciseImportSaving,setExerciseImportSaving]=useState(false)
+  const [exerciseImportResult,setExerciseImportResult]=useState<string|null>(null)
   const [showPicker,setShowPicker]=useState(false)
   const [pickerCell,setPickerCell]=useState<{day:string,cat:string}|null>(null)
   const [pickerSearch,setPickerSearch]=useState('')
@@ -596,6 +600,42 @@ export default function CoachDashboard(){
     }).select().single()
     if (data){setCustomExercises(prev=>[...prev,{...data,id:data.exercise_id}]);setCustomForm(BLANK_CUSTOM);setShowCustomForm(false)}
     setCustomSaving(false)
+  }
+
+  const CNS_VALUES=['High','Moderate','Low']
+
+  const bulkImportExercises=async(text:string)=>{
+    setExerciseImportSaving(true)
+    const categoryValues=CATEGORIES.map(c=>c.key)
+    const existingNames=new Set(EXERCISE_DB.map((e:any)=>e.name.toLowerCase()))
+    const seenThisBatch=new Set<string>()
+    const flagged:string[]=[]
+    const rows:{exercise_id:string,name:string,pattern:string,category:string,cns:string,description:string}[]=[]
+    const lines=text.split('\n').map(l=>l.trim()).filter(l=>l.length>0)
+    lines.forEach((raw,i)=>{
+      const parts=raw.split('|').map(p=>p.trim())
+      if (parts.length<4){flagged.push(`"${raw}" — expected at least 4 fields: Name | Category | Pattern | CNS | Description`);return}
+      const [name,category,pattern,cns,description]=parts
+      if (!name){flagged.push(`"${raw}" — missing name`);return}
+      if (!pattern){flagged.push(`"${name||raw}" — missing pattern`);return}
+      if (!categoryValues.includes(category)){flagged.push(`"${name}" — unknown category "${category}" (must be one of: ${categoryValues.join(', ')})`);return}
+      if (!CNS_VALUES.includes(cns)){flagged.push(`"${name}" — unknown CNS "${cns}" (must be High, Moderate, or Low)`);return}
+      const key=name.toLowerCase()
+      if (existingNames.has(key)){flagged.push(`"${name}" — an exercise with this name already exists, skipped`);return}
+      if (seenThisBatch.has(key)){flagged.push(`"${name}" — duplicate within this paste, only the first was kept`);return}
+      seenThisBatch.add(key)
+      rows.push({exercise_id:`custom_${Date.now()}_${i}`,name,pattern,category,cns,description:description||''})
+    })
+    let added=0
+    if (rows.length>0){
+      const {data,error}=await supabase.from('custom_exercises').insert(rows).select()
+      if (error){flagged.push(`Save failed: ${error.message}`)}
+      else if (data){setCustomExercises(prev=>[...prev,...data.map((d:any)=>({...d,id:d.exercise_id}))]);added=data.length}
+    }
+    setExerciseImportSaving(false)
+    const flaggedMsg=flagged.length>0?` Flagged ${flagged.length}: ${flagged.slice(0,6).join('; ')}${flagged.length>6?'…':''}.`:''
+    setExerciseImportResult(`${flagged.length===0?'✅':'⚠️'} Added ${added} exercise${added!==1?'s':''}.${flaggedMsg}`)
+    if (added>0&&flagged.length===0)setExerciseImportText('')
   }
 
   const deleteCustomExercise=async(exercise_id:string)=>{
@@ -1251,7 +1291,10 @@ Write next week's program by day and category (Pre-Throwing, Throwing, Post-Thro
                   <div style={{fontSize:20,fontWeight:700,color:C.white,marginBottom:4}}>EXERCISE LIBRARY</div>
                   <div style={{fontSize:13,color:C.textMuted}}>{EXERCISE_DB.length} exercises · {customExercises.length} custom · {Object.keys(overrides).length} overrides</div>
                 </div>
-                <button onClick={()=>{setShowCustomForm(true);setCustomForm(BLANK_CUSTOM)}} style={{...S.btn('gold'),padding:'9px 16px'}}>+ New Exercise</button>
+                <div style={{display:'flex',gap:8}}>
+                  <button onClick={()=>{setExerciseImportModal(true);setExerciseImportResult(null)}} style={{...S.btn(),padding:'9px 16px'}}>+ Bulk Import</button>
+                  <button onClick={()=>{setShowCustomForm(true);setCustomForm(BLANK_CUSTOM)}} style={{...S.btn('gold'),padding:'9px 16px'}}>+ New Exercise</button>
+                </div>
               </div>
 
               {showCustomForm&&(
@@ -1534,6 +1577,28 @@ Write next week's program by day and category (Pre-Throwing, Throwing, Post-Thro
           </div>
         </div>
       )}
+    {exerciseImportModal&&(
+      <div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.7)',zIndex:9999,display:'flex',alignItems:'center',justifyContent:'center'}} onClick={()=>setExerciseImportModal(false)}>
+        <div style={{background:'#1a1a2e',border:'1px solid rgba(255,255,255,0.1)',borderRadius:12,padding:24,width:560,maxWidth:'90vw'}} onClick={e=>e.stopPropagation()}>
+          <div style={{fontSize:15,fontWeight:700,color:'#fff',marginBottom:4}}>Bulk Import Exercises</div>
+          <div style={{fontSize:12,color:'#888',marginBottom:12}}>Paste exercises in the format, one per line:<br/><span style={{color:'#58a6ff',fontFamily:'monospace',fontSize:11}}>Name | Category | Pattern | CNS | Description</span><br/>Category must be one of the 7 program categories. CNS must be High, Moderate, or Low. Rows that don't match get flagged below, not silently skipped.</div>
+          <textarea
+            style={{width:'100%',height:220,background:'#0d0d1a',border:'1px solid rgba(255,255,255,0.1)',borderRadius:8,padding:'10px 12px',fontSize:12,color:'#fff',outline:'none',resize:'vertical' as const,boxSizing:'border-box' as const,fontFamily:'monospace'}}
+            placeholder={`Banded Hip Hinge | Accessory | Hinge | Low | Band around hips, hinge back against resistance...
+Trap Bar Jump | Main Exercises | Squat | High | Explosive jump holding empty trap bar...`}
+            value={exerciseImportText}
+            onChange={e=>setExerciseImportText(e.target.value)}
+          />
+          {exerciseImportResult&&<div style={{fontSize:12,color:exerciseImportResult.startsWith('✅')?'#39d353':'#f0883e',marginTop:8,lineHeight:1.5}}>{exerciseImportResult}</div>}
+          <div style={{display:'flex',gap:8,marginTop:12}}>
+            <button onClick={()=>{setExerciseImportModal(false);setExerciseImportResult(null);setExerciseImportText('')}} style={{flex:1,background:'transparent',border:'1px solid rgba(255,255,255,0.1)',borderRadius:8,padding:'10px',fontSize:13,color:'#888',cursor:'pointer'}}>Cancel</button>
+            <button onClick={()=>bulkImportExercises(exerciseImportText)} disabled={!exerciseImportText.trim()||exerciseImportSaving} style={{flex:2,background:exerciseImportText.trim()?'rgba(88,166,255,0.15)':'rgba(255,255,255,0.05)',border:`1px solid ${exerciseImportText.trim()?'rgba(88,166,255,0.4)':'rgba(255,255,255,0.1)'}`,borderRadius:8,padding:'10px',fontSize:13,color:exerciseImportText.trim()?'#58a6ff':'#555',cursor:exerciseImportText.trim()?'pointer':'not-allowed'}}>
+              {exerciseImportSaving?'Importing...':'Import Exercises'}
+            </button>
+          </div>
+        </div>
+      </div>
+    )}
     {importModal&&(
       <div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.7)',zIndex:9999,display:'flex',alignItems:'center',justifyContent:'center'}} onClick={()=>setImportModal(false)}>
         <div style={{background:'#1a1a2e',border:'1px solid rgba(255,255,255,0.1)',borderRadius:12,padding:24,width:480,maxWidth:'90vw'}} onClick={e=>e.stopPropagation()}>
