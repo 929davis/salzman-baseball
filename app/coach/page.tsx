@@ -7,11 +7,14 @@ import PitchingIQ from '@/app/components/PitchingIQ'
 import AthleticBenchmarks from '@/app/components/AthleticBenchmarks'
 import PitchMechanics2D from '@/app/components/PitchMechanics2D'
 import ProgressOverview from '@/app/components/ProgressOverview'
+import MiniSparkline from '@/app/components/MiniSparkline'
+import TestVideoLink from '@/app/components/TestVideoLink'
+import { useTestVideos } from '@/lib/testVideos'
 import { angleAt } from '@/lib/angles'
 import {
   calcStrengthVelocityRatio, calcBodyweightPct, bodyweightPctStatus,
-  calcFatigueScore, calcRecoveryScore, recoveryModifierFromScore,
   calcRomAsymmetry, THREE_TIER_COLORS,
+  calcArmCare, getEffectiveThrowCount, getRecoveryModifier,
 } from '@/lib/armCare'
 import { parseTime, calcCMJFn } from '@/lib/cmj'
 
@@ -25,57 +28,10 @@ const C = {
   text:'#e6edf3',textMuted:'#7d8590',textDim:'#484f58',white:'#ffffff',
 }
 
-// Strength-depletion-based arm care model, replacing the old v²-based formula.
-// strengthDepletionLbs: throw volume converted to an estimated strength-depletion figure.
-// footPoundsTarget: 500 is a starting coefficient, not a validated constant — tune over time
-// as real adjustedFootPoundsTarget outcomes get compared against actual soreness/injury data.
-// adjustedFootPoundsTarget: scaled down by recoveryModifier when a pitcher's most recent
-// recovery-check test shows they haven't fully recovered from a prior outing.
-const calcArmCare = (n:number, recoveryModifier:number) => {
-  if (!n) return {strengthDepletionLbs:0, footPoundsTarget:0, adjustedFootPoundsTarget:0}
-  const strengthDepletionLbs = (n/10)*0.1
-  const footPoundsTarget = strengthDepletionLbs*500
-  const adjustedFootPoundsTarget = footPoundsTarget*recoveryModifier
-  return {strengthDepletionLbs, footPoundsTarget, adjustedFootPoundsTarget}
-}
-
 const getEffectiveVelocity = (selected: any, cmjResults: any[]) => {
   const predictedV = cmjResults?.[0]?.estimated_velocity
   if (predictedV) return predictedV
   return selected?.avg_velocity || 0
-}
-
-// Effort-to-torque multipliers, derived from motion-capture research (Fleisig, Melugin,
-// Slenker) showing elbow/shoulder torque drops much less than perceived effort suggests —
-// e.g. 80% perceived effort still produces ~90% of max torque. Not linear with effort %.
-const EFFORT_MULTIPLIERS: Record<string, number> = {
-  '80-90': 0.92,
-  '90-95': 0.97,
-  '95+': 1.0,
-}
-
-// Mound vs. flat-ground multiplier. Best-supported figure (~6%) comes from an adolescent
-// population (Nissen et al.) — collegiate-level studies found smaller/no significant
-// difference, and long-toss at distance can match or exceed mound loads. Treated here as
-// an upper-bound estimate, not a precisely validated figure for this roster's age group.
-const SURFACE_MULTIPLIERS: Record<string, number> = {
-  mound: 1.06,
-  flat: 1.0,
-}
-
-const getEffectiveThrowCount = (selected: any, throwEntries: any[]) => {
-  if (throwEntries && throwEntries.length > 0) {
-    return throwEntries.reduce((sum, entry) => {
-      const effortMult = EFFORT_MULTIPLIERS[entry.effort_tier] ?? 1
-      const surfaceMult = SURFACE_MULTIPLIERS[entry.surface] ?? 1
-      return sum + (entry.weekly_count * effortMult * surfaceMult)
-    }, 0)
-  }
-  // Fallback for pitchers without any entries yet
-  const raw = selected?.weekly_pitches || selected?.weekly_high_effort || 0
-  const effortMult = EFFORT_MULTIPLIERS[selected?.effort_tier] ?? 1
-  const surfaceMult = SURFACE_MULTIPLIERS[selected?.throw_surface] ?? 1
-  return raw * effortMult * surfaceMult
 }
 
 const CATEGORIES = [
@@ -385,6 +341,7 @@ export default function CoachDashboard(){
 
   const router=useRouter()
   const supabase=createClient()
+  const {videos:testVideos, saveVideo:saveTestVideo} = useTestVideos()
   const parsedPrinciples = useMemo(()=>parsePrinciples(principles),[principles])
   const today=new Date().toISOString().split('T')[0]
 
@@ -452,21 +409,6 @@ export default function CoachDashboard(){
     if (!selected)return
     const {data}=await supabase.from('arm_care_tests').select('*').eq('pitcher_id',selected.id).order('created_at',{ascending:false})
     setArmCareTests(data||[])
-  }
-
-  // Most recent recovery_check compared against most recent baseline_max — defaults to
-  // no penalty (1.0) if either is missing, per recoveryModifierFromScore's own fallback.
-  const getRecoveryModifier=(tests:any[])=>{
-    const baseline=tests.find(t=>t.test_type==='baseline_max')
-    const recoveryCheck=tests.find(t=>t.test_type==='recovery_check')
-    if (!baseline||!recoveryCheck) return 1.0
-    const erScore=calcRecoveryScore(baseline.er_hold_seconds,recoveryCheck.er_hold_seconds)
-    const irScore=calcRecoveryScore(baseline.ir_hold_seconds,recoveryCheck.ir_hold_seconds)
-    // Use the worse side — arm care load should stay conservative if either rotational
-    // direction hasn't recovered, even if the other has.
-    const scores=[erScore,irScore].filter((s):s is number=>s!=null)
-    if (scores.length===0) return 1.0
-    return recoveryModifierFromScore(Math.min(...scores))
   }
 
   const saveArmCareTest=async()=>{
@@ -1066,24 +1008,32 @@ Write next week's program by day and category (Pre-Throwing, Throwing, Post-Thro
                             <div style={{fontSize:18,fontWeight:700,color:C.gold}}>{adjustedFootPoundsTarget?adjustedFootPoundsTarget.toLocaleString():'—'}<span style={{fontSize:11,color:C.goldDim}}> ft·lb</span></div>
                           </div>
                         </div>
+                        <div style={{background:C.bg3,border:`1px solid ${C.border}`,borderRadius:8,padding:'10px 12px',marginBottom:12}}>
+                          <div style={{fontSize:11,fontWeight:700,color:C.text,marginBottom:6}}>What these numbers mean</div>
+                          <div style={{fontSize:11,color:C.textMuted,lineHeight:1.6}}><b>Strength Depletion</b> converts recent throw volume into an estimated strength cost. <b>Foot-Lbs Target</b> scales that into a recovery-work target (the 500 coefficient below is unvalidated, tune over time). <b>Adjusted Target</b> is the same number scaled down by the recovery modifier when the pitcher's last recovery-check test showed incomplete recovery from a prior outing. Treat all three as a starting model to sanity-check against arm feel and soreness reports, not a standalone diagnosis.</div>
+                        </div>
                         <div style={{fontSize:10,color:C.textDim,marginBottom:latestTest?12:0}}>Recovery modifier applied: ×{recoveryModifier.toFixed(2)}{recoveryModifier<1?' (from most recent recovery-check test vs. baseline)':' (no recovery-check on file yet — no adjustment applied)'}. 500 ft·lb coefficient is a starting figure, not validated — tune over time.</div>
                         {latestTest&&(
                           <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(150px,1fr))',gap:8,paddingTop:12,borderTop:`1px solid ${C.border}`}}>
                             <div>
                               <div style={{fontSize:9,color:C.textMuted,textTransform:'uppercase' as const,marginBottom:3}}>Strength-Velocity Ratio</div>
                               <div style={{fontSize:13,fontWeight:700,color:svr?(svr.flagged?C.red:C.teal):C.textDim}}>{svr?`${svr.ratio.toFixed(2)} ${svr.flagged?'(Flag <0.35)':''}`:'—'}</div>
+                              <TestVideoLink testKey="arm_care_svr" videos={testVideos} onSave={saveTestVideo}/>
                             </div>
                             <div>
                               <div style={{fontSize:9,color:C.textMuted,textTransform:'uppercase' as const,marginBottom:3}}>ER % Bodyweight</div>
                               <div style={{fontSize:13,fontWeight:700,color:erPct!=null?THREE_TIER_COLORS[bodyweightPctStatus(erPct,'ER')||'OK']:C.textDim}}>{erPct!=null?`${erPct.toFixed(0)}%`:'—'}</div>
+                              <TestVideoLink testKey="arm_care_er_load" videos={testVideos} onSave={saveTestVideo}/>
                             </div>
                             <div>
                               <div style={{fontSize:9,color:C.textMuted,textTransform:'uppercase' as const,marginBottom:3}}>IR % Bodyweight</div>
                               <div style={{fontSize:13,fontWeight:700,color:irPct!=null?THREE_TIER_COLORS[bodyweightPctStatus(irPct,'IR')||'OK']:C.textDim}}>{irPct!=null?`${irPct.toFixed(0)}%`:'—'}</div>
+                              <TestVideoLink testKey="arm_care_ir_load" videos={testVideos} onSave={saveTestVideo}/>
                             </div>
                             <div>
                               <div style={{fontSize:9,color:C.textMuted,textTransform:'uppercase' as const,marginBottom:3}}>ROM Asymmetry (ER vs IR)</div>
                               <div style={{fontSize:13,fontWeight:700,color:romAsym?THREE_TIER_COLORS[romAsym.status]:C.textDim}}>{romAsym?`${romAsym.pctDiff.toFixed(0)}% (${romAsym.status})`:'—'}</div>
+                              <TestVideoLink testKey="arm_care_rom" videos={testVideos} onSave={saveTestVideo}/>
                             </div>
                           </div>
                         )}
@@ -1104,12 +1054,36 @@ Write next week's program by day and category (Pre-Throwing, Throwing, Post-Thro
                     )
                   })()}
 
+                  {/* CMJ Trends */}
+                  {cmjResults.length>1&&(()=>{
+                    const asc=[...cmjResults].reverse()
+                    const heightHist=asc.map(r=>({date:r.test_date,value:r.jump_height_in})).filter(h=>h.value!=null)
+                    const rsiHist=asc.map(r=>({date:r.test_date,value:r.rsi_mod})).filter(h=>h.value!=null)
+                    const powerHist=asc.map(r=>({date:r.test_date,value:r.peak_power_per_kg})).filter(h=>h.value!=null)
+                    return (
+                      <div style={{...S.card,marginBottom:12}}>
+                        <div style={{fontSize:11,color:C.textMuted,fontWeight:700,textTransform:'uppercase' as const,letterSpacing:'1px',marginBottom:12}}>CMJ Trends</div>
+                        <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(160px,1fr))',gap:10}}>
+                          {[{label:'Jump Height',hist:heightHist,color:C.gold,unit:' in'},{label:'RSI-Mod',hist:rsiHist,color:C.teal,unit:''},{label:'Peak Power',hist:powerHist,color:C.blue,unit:' W/kg'}].map(m=>(
+                            <div key={m.label}>
+                              <div style={{fontSize:10,color:C.textMuted,textTransform:'uppercase' as const,letterSpacing:'0.5px',marginBottom:4}}>{m.label}</div>
+                              {m.hist.length>1?<MiniSparkline data={m.hist} color={m.color} unit={m.unit} height={70}/>:<div style={{fontSize:11,color:C.textDim,padding:'20px 0',textAlign:'center' as const}}>Not enough data</div>}
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )
+                  })()}
+
                   {/* Neuro Classification */}
-                  <div style={{display:'flex',justifyContent:'flex-end',gap:8,marginBottom:8}}>
-                    {cmjResults.length>0&&(
-                      <button onClick={()=>setShowCmjHistory(s=>!s)} style={S.btn()}>{showCmjHistory?'Hide':'Manage'} CMJ History</button>
-                    )}
-                    <button onClick={()=>{setCmjErr('');setCmjCalc(null);setCmjEditingId(null);setCmjModal(true)}} style={S.btn('gold')}>+ Log CMJ</button>
+                  <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:8,flexWrap:'wrap' as const,gap:8}}>
+                    <TestVideoLink testKey="cmj" videos={testVideos} onSave={saveTestVideo}/>
+                    <div style={{display:'flex',gap:8}}>
+                      {cmjResults.length>0&&(
+                        <button onClick={()=>setShowCmjHistory(s=>!s)} style={S.btn()}>{showCmjHistory?'Hide':'Manage'} CMJ History</button>
+                      )}
+                      <button onClick={()=>{setCmjErr('');setCmjCalc(null);setCmjEditingId(null);setCmjModal(true)}} style={S.btn('gold')}>+ Log CMJ</button>
+                    </div>
                   </div>
                   {showCmjHistory&&cmjResults.length>0&&(
                     <div style={{display:'flex',flexDirection:'column' as const,gap:6,marginBottom:12}}>
@@ -1873,6 +1847,12 @@ Accessory | Single Arm DB Row | 3 x 6 @ 70%`}
           <div style={{fontSize:12,color:C.textMuted,marginBottom:16}}>Training Load, Fatigue/Recovery, Strength-Velocity Ratio, %Bodyweight, and ROM are tracked separately — none of these get collapsed into a single score.</div>
 
           <div style={{fontSize:11,color:C.gold,fontWeight:700,textTransform:'uppercase' as const,letterSpacing:'0.5px',marginBottom:8}}>Training Load</div>
+          <div style={{fontSize:11,color:C.textDim,lineHeight:1.6,marginBottom:10,background:C.bg3,border:`1px solid ${C.border}`,borderRadius:8,padding:'8px 10px'}}>
+            <b>Protocol:</b> Have the pitcher lie on their side (or use a bench), throwing-arm elbow tucked at 90°. Hand them a dumbbell and find the heaviest weight they can rotate the forearm outward (external rotation, ER) through a full, controlled range — that's ER Load. Flip to the other side (or reposition) and repeat for internal rotation (IR Load). Log bodyweight too — it drives the %-of-bodyweight badges elsewhere on the page.
+          </div>
+          <div style={{fontSize:10,color:C.textDim,lineHeight:1.5,marginBottom:10}}>
+            <b>Test Type:</b> <b>Baseline Max</b> — run when fresh, before any outing, to set the pitcher's true max. <b>Post-Outing</b> — run within about an hour after a bullpen/outing to see the drop from baseline (feeds Fatigue Score). <b>Recovery Check</b> — run 24–72 hours later to see how much has returned (feeds the Adjusted Target's recovery modifier).
+          </div>
           <label style={{fontSize:11,color:C.textMuted,fontWeight:600,marginBottom:6,display:'block'}}>Test Type</label>
           <select style={{...S.input,marginBottom:12}} value={armCareForm.test_type} onChange={e=>setArmCareForm(f=>({...f,test_type:e.target.value}))}>
             <option value="baseline_max">Baseline Max</option>
@@ -1905,6 +1885,9 @@ Accessory | Single Arm DB Row | 3 x 6 @ 70%`}
           })()}
 
           <div style={{fontSize:11,color:C.gold,fontWeight:700,textTransform:'uppercase' as const,letterSpacing:'0.5px',marginBottom:8}}>Fatigue / Recovery</div>
+          <div style={{fontSize:11,color:C.textDim,lineHeight:1.6,marginBottom:10,background:C.bg3,border:`1px solid ${C.border}`,borderRadius:8,padding:'8px 10px'}}>
+            <b>Protocol:</b> Using a lighter, sub-max load (not the same heavy weight as Training Load — pick something they can hold, not just move once), have the pitcher hold the ER position isometrically at end-range and time how long they sustain it before form breaks down. Repeat for IR. Use the <b>same load</b> across all three test types (Baseline Max, Post-Outing, Recovery Check) for this pitcher, since the comparison is hold-time vs. hold-time — a different load would make the fatigue/recovery % meaningless.
+          </div>
           <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10,marginBottom:12}}>
             <div>
               <label style={{fontSize:11,color:C.textMuted,fontWeight:600,marginBottom:6,display:'block'}}>ER Hold (sec)</label>
@@ -1918,6 +1901,9 @@ Accessory | Single Arm DB Row | 3 x 6 @ 70%`}
           <div style={{fontSize:10,color:C.textDim,marginBottom:12}}>Compared against this pitcher's Baseline Max test to compute fatigue/recovery % — visible in the history list after saving.</div>
 
           <div style={{fontSize:11,color:C.gold,fontWeight:700,textTransform:'uppercase' as const,letterSpacing:'0.5px',marginBottom:8}}>Range of Motion</div>
+          <div style={{fontSize:11,color:C.textDim,lineHeight:1.6,marginBottom:10,background:C.bg3,border:`1px solid ${C.border}`,borderRadius:8,padding:'8px 10px'}}>
+            <b>Protocol:</b> Arm out at 90° abduction ("goal post" position), elbow bent 90°. Rotate the forearm as far as it will go externally (hand moves up toward the ceiling) and measure the angle from vertical — that's ER ROM. Then rotate as far as it will go internally (hand moves down toward the table) and measure that angle — that's IR ROM. Use a goniometer if you have one, or the "∠" button below to calculate the angle from 3 points on a photo/video frame instead.
+          </div>
           <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10,marginBottom:8}}>
             <div>
               <label style={{fontSize:11,color:C.textMuted,fontWeight:600,marginBottom:6,display:'block'}}>ER ROM (°)</label>

@@ -2,8 +2,9 @@
 import { useEffect, useState } from 'react'
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts'
 import { createClient } from '@/lib/supabase/client'
-import { BENCHMARKS, POWER_TESTS, benchmarkStatus, powerTestTier } from '@/lib/benchmarks'
+import { BENCHMARKS, POWER_TESTS, MOBILITY_SCREENS, benchmarkStatus, powerTestTier, type ScreenStatus } from '@/lib/benchmarks'
 import { calcStrengthVelocityRatio, calcBodyweightPct, bodyweightPctStatus, calcRomAsymmetry, THREE_TIER_COLORS } from '@/lib/armCare'
+import MiniSparkline from '@/app/components/MiniSparkline'
 
 const C = {
   bg:'#0d1117',bg2:'#161b22',bg3:'#1c2333',border:'#30363d',
@@ -39,6 +40,7 @@ export default function ProgressOverview({pitcherId, mode}:{pitcherId:string, mo
   const [cmjHistory,setCmjHistory] = useState<any[]>([])
   const [sessionHistory,setSessionHistory] = useState<any[]>([])
   const [benchHistory,setBenchHistory] = useState<any[]>([])
+  const [screenHistory,setScreenHistory] = useState<any[]>([])
   const [armCareHistory,setArmCareHistory] = useState<any[]>([])
   const [avgVelocity,setAvgVelocity] = useState<number|null>(null)
 
@@ -46,10 +48,11 @@ export default function ProgressOverview({pitcherId, mode}:{pitcherId:string, mo
     let cancelled = false
     const load = async () => {
       setLoading(true)
-      const [{data:cmj},{data:sessions},{data:bench},{data:armCare},{data:prof}] = await Promise.all([
+      const [{data:cmj},{data:sessions},{data:bench},{data:screens},{data:armCare},{data:prof}] = await Promise.all([
         supabase.from('cmj_results').select('test_date,estimated_velocity').eq('pitcher_id',pitcherId).order('test_date',{ascending:true}),
         supabase.from('session_logs').select('log_date,velocity').eq('pitcher_id',pitcherId).order('log_date',{ascending:true}),
         supabase.from('athletic_benchmarks').select('*').eq('pitcher_id',pitcherId).order('test_date',{ascending:true}),
+        supabase.from('mobility_screens').select('*').eq('pitcher_id',pitcherId).order('test_date',{ascending:true}),
         supabase.from('arm_care_tests').select('*').eq('pitcher_id',pitcherId).order('created_at',{ascending:true}),
         supabase.from('profiles').select('avg_velocity').eq('id',pitcherId).single(),
       ])
@@ -57,6 +60,7 @@ export default function ProgressOverview({pitcherId, mode}:{pitcherId:string, mo
       setCmjHistory(cmj||[])
       setSessionHistory(sessions||[])
       setBenchHistory(bench||[])
+      setScreenHistory(screens||[])
       setArmCareHistory(armCare||[])
       setAvgVelocity(prof?.avg_velocity??null)
       setLoading(false)
@@ -90,9 +94,22 @@ export default function ProgressOverview({pitcherId, mode}:{pitcherId:string, mo
   const effectiveVelocity = cmjHistory[cmjHistory.length-1]?.estimated_velocity || avgVelocity || null
 
   const latestBench = benchHistory[benchHistory.length-1]||null
+  const latestScreens = screenHistory[screenHistory.length-1]||null
   const latestArmCare = armCareHistory[armCareHistory.length-1]||null
 
   const flagged: FlaggedMetric[] = []
+
+  const SCREEN_CODE: Record<ScreenStatus,number> = {Pass:0, Limited:1, Fail:2}
+  MOBILITY_SCREENS.forEach(def=>{
+    const status: ScreenStatus|null = latestScreens?.[def.key]||null
+    if (status!=='Limited' && status!=='Fail') return
+    const history = screenHistory.map(r=>{
+      const s: ScreenStatus|null = r[def.key]||null
+      return s ? {date:r.test_date, value:SCREEN_CODE[s]} : null
+    }).filter((h):h is {date:string,value:number}=>h!=null)
+    if (!history.length) return
+    flagged.push({key:`screen_${def.key}`, label: mode==='athlete'?`${def.label} Screen`:def.label, unit:'', severity: status==='Fail'?'Flag':'Caution', history})
+  })
 
   BENCHMARKS.forEach(def=>{
     const status = benchmarkStatus(def, latestBench?.[def.key])
@@ -189,14 +206,7 @@ export default function ProgressOverview({pitcherId, mode}:{pitcherId:string, mo
                   <span style={{fontSize:11,fontWeight:600,color:C.text}}>{m.label}</span>
                   <span style={{fontSize:9,fontWeight:700,padding:'2px 7px',borderRadius:10,textTransform:'uppercase' as const,letterSpacing:'0.4px',background:`${SEVERITY_COLORS[m.severity]}26`,color:SEVERITY_COLORS[m.severity],border:`1px solid ${SEVERITY_COLORS[m.severity]}66`}}>{m.severity}</span>
                 </div>
-                <ResponsiveContainer width="100%" height={80}>
-                  <LineChart data={m.history} margin={{top:2,right:4,left:0,bottom:0}}>
-                    <XAxis dataKey="date" hide/>
-                    <YAxis hide domain={['auto','auto']}/>
-                    <Tooltip contentStyle={{background:C.bg3,border:`1px solid ${C.border}`,borderRadius:6,fontSize:11}} formatter={(v:any)=>[`${v}${m.unit}`,'']}/>
-                    <Line type="monotone" dataKey="value" stroke={SEVERITY_COLORS[m.severity]} dot={{r:2}} strokeWidth={2}/>
-                  </LineChart>
-                </ResponsiveContainer>
+                <MiniSparkline data={m.history} color={SEVERITY_COLORS[m.severity]} unit={m.unit} height={80}/>
               </div>
             ))}
           </div>

@@ -6,7 +6,11 @@ import { useRouter } from 'next/navigation'
 import PitchingIQ from '@/app/components/PitchingIQ'
 import AthleticBenchmarks from '@/app/components/AthleticBenchmarks'
 import ProgressOverview from '@/app/components/ProgressOverview'
-import { parseTime, calcJumpHeight, calcCMJFn } from '@/lib/cmj'
+import MiniSparkline from '@/app/components/MiniSparkline'
+import ArmCareSummary from '@/app/components/ArmCareSummary'
+import TestVideoLink from '@/app/components/TestVideoLink'
+import { useTestVideos } from '@/lib/testVideos'
+import { parseTime, calcCMJFn } from '@/lib/cmj'
 
 const C = {
   bg:'#0d1117',bg2:'#161b22',bg3:'#1c2333',border:'#30363d',
@@ -159,10 +163,6 @@ export default function PitcherDashboard(){
   const [messages,setMessages]=useState<any[]>([])
   const [notes,setNotes]=useState<any[]>([])
   const [cmjResults,setCmjResults]=useState<any[]>([])
-  const [sqJumpResults,setSqJumpResults]=useState<any[]>([])
-  const [slCmjResults,setSlCmjResults]=useState<any[]>([])
-  const [tripleHopResults,setTripleHopResults]=useState<any[]>([])
-  const [plyoPushupResults,setPlyoPushupResults]=useState<any[]>([])
   const [foodLogs,setFoodLogs]=useState<any[]>([])
   const [dailyFuelScore,setDailyFuelScore]=useState<any>(null)
   const [loading,setLoading]=useState(true)
@@ -182,22 +182,12 @@ export default function PitcherDashboard(){
   const [cmjForm,setCmjForm]=useState({date:new Date().toISOString().split('T')[0],bodyweight:'',weightUnit:'lbs',fps:'240',startTime:'',takeoffTime:'',landingTime:'',notes:''})
   const [cmjResult,setCmjResult]=useState<any>(null)
   const [cmjErr,setCmjErr]=useState('')
-  const [sjForm,setSjForm]=useState({date:new Date().toISOString().split('T')[0],bodyweight:'',weightUnit:'lbs',fps:'240',startTime:'',takeoffTime:'',landingTime:'',notes:''})
-  const [sjResult,setSjResult]=useState<any>(null)
-  const [sjErr,setSjErr]=useState('')
-  const [slForm,setSlForm]=useState({date:new Date().toISOString().split('T')[0],bodyweight:'',weightUnit:'lbs',fps:'240',leftTakeoffTime:'',leftLandingTime:'',rightTakeoffTime:'',rightLandingTime:'',notes:''})
-  const [slResult,setSlResult]=useState<any>(null)
-  const [slErr,setSlErr]=useState('')
-  const [hopForm,setHopForm]=useState({date:new Date().toISOString().split('T')[0],leftDistance:'',rightDistance:'',notes:''})
-  const [hopResult,setHopResult]=useState<any>(null)
-  const [plyoForm,setPlyoForm]=useState({date:new Date().toISOString().split('T')[0],fps:'240',takeoffTime:'',landingTime:'',notes:''})
-  const [plyoResult,setPlyoResult]=useState<any>(null)
-  const [plyoErr,setPlyoErr]=useState('')
   const [assessTab,setAssessTab]=useState('cmj')
 
   const today=new Date().toISOString().split('T')[0]
   const router=useRouter()
   const supabase=createClient()
+  const {videos:testVideos, saveVideo:saveTestVideo} = useTestVideos()
 
   useEffect(()=>{
     const init=async()=>{
@@ -206,16 +196,12 @@ export default function PitcherDashboard(){
       const {data:prof}=await supabase.from('profiles').select('*').eq('id',user.id).single()
       if (!prof||prof.role==='coach'){router.push('/coach');return}
       setProfile(prof)
-      const [progRes,logsRes,msgsRes,notesRes,cmjRes,sjRes,slRes,hopRes,plyoRes,foodRes,fuelRes,videosRes]=await Promise.all([
+      const [progRes,logsRes,msgsRes,notesRes,cmjRes,foodRes,fuelRes,videosRes]=await Promise.all([
         supabase.from('programs').select('*').eq('pitcher_id',prof.id).order('week_of',{ascending:false}).limit(1),
         supabase.from('session_logs').select('*').eq('pitcher_id',prof.id).order('log_date',{ascending:false}).limit(20),
         supabase.from('messages').select('*').eq('pitcher_id',prof.id).order('created_at'),
         supabase.from('coach_notes').select('*').eq('pitcher_id',prof.id).order('created_at',{ascending:false}),
         supabase.from('cmj_results').select('*').eq('pitcher_id',prof.id).order('test_date',{ascending:false}),
-        supabase.from('squat_jump_results').select('*').eq('pitcher_id',prof.id).order('test_date',{ascending:false}),
-        supabase.from('single_leg_cmj_results').select('*').eq('pitcher_id',prof.id).order('test_date',{ascending:false}),
-        supabase.from('triple_hop_results').select('*').eq('pitcher_id',prof.id).order('test_date',{ascending:false}),
-        supabase.from('plyo_pushup_results').select('*').eq('pitcher_id',prof.id).order('test_date',{ascending:false}),
         supabase.from('food_logs').select('*').eq('pitcher_id',prof.id).eq('log_date',today).order('created_at'),
         supabase.from('daily_fuel_scores').select('*').eq('pitcher_id',prof.id).eq('log_date',today).single(),
         supabase.from('exercise_videos').select('*'),
@@ -225,10 +211,6 @@ export default function PitcherDashboard(){
       setMessages(msgsRes.data||[])
       setNotes(notesRes.data||[])
       setCmjResults(cmjRes.data||[])
-      setSqJumpResults(sjRes.data||[])
-      setSlCmjResults(slRes.data||[])
-      setTripleHopResults(hopRes.data||[])
-      setPlyoPushupResults(plyoRes.data||[])
       setFoodLogs(foodRes.data||[])
       setDailyFuelScore(fuelRes.data||null)
       const videoMap: Record<string, string> = {}
@@ -336,94 +318,8 @@ export default function PitcherDashboard(){
     setCmjResults(data||[]);setCmjResult(null)
     setCmjForm({date:new Date().toISOString().split('T')[0],bodyweight:'',weightUnit:'lbs',fps:'240',startTime:'',takeoffTime:'',landingTime:'',notes:''})
   }
-  const calcSJHandler=()=>{
-    setSjErr('')
-    const bw=parseFloat(sjForm.bodyweight)
-    const st=parseTime(sjForm.startTime),tt=parseTime(sjForm.takeoffTime),lt=parseTime(sjForm.landingTime)
-    if (!bw||isNaN(st)||isNaN(tt)||isNaN(lt)||tt<=st||lt<=tt){setSjErr('Check your inputs.');return}
-    const massKg=sjForm.weightUnit==='lbs'?bw*0.453592:bw
-    setSjResult(calcCMJFn({startTime:st,takeoffTime:tt,landingTime:lt,massKg}))
-  }
-  const saveSJ=async()=>{
-    if (!sjResult||!profile)return
-    const bw=parseFloat(sjForm.bodyweight)
-    const fps=parseFloat(sjForm.fps)
-    await supabase.from('squat_jump_results').insert({
-      pitcher_id:profile.id,test_date:sjForm.date,bodyweight:bw,weight_unit:sjForm.weightUnit,
-      fps:parseInt(sjForm.fps),start_frame:Math.round(parseTime(sjForm.startTime)*fps),
-      takeoff_frame:Math.round(parseTime(sjForm.takeoffTime)*fps),landing_frame:Math.round(parseTime(sjForm.landingTime)*fps),
-      flight_time:sjResult.flightTime,jump_height_in:sjResult.jumpHeightIn,
-      peak_power_per_kg:sjResult.peakPowerPerKg,notes:sjForm.notes||null
-    })
-    const {data}=await supabase.from('squat_jump_results').select('*').eq('pitcher_id',profile.id).order('test_date',{ascending:false})
-    setSqJumpResults(data||[]);setSjResult(null)
-    setSjForm({date:new Date().toISOString().split('T')[0],bodyweight:'',weightUnit:'lbs',fps:'240',startTime:'',takeoffTime:'',landingTime:'',notes:''})
-  }
-  const calcSLHandler=()=>{
-    setSlErr('')
-    const lt=parseTime(slForm.leftTakeoffTime),ll=parseTime(slForm.leftLandingTime)
-    const rt=parseTime(slForm.rightTakeoffTime),rl=parseTime(slForm.rightLandingTime)
-    if (isNaN(lt)||isNaN(ll)||isNaN(rt)||isNaN(rl)||ll<=lt||rl<=rt){setSlErr('Check your inputs.');return}
-    const leftJH=calcJumpHeight(lt,ll)
-    const rightJH=calcJumpHeight(rt,rl)
-    const lsi=(Math.min(leftJH,rightJH)/Math.max(leftJH,rightJH))*100
-    setSlResult({leftJH,rightJH,lsi,leftFT:ll-lt,rightFT:rl-rt})
-  }
-  const saveSL=async()=>{
-    if (!slResult||!profile)return
-    const fps=parseFloat(slForm.fps)
-    await supabase.from('single_leg_cmj_results').insert({
-      pitcher_id:profile.id,test_date:slForm.date,
-      bodyweight:parseFloat(slForm.bodyweight)||null,weight_unit:slForm.weightUnit,fps:parseInt(slForm.fps),
-      left_takeoff_frame:Math.round(parseTime(slForm.leftTakeoffTime)*fps),left_landing_frame:Math.round(parseTime(slForm.leftLandingTime)*fps),
-      left_flight_time:slResult.leftFT,left_jump_height_in:slResult.leftJH,
-      right_takeoff_frame:Math.round(parseTime(slForm.rightTakeoffTime)*fps),right_landing_frame:Math.round(parseTime(slForm.rightLandingTime)*fps),
-      right_flight_time:slResult.rightFT,right_jump_height_in:slResult.rightJH,
-      lsi:slResult.lsi,notes:slForm.notes||null
-    })
-    const {data}=await supabase.from('single_leg_cmj_results').select('*').eq('pitcher_id',profile.id).order('test_date',{ascending:false})
-    setSlCmjResults(data||[]);setSlResult(null)
-    setSlForm({date:new Date().toISOString().split('T')[0],bodyweight:'',weightUnit:'lbs',fps:'240',leftTakeoffTime:'',leftLandingTime:'',rightTakeoffTime:'',rightLandingTime:'',notes:''})
-  }
-  const calcHopHandler=()=>{
-    const l=parseFloat(hopForm.leftDistance),r=parseFloat(hopForm.rightDistance)
-    if (!l||!r)return
-    setHopResult({leftDistance:l,rightDistance:r,lsi:(Math.min(l,r)/Math.max(l,r))*100})
-  }
-  const saveHop=async()=>{
-    if (!hopResult||!profile)return
-    await supabase.from('triple_hop_results').insert({
-      pitcher_id:profile.id,test_date:hopForm.date,
-      left_distance_in:hopResult.leftDistance,right_distance_in:hopResult.rightDistance,
-      lsi:hopResult.lsi,notes:hopForm.notes||null
-    })
-    const {data}=await supabase.from('triple_hop_results').select('*').eq('pitcher_id',profile.id).order('test_date',{ascending:false})
-    setTripleHopResults(data||[]);setHopResult(null)
-    setHopForm({date:new Date().toISOString().split('T')[0],leftDistance:'',rightDistance:'',notes:''})
-  }
-  const calcPlyoHandler=()=>{
-    setPlyoErr('')
-    const tt=parseTime(plyoForm.takeoffTime),lt=parseTime(plyoForm.landingTime)
-    if (isNaN(tt)||isNaN(lt)||lt<=tt){setPlyoErr('Check your inputs.');return}
-    const ft=lt-tt
-    setPlyoResult({flightTime:ft,jumpHeightIn:(9.81*ft*ft)/8*39.3701})
-  }
-  const savePlyo=async()=>{
-    if (!plyoResult||!profile)return
-    const fps=parseFloat(plyoForm.fps)
-    await supabase.from('plyo_pushup_results').insert({
-      pitcher_id:profile.id,test_date:plyoForm.date,fps:parseInt(plyoForm.fps),
-      takeoff_frame:Math.round(parseTime(plyoForm.takeoffTime)*fps),landing_frame:Math.round(parseTime(plyoForm.landingTime)*fps),
-      flight_time:plyoResult.flightTime,jump_height_in:plyoResult.jumpHeightIn,notes:plyoForm.notes||null
-    })
-    const {data}=await supabase.from('plyo_pushup_results').select('*').eq('pitcher_id',profile.id).order('test_date',{ascending:false})
-    setPlyoPushupResults(data||[]);setPlyoResult(null)
-    setPlyoForm({date:new Date().toISOString().split('T')[0],fps:'240',takeoffTime:'',landingTime:'',notes:''})
-  }
 
   const latestCMJ=cmjResults[0]
-  const latestSJ=sqJumpResults[0]
-  const eur=latestCMJ&&latestSJ?latestCMJ.jump_height_in/latestSJ.jump_height_in:null
   const {classification}=classifyCMJ(latestCMJ)
   const classCol=CLASS_COLORS[classification]||CLASS_COLORS['No Data']
   const unread=messages.filter((m:any)=>m.sender_role==='coach'&&!m.read).length
@@ -441,11 +337,6 @@ export default function PitcherDashboard(){
   const lbl={fontSize:11,color:C.textMuted,fontWeight:600 as const,marginBottom:6,display:'block',textTransform:'uppercase' as const,letterSpacing:'0.5px',marginTop:14 as const}
   const card={background:C.bg2,border:`1px solid ${C.border}`,borderRadius:12,padding:'16px',marginBottom:12}
   const btn=(v='primary')=>({background:v==='gold'?C.gold:C.bg3,color:v==='gold'?C.bg:C.text,border:`1px solid ${v==='gold'?C.gold:C.border}`,borderRadius:8,padding:'12px 20px',fontSize:14,fontWeight:v==='gold'?700:500 as const,cursor:'pointer',width:'100%',marginTop:8})
-
-  const LSIBadge=({lsi}:{lsi:number})=>{
-    const ok=lsi>=90
-    return <span style={{background:ok?'rgba(57,211,83,0.12)':'rgba(248,81,73,0.12)',border:`1px solid ${ok?'rgba(57,211,83,0.4)':'rgba(248,81,73,0.4)'}`,color:ok?C.teal:C.red,fontSize:10,fontWeight:700,padding:'3px 8px',borderRadius:4}}>{lsi.toFixed(1)}% LSI {ok?'✓':'⚠'}</span>
-  }
 
   return(
     <div style={{fontFamily:'system-ui,-apple-system,sans-serif',background:C.bg,minHeight:'100vh',color:C.text,maxWidth:480,margin:'0 auto'}}>
@@ -506,13 +397,6 @@ export default function PitcherDashboard(){
                 <div style={{fontSize:10,color:classCol.text,fontWeight:700,textTransform:'uppercase' as const,letterSpacing:'1px',marginBottom:4}}>Your Training Profile</div>
                 <div style={{fontSize:16,fontWeight:700,color:classCol.text,marginBottom:6}}>{classification}</div>
                 <div style={{fontSize:12,color:C.textMuted,lineHeight:1.6}}>{classCol.desc}</div>
-                {eur&&(
-                  <div style={{marginTop:10,padding:'8px 10px',background:'rgba(0,0,0,0.2)',borderRadius:6}}>
-                    <span style={{fontSize:11,color:C.textMuted}}>EUR: </span>
-                    <span style={{fontSize:13,fontWeight:700,color:eur>=1.15?C.teal:eur>=1.05?C.gold:C.red}}>{eur.toFixed(2)}</span>
-                    <span style={{fontSize:10,color:C.textDim,marginLeft:6}}>{eur>=1.15?'Good stretch-shortening cycle':eur>=1.05?'Moderate':'Focus on reactive work'}</span>
-                  </div>
-                )}
               </div>
             )}
             {!program&&<div style={{...card,textAlign:'center',color:C.textMuted,padding:'32px 16px'}}>No program yet.</div>}
@@ -725,7 +609,7 @@ export default function PitcherDashboard(){
             <div style={{fontSize:18,fontWeight:700,color:C.white,marginBottom:4}}>Assessments</div>
             <div style={{fontSize:12,color:C.textMuted,marginBottom:16}}>Film at 240 FPS · Open in Photos · Edit · Scrub to find timestamps</div>
             <div style={{display:'flex',gap:6,marginBottom:16,overflowX:'auto' as const,paddingBottom:4}}>
-              {[{id:'cmj',label:'CMJ'},{id:'squat_jump',label:'Squat Jump'},{id:'single_leg',label:'Single Leg'},{id:'triple_hop',label:'Triple Hop'},{id:'plyo_pushup',label:'Plyo Push Up'},{id:'benchmarks',label:'Benchmarks'}].map(t=>(
+              {[{id:'cmj',label:'CMJ'},{id:'arm_care',label:'Arm Care'},{id:'benchmarks',label:'Benchmarks'}].map(t=>(
                 <button key={t.id} onClick={()=>setAssessTab(t.id)} style={{background:assessTab===t.id?C.gold:C.bg3,color:assessTab===t.id?C.bg:C.textMuted,border:`1px solid ${assessTab===t.id?C.gold:C.border}`,borderRadius:8,padding:'8px 14px',fontSize:12,fontWeight:assessTab===t.id?700:400,cursor:'pointer',whiteSpace:'nowrap' as const,flexShrink:0}}>{t.label}</button>
               ))}
             </div>
@@ -734,7 +618,8 @@ export default function PitcherDashboard(){
               <div>
                 <div style={{...card,background:'rgba(88,166,255,0.05)',border:'1px solid rgba(88,166,255,0.2)',marginBottom:12}}>
                   <div style={{fontSize:12,fontWeight:700,color:C.blue,marginBottom:4}}>Countermovement Jump (CMJ)</div>
-                  <div style={{fontSize:12,color:C.textMuted,lineHeight:1.6}}>Squat down then jump as high as possible. Film at 240fps and record the timestamps below.</div>
+                  <div style={{fontSize:12,color:C.textMuted,lineHeight:1.6,marginBottom:6}}>Squat down then jump as high as possible. Film at 240fps and record the timestamps below.</div>
+                  <TestVideoLink testKey="cmj" videos={testVideos} onSave={saveTestVideo}/>
                 </div>
                 <div style={card}>
                   <label style={lbl}>Date</label>
@@ -765,6 +650,25 @@ export default function PitcherDashboard(){
                     <button style={{...btn('gold'),marginTop:0}} onClick={saveCMJ}>Save to Profile</button>
                   </div>
                 )}
+                {cmjResults.length>1&&(()=>{
+                  const asc=[...cmjResults].reverse()
+                  const heightHist=asc.map(r=>({date:r.test_date,value:r.jump_height_in})).filter(h=>h.value!=null)
+                  const rsiHist=asc.map(r=>({date:r.test_date,value:r.rsi_mod})).filter(h=>h.value!=null)
+                  const powerHist=asc.map(r=>({date:r.test_date,value:r.peak_power_per_kg})).filter(h=>h.value!=null)
+                  return (
+                    <div style={card}>
+                      <div style={{fontSize:14,fontWeight:700,color:C.white,marginBottom:10}}>CMJ Trends</div>
+                      <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(140px,1fr))',gap:10}}>
+                        {[{label:'Jump Height',hist:heightHist,color:C.gold,unit:' in'},{label:'RSI-Mod',hist:rsiHist,color:C.teal,unit:''},{label:'Peak Power',hist:powerHist,color:C.blue,unit:' W/kg'}].map(m=>(
+                          <div key={m.label}>
+                            <div style={{fontSize:10,color:C.textMuted,textTransform:'uppercase' as const,letterSpacing:'0.5px',marginBottom:4}}>{m.label}</div>
+                            {m.hist.length>1?<MiniSparkline data={m.hist} color={m.color} unit={m.unit} height={70}/>:<div style={{fontSize:11,color:C.textDim,padding:'20px 0',textAlign:'center' as const}}>Not enough data</div>}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )
+                })()}
                 {cmjResults.length>0&&(
                   <div>
                     <div style={{fontSize:14,fontWeight:700,color:C.white,marginBottom:10}}>CMJ History</div>
@@ -786,207 +690,8 @@ export default function PitcherDashboard(){
               </div>
             )}
 
-            {assessTab==='squat_jump'&&(
-              <div>
-                <div style={{...card,background:'rgba(88,166,255,0.05)',border:'1px solid rgba(88,166,255,0.2)',marginBottom:12}}>
-                  <div style={{fontSize:12,fontWeight:700,color:C.blue,marginBottom:4}}>Squat Jump</div>
-                  <div style={{fontSize:12,color:C.textMuted,lineHeight:1.6}}>Hold squat position for 2 seconds, no countermovement, then jump. Calculates EUR when combined with CMJ.</div>
-                </div>
-                <div style={card}>
-                  <label style={lbl}>Date</label>
-                  <input type="date" style={inp} value={sjForm.date} onChange={e=>setSjForm(f=>({...f,date:e.target.value}))}/>
-                  <label style={lbl}>Body Weight</label>
-                  <div style={{display:'flex',gap:8}}>
-                    <input type="text" inputMode="numeric" pattern="[0-9]*" style={{...inp,flex:1}} placeholder="e.g. 195" value={sjForm.bodyweight} onChange={e=>setSjForm(f=>({...f,bodyweight:e.target.value}))}/>
-                    <select style={{...inp,width:80}} value={sjForm.weightUnit} onChange={e=>setSjForm(f=>({...f,weightUnit:e.target.value}))}><option value="lbs">lbs</option><option value="kg">kg</option></select>
-                  </div>
-                  <label style={lbl}>FPS</label>
-                  <select style={inp} value={sjForm.fps} onChange={e=>setSjForm(f=>({...f,fps:e.target.value}))}><option value="240">240 FPS</option><option value="120">120 FPS</option><option value="30">30 FPS (Real Time)</option></select>
-                  <FrameInputs form={sjForm} setForm={setSjForm} inp={inp} lbl={lbl} fields={[{key:'startTime',label:'Start Time',placeholder:'e.g. 0:03.20'},{key:'takeoffTime',label:'Takeoff Time',placeholder:'e.g. 0:03.20'},{key:'landingTime',label:'Landing Time',placeholder:'e.g. 0:03.20'}]}/>
-                  {sjErr&&<div style={{color:C.red,fontSize:13,marginTop:8,padding:'10px',background:'rgba(248,81,73,0.1)',borderRadius:8}}>{sjErr}</div>}
-                  <button style={btn('gold')} onClick={calcSJHandler}>Calculate</button>
-                </div>
-                {sjResult&&(
-                  <div style={{...card,border:'1px solid rgba(232,184,75,0.4)',background:'rgba(232,184,75,0.06)',textAlign:'center'}}>
-                    <div style={{fontSize:48,fontWeight:700,color:C.white,marginBottom:8}}>{sjResult.jumpHeightIn.toFixed(1)}<span style={{fontSize:18,color:C.textMuted}}> in</span></div>
-                    {latestCMJ&&(
-                      <div style={{marginBottom:12,padding:'10px',background:'rgba(0,0,0,0.2)',borderRadius:8}}>
-                        <div style={{fontSize:11,color:C.textMuted,marginBottom:4}}>Eccentric Utilization Ratio</div>
-                        <div style={{fontSize:24,fontWeight:700,color:latestCMJ.jump_height_in/sjResult.jumpHeightIn>=1.15?C.teal:latestCMJ.jump_height_in/sjResult.jumpHeightIn>=1.05?C.gold:C.red}}>{(latestCMJ.jump_height_in/sjResult.jumpHeightIn).toFixed(2)}</div>
-                      </div>
-                    )}
-                    <button style={{...btn('gold'),marginTop:0}} onClick={saveSJ}>Save to Profile</button>
-                  </div>
-                )}
-                {sqJumpResults.length>0&&(
-                  <div>
-                    <div style={{fontSize:14,fontWeight:700,color:C.white,marginBottom:10}}>Squat Jump History</div>
-                    {sqJumpResults.map((r:any,i:number)=>(
-                      <div key={i} style={card}>
-                        <div style={{display:'flex',justifyContent:'space-between'}}>
-                          <span style={{fontSize:13,color:C.textMuted}}>{r.test_date}</span>
-                          <span style={{fontSize:16,fontWeight:700,color:C.gold}}>{r.jump_height_in?.toFixed(1)} in</span>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-            )}
-
-            {assessTab==='single_leg'&&(
-              <div>
-                <div style={{...card,background:'rgba(88,166,255,0.05)',border:'1px solid rgba(88,166,255,0.2)',marginBottom:12}}>
-                  <div style={{fontSize:12,fontWeight:700,color:C.blue,marginBottom:4}}>Single Leg CMJ</div>
-                  <div style={{fontSize:12,color:C.textMuted,lineHeight:1.6}}>Jump on each leg separately at 240fps. LSI target: 90%+.</div>
-                </div>
-                <div style={card}>
-                  <label style={lbl}>Date</label>
-                  <input type="date" style={inp} value={slForm.date} onChange={e=>setSlForm(f=>({...f,date:e.target.value}))}/>
-                  <label style={lbl}>FPS</label>
-                  <select style={inp} value={slForm.fps} onChange={e=>setSlForm(f=>({...f,fps:e.target.value}))}><option value="240">240 FPS</option><option value="120">120 FPS</option><option value="30">30 FPS (Real Time)</option></select>
-                  <div style={{fontSize:11,color:C.teal,fontWeight:700,textTransform:'uppercase' as const,letterSpacing:'0.5px',marginTop:14,marginBottom:8}}>Left Leg</div>
-                  <FrameInputs form={slForm} setForm={setSlForm} inp={inp} lbl={lbl} fields={[{key:'leftTakeoffTime',label:'Left Takeoff Time',placeholder:'e.g. 0:03.20'},{key:'leftLandingTime',label:'Left Landing Time',placeholder:'e.g. 0:03.20'}]}/>
-                  <div style={{fontSize:11,color:C.red,fontWeight:700,textTransform:'uppercase' as const,letterSpacing:'0.5px',marginTop:14,marginBottom:8}}>Right Leg</div>
-                  <FrameInputs form={slForm} setForm={setSlForm} inp={inp} lbl={lbl} fields={[{key:'rightTakeoffTime',label:'Right Takeoff Time',placeholder:'e.g. 0:03.20'},{key:'rightLandingTime',label:'Right Landing Time',placeholder:'e.g. 0:03.20'}]}/>
-                  {slErr&&<div style={{color:C.red,fontSize:13,marginTop:8,padding:'10px',background:'rgba(248,81,73,0.1)',borderRadius:8}}>{slErr}</div>}
-                  <button style={btn('gold')} onClick={calcSLHandler}>Calculate</button>
-                </div>
-                {slResult&&(
-                  <div style={{...card,border:'1px solid rgba(57,211,83,0.4)',background:'rgba(57,211,83,0.06)'}}>
-                    <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10,marginBottom:12}}>
-                      <div style={{textAlign:'center',padding:'12px',background:'rgba(0,0,0,0.2)',borderRadius:8}}>
-                        <div style={{fontSize:10,color:C.teal,marginBottom:4}}>Left</div>
-                        <div style={{fontSize:24,fontWeight:700,color:C.white}}>{slResult.leftJH.toFixed(1)}<span style={{fontSize:12,color:C.textMuted}}> in</span></div>
-                      </div>
-                      <div style={{textAlign:'center',padding:'12px',background:'rgba(0,0,0,0.2)',borderRadius:8}}>
-                        <div style={{fontSize:10,color:C.red,marginBottom:4}}>Right</div>
-                        <div style={{fontSize:24,fontWeight:700,color:C.white}}>{slResult.rightJH.toFixed(1)}<span style={{fontSize:12,color:C.textMuted}}> in</span></div>
-                      </div>
-                    </div>
-                    <div style={{textAlign:'center',marginBottom:12}}><LSIBadge lsi={slResult.lsi}/></div>
-                    {slResult.lsi<90&&<div style={{fontSize:12,color:C.red,textAlign:'center',marginBottom:12}}>Asymmetry detected — discuss with Coach Salzman</div>}
-                    <button style={{...btn('gold'),marginTop:0}} onClick={saveSL}>Save to Profile</button>
-                  </div>
-                )}
-                {slCmjResults.length>0&&(
-                  <div>
-                    <div style={{fontSize:14,fontWeight:700,color:C.white,marginBottom:10}}>Single Leg History</div>
-                    {slCmjResults.map((r:any,i:number)=>(
-                      <div key={i} style={card}>
-                        <div style={{display:'flex',justifyContent:'space-between',marginBottom:8}}>
-                          <span style={{fontSize:13,color:C.textMuted}}>{r.test_date}</span>
-                          <LSIBadge lsi={r.lsi}/>
-                        </div>
-                        <div style={{display:'flex',gap:12}}>
-                          <span style={{fontSize:12,color:C.teal}}>L: {r.left_jump_height_in?.toFixed(1)} in</span>
-                          <span style={{fontSize:12,color:C.red}}>R: {r.right_jump_height_in?.toFixed(1)} in</span>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-            )}
-
-            {assessTab==='triple_hop'&&(
-              <div>
-                <div style={{...card,background:'rgba(88,166,255,0.05)',border:'1px solid rgba(88,166,255,0.2)',marginBottom:12}}>
-                  <div style={{fontSize:12,fontWeight:700,color:C.blue,marginBottom:4}}>Triple Hop for Distance</div>
-                  <div style={{fontSize:12,color:C.textMuted,lineHeight:1.6}}>3 hops on one leg, measure total distance with tape measure. Do both legs. LSI target: 90%+.</div>
-                </div>
-                <div style={card}>
-                  <label style={lbl}>Date</label>
-                  <input type="date" style={inp} value={hopForm.date} onChange={e=>setHopForm(f=>({...f,date:e.target.value}))}/>
-                  <label style={lbl}>Left Leg Distance (inches)</label>
-                  <input type="text" inputMode="numeric" pattern="[0-9]*" step="0.1" style={inp} placeholder="e.g. 156.5" value={hopForm.leftDistance} onChange={e=>setHopForm(f=>({...f,leftDistance:e.target.value}))}/>
-                  <label style={lbl}>Right Leg Distance (inches)</label>
-                  <input type="text" inputMode="numeric" pattern="[0-9]*" step="0.1" style={inp} placeholder="e.g. 162.0" value={hopForm.rightDistance} onChange={e=>setHopForm(f=>({...f,rightDistance:e.target.value}))}/>
-                  <button style={btn('gold')} onClick={calcHopHandler}>Calculate</button>
-                </div>
-                {hopResult&&(
-                  <div style={{...card,border:'1px solid rgba(57,211,83,0.4)',background:'rgba(57,211,83,0.06)'}}>
-                    <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10,marginBottom:12}}>
-                      <div style={{textAlign:'center',padding:'12px',background:'rgba(0,0,0,0.2)',borderRadius:8}}>
-                        <div style={{fontSize:10,color:C.teal,marginBottom:4}}>Left</div>
-                        <div style={{fontSize:22,fontWeight:700,color:C.white}}>{hopResult.leftDistance}<span style={{fontSize:12,color:C.textMuted}}> in</span></div>
-                      </div>
-                      <div style={{textAlign:'center',padding:'12px',background:'rgba(0,0,0,0.2)',borderRadius:8}}>
-                        <div style={{fontSize:10,color:C.red,marginBottom:4}}>Right</div>
-                        <div style={{fontSize:22,fontWeight:700,color:C.white}}>{hopResult.rightDistance}<span style={{fontSize:12,color:C.textMuted}}> in</span></div>
-                      </div>
-                    </div>
-                    <div style={{textAlign:'center',marginBottom:12}}><LSIBadge lsi={hopResult.lsi}/></div>
-                    <button style={{...btn('gold'),marginTop:0}} onClick={saveHop}>Save to Profile</button>
-                  </div>
-                )}
-                {tripleHopResults.length>0&&(
-                  <div>
-                    <div style={{fontSize:14,fontWeight:700,color:C.white,marginBottom:10}}>Triple Hop History</div>
-                    {tripleHopResults.map((r:any,i:number)=>(
-                      <div key={i} style={card}>
-                        <div style={{display:'flex',justifyContent:'space-between',marginBottom:8}}>
-                          <span style={{fontSize:13,color:C.textMuted}}>{r.test_date}</span>
-                          <LSIBadge lsi={r.lsi}/>
-                        </div>
-                        <div style={{display:'flex',gap:12}}>
-                          <span style={{fontSize:12,color:C.teal}}>L: {r.left_distance_in} in</span>
-                          <span style={{fontSize:12,color:C.red}}>R: {r.right_distance_in} in</span>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-            )}
-
-            {assessTab==='plyo_pushup'&&(
-              <div>
-                <div style={{...card,background:'rgba(88,166,255,0.05)',border:'1px solid rgba(88,166,255,0.2)',marginBottom:12}}>
-                  <div style={{fontSize:12,fontWeight:700,color:C.blue,marginBottom:4}}>Plyo Push Up</div>
-                  <div style={{fontSize:12,color:C.textMuted,lineHeight:1.6}}>Push up explosively so hands leave ground. Film at 240fps. Record takeoff and landing timestamps.</div>
-                </div>
-                <div style={card}>
-                  <label style={lbl}>Date</label>
-                  <input type="date" style={inp} value={plyoForm.date} onChange={e=>setPlyoForm(f=>({...f,date:e.target.value}))}/>
-                  <label style={lbl}>FPS</label>
-                  <select style={inp} value={plyoForm.fps} onChange={e=>setPlyoForm(f=>({...f,fps:e.target.value}))}><option value="240">240 FPS</option><option value="120">120 FPS</option><option value="30">30 FPS (Real Time)</option></select>
-                  <FrameInputs form={plyoForm} setForm={setPlyoForm} inp={inp} lbl={lbl} fields={[{key:'takeoffTime',label:'Takeoff Time',placeholder:'e.g. 0:03.20'},{key:'landingTime',label:'Landing Time',placeholder:'e.g. 0:03.20'}]}/>
-                  {plyoErr&&<div style={{color:C.red,fontSize:13,marginTop:8,padding:'10px',background:'rgba(248,81,73,0.1)',borderRadius:8}}>{plyoErr}</div>}
-                  <button style={btn('gold')} onClick={calcPlyoHandler}>Calculate</button>
-                </div>
-                {plyoResult&&(
-                  <div style={{...card,border:'1px solid rgba(232,184,75,0.4)',background:'rgba(232,184,75,0.06)',textAlign:'center'}}>
-                    <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10,marginBottom:12}}>
-                      <div style={{padding:'12px',background:'rgba(0,0,0,0.2)',borderRadius:8}}>
-                        <div style={{fontSize:10,color:C.gold,marginBottom:4}}>Flight Time</div>
-                        <div style={{fontSize:20,fontWeight:700,color:C.white}}>{plyoResult.flightTime.toFixed(3)}<span style={{fontSize:12,color:C.textMuted}}> s</span></div>
-                      </div>
-                      <div style={{padding:'12px',background:'rgba(0,0,0,0.2)',borderRadius:8}}>
-                        <div style={{fontSize:10,color:C.gold,marginBottom:4}}>Height</div>
-                        <div style={{fontSize:20,fontWeight:700,color:C.white}}>{plyoResult.jumpHeightIn.toFixed(1)}<span style={{fontSize:12,color:C.textMuted}}> in</span></div>
-                      </div>
-                    </div>
-                    <button style={{...btn('gold'),marginTop:0}} onClick={savePlyo}>Save to Profile</button>
-                  </div>
-                )}
-                {plyoPushupResults.length>0&&(
-                  <div>
-                    <div style={{fontSize:14,fontWeight:700,color:C.white,marginBottom:10}}>Plyo Push Up History</div>
-                    {plyoPushupResults.map((r:any,i:number)=>(
-                      <div key={i} style={card}>
-                        <div style={{display:'flex',justifyContent:'space-between'}}>
-                          <span style={{fontSize:13,color:C.textMuted}}>{r.test_date}</span>
-                          <div>
-                            <span style={{fontSize:14,fontWeight:700,color:C.gold}}>{r.jump_height_in?.toFixed(1)} in</span>
-                            <span style={{fontSize:11,color:C.textMuted,marginLeft:8}}>{r.flight_time?.toFixed(3)}s</span>
-                          </div>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
+            {assessTab==='arm_care'&&profile&&(
+              <ArmCareSummary pitcherId={profile.id}/>
             )}
 
             {assessTab==='benchmarks'&&profile&&(

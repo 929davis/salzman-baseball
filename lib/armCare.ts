@@ -82,3 +82,67 @@ export function calcRomAsymmetry(erDeg:number|null, irDeg:number|null):{pctDiff:
 export const THREE_TIER_COLORS:Record<ThreeTierStatus,string> = {
   OK:'#39d353', Caution:'#e8b84b', Flag:'#f85149',
 }
+
+// ---------------------------------------------------------------------------
+// Strength-depletion-based arm care model.
+// strengthDepletionLbs: throw volume converted to an estimated strength-depletion figure.
+// footPoundsTarget: 500 is a starting coefficient, not a validated constant — tune over time
+// as real adjustedFootPoundsTarget outcomes get compared against actual soreness/injury data.
+// adjustedFootPoundsTarget: scaled down by recoveryModifier when a pitcher's most recent
+// recovery-check test shows they haven't fully recovered from a prior outing.
+// ---------------------------------------------------------------------------
+export const calcArmCare = (n:number, recoveryModifier:number) => {
+  if (!n) return {strengthDepletionLbs:0, footPoundsTarget:0, adjustedFootPoundsTarget:0}
+  const strengthDepletionLbs = (n/10)*0.1
+  const footPoundsTarget = strengthDepletionLbs*500
+  const adjustedFootPoundsTarget = footPoundsTarget*recoveryModifier
+  return {strengthDepletionLbs, footPoundsTarget, adjustedFootPoundsTarget}
+}
+
+// Effort-to-torque multipliers, derived from motion-capture research (Fleisig, Melugin,
+// Slenker) showing elbow/shoulder torque drops much less than perceived effort suggests —
+// e.g. 80% perceived effort still produces ~90% of max torque. Not linear with effort %.
+export const EFFORT_MULTIPLIERS: Record<string, number> = {
+  '80-90': 0.92,
+  '90-95': 0.97,
+  '95+': 1.0,
+}
+
+// Mound vs. flat-ground multiplier. Best-supported figure (~6%) comes from an adolescent
+// population (Nissen et al.) — collegiate-level studies found smaller/no significant
+// difference, and long-toss at distance can match or exceed mound loads. Treated here as
+// an upper-bound estimate, not a precisely validated figure for this roster's age group.
+export const SURFACE_MULTIPLIERS: Record<string, number> = {
+  mound: 1.06,
+  flat: 1.0,
+}
+
+export const getEffectiveThrowCount = (selected: any, throwEntries: any[]) => {
+  if (throwEntries && throwEntries.length > 0) {
+    return throwEntries.reduce((sum, entry) => {
+      const effortMult = EFFORT_MULTIPLIERS[entry.effort_tier] ?? 1
+      const surfaceMult = SURFACE_MULTIPLIERS[entry.surface] ?? 1
+      return sum + (entry.weekly_count * effortMult * surfaceMult)
+    }, 0)
+  }
+  // Fallback for pitchers without any entries yet
+  const raw = selected?.weekly_pitches || selected?.weekly_high_effort || 0
+  const effortMult = EFFORT_MULTIPLIERS[selected?.effort_tier] ?? 1
+  const surfaceMult = SURFACE_MULTIPLIERS[selected?.throw_surface] ?? 1
+  return raw * effortMult * surfaceMult
+}
+
+// Most recent recovery_check compared against most recent baseline_max — defaults to
+// no penalty (1.0) if either is missing, per recoveryModifierFromScore's own fallback.
+export const getRecoveryModifier = (tests:any[]) => {
+  const baseline = tests.find(t=>t.test_type==='baseline_max')
+  const recoveryCheck = tests.find(t=>t.test_type==='recovery_check')
+  if (!baseline||!recoveryCheck) return 1.0
+  const erScore = calcRecoveryScore(baseline.er_hold_seconds, recoveryCheck.er_hold_seconds)
+  const irScore = calcRecoveryScore(baseline.ir_hold_seconds, recoveryCheck.ir_hold_seconds)
+  // Use the worse side — arm care load should stay conservative if either rotational
+  // direction hasn't recovered, even if the other has.
+  const scores = [erScore,irScore].filter((s):s is number=>s!=null)
+  if (scores.length===0) return 1.0
+  return recoveryModifierFromScore(Math.min(...scores))
+}

@@ -77,6 +77,7 @@ export type PowerTestDef = {
   key: string
   label: string
   unit: string
+  description: string
   tourMin: number
   goodMin: number
   marginalMin: number
@@ -86,10 +87,10 @@ export type PowerTestDef = {
 }
 
 export const POWER_TESTS: PowerTestDef[] = [
-  {key:'vertical_jump_power_in',label:'Vertical Jump',unit:'in',tourMin:22,goodMin:19.8,marginalMin:16.5,reuseKey:'vertical_jump_in'},
-  {key:'mb_seated_chest_pass_ft',label:'MB Seated Chest Pass',unit:'ft',tourMin:17,goodMin:15.3,marginalMin:12.75},
-  {key:'mb_situp_throw_ft',label:'MB Sit-Up & Throw',unit:'ft',tourMin:22,goodMin:19.8,marginalMin:16.5},
-  {key:'mb_rotational_pass_ft',label:'MB Rotational Pass',unit:'ft',tourMin:33,goodMin:29.7,marginalMin:24.75},
+  {key:'vertical_jump_power_in',label:'Vertical Jump',unit:'in',description:'Standing vertical jump, no step-in — measures lower body power. Same test and value as the Vertical Jump benchmark above; no separate test needed, just log it once.',tourMin:22,goodMin:19.8,marginalMin:16.5,reuseKey:'vertical_jump_in'},
+  {key:'mb_seated_chest_pass_ft',label:'MB Seated Chest Pass',unit:'ft',description:'Sit on the ground with legs straight out and back against a wall. Chest-pass a medicine ball forward as far as possible. Measures upper body pushing power.',tourMin:17,goodMin:15.3,marginalMin:12.75},
+  {key:'mb_situp_throw_ft',label:'MB Sit-Up & Throw',unit:'ft',description:'Lie on your back with knees bent, medicine ball held at the chest. Perform a sit-up and release the ball at the top of the motion for distance. Measures core-to-upper-body power transfer.',tourMin:22,goodMin:19.8,marginalMin:16.5},
+  {key:'mb_rotational_pass_ft',label:'MB Rotational Pass',unit:'ft',description:'Stand sideways to the target, load into the back hip, then rotate through the core and release a medicine ball for distance. Measures rotational power similar to the pitching/throwing motion.',tourMin:33,goodMin:29.7,marginalMin:24.75},
 ]
 
 export function powerTestTier(def: PowerTestDef, value: number | null | undefined): PowerTestTier | null {
@@ -113,24 +114,27 @@ export const POWER_TIER_COLORS: Record<PowerTestTier,string> = {
 
 export type ScreenStatus = 'Pass' | 'Limited' | 'Fail'
 
-export type MobilityScreenDef = { key: string, label: string }
+export type MobilityScreenDef = { key: string, label: string, description: string }
 
+// Descriptions are generic framing for these standard, widely-used screen names —
+// not transcribed from a specific proprietary manual. Adjust wording to match your
+// own coaching cues if you'd prefer different phrasing.
 export const MOBILITY_SCREENS: MobilityScreenDef[] = [
-  {key:'pelvic_tilt',label:'Pelvic Tilt'},
-  {key:'pelvic_rotation',label:'Pelvic Rotation'},
-  {key:'lower_quarter_rotation',label:'Lower Quarter Rotation'},
-  {key:'toe_touch',label:'Toe Touch'},
-  {key:'seated_trunk_rotation',label:'Seated Trunk Rotation'},
-  {key:'torso_rotation',label:'Torso Rotation'},
-  {key:'lat_length',label:'Lat Length'},
-  {key:'shoulder_90_90',label:'90/90 Shoulder'},
-  {key:'single_leg_balance',label:'Single Leg Balance'},
-  {key:'overhead_deep_squat',label:'Overhead Deep Squat'},
-  {key:'bridge_leg_extension',label:'Bridge + Leg Extension'},
-  {key:'cervical_rotation',label:'Cervical Rotation'},
-  {key:'forearm_rotation',label:'Forearm Rotation'},
-  {key:'wrist_hinge',label:'Wrist Hinge'},
-  {key:'wrist_flex_ext',label:'Wrist Flex/Ext'},
+  {key:'pelvic_tilt',label:'Pelvic Tilt',description:'Standing, actively tilt the pelvis forward and back through its full range. Checks lumbo-pelvic control.'},
+  {key:'pelvic_rotation',label:'Pelvic Rotation',description:'Standing, rotate the pelvis side to side while keeping the shoulders still. Checks hip/trunk dissociation.'},
+  {key:'lower_quarter_rotation',label:'Lower Quarter Rotation',description:'Seated with knees together, rotate the lower leg and foot inward and outward. Checks hip internal/external rotation.'},
+  {key:'toe_touch',label:'Toe Touch',description:'Standing with knees straight, bend forward and reach toward the toes. Checks posterior chain (hamstring/low back) flexibility.'},
+  {key:'seated_trunk_rotation',label:'Seated Trunk Rotation',description:'Seated with a bar or club across the shoulders, rotate the trunk each direction. Checks thoracic rotation with the hips locked out.'},
+  {key:'torso_rotation',label:'Torso Rotation',description:'Standing, rotate the upper body each direction while keeping the hips stable. Checks standing thoracic rotation.'},
+  {key:'lat_length',label:'Lat Length',description:'Lying on the back, raise both arms straight overhead. Checks lat and shoulder flexion range.'},
+  {key:'shoulder_90_90',label:'90/90 Shoulder',description:'Arm out at 90° with the elbow bent 90°, rotate the shoulder internally and externally. Checks shoulder rotational range.'},
+  {key:'single_leg_balance',label:'Single Leg Balance',description:'Stand on one leg, eyes open then eyes closed. Checks single-leg stability and proprioception.'},
+  {key:'overhead_deep_squat',label:'Overhead Deep Squat',description:'Arms overhead, squat as deep as possible while keeping heels down and arms up. Checks the full-body mobility pattern.'},
+  {key:'bridge_leg_extension',label:'Bridge + Leg Extension',description:'From a glute bridge position, extend one leg straight out while holding hip height. Checks glute and core stability.'},
+  {key:'cervical_rotation',label:'Cervical Rotation',description:'Rotate the head and neck as far as possible each direction. Checks cervical spine mobility.'},
+  {key:'forearm_rotation',label:'Forearm Rotation',description:'Elbow tucked at the side, rotate the forearm from palm-up to palm-down. Checks pronation/supination range.'},
+  {key:'wrist_hinge',label:'Wrist Hinge',description:'Forearm supported on a table, deviate the wrist side to side (toward the thumb, then toward the pinky). Checks radial/ulnar deviation.'},
+  {key:'wrist_flex_ext',label:'Wrist Flex/Ext',description:'Forearm supported on a table, bend the wrist up and down through its full range. Checks flexion/extension range.'},
 ]
 
 export const SCREEN_STATUS_COLORS: Record<ScreenStatus,string> = {

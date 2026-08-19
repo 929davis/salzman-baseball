@@ -2,8 +2,12 @@
 import { useEffect, useState, useCallback } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { BENCHMARKS, TIER_INFO, benchmarkStatus, scalePct, type BenchmarkDef,
-  POWER_TESTS, powerTestTier, POWER_TIER_COLORS,
-  MOBILITY_SCREENS, SCREEN_STATUS_COLORS, type ScreenStatus } from '@/lib/benchmarks'
+  POWER_TESTS, powerTestTier, POWER_TIER_COLORS, type PowerTestDef,
+  MOBILITY_SCREENS, SCREEN_STATUS_COLORS, type ScreenStatus, type MobilityScreenDef } from '@/lib/benchmarks'
+import { useTestVideos } from '@/lib/testVideos'
+import MiniSparkline from '@/app/components/MiniSparkline'
+import TestVideoLink from '@/app/components/TestVideoLink'
+import TestDetailModal from '@/app/components/TestDetailModal'
 
 const C = {
   bg:'#0d1117',bg2:'#161b22',bg3:'#1c2333',border:'#30363d',
@@ -33,30 +37,39 @@ const BLANK_FORM:FormState = {
 type ScreenFormState = Record<string,ScreenStatus|''>
 const BLANK_SCREEN_FORM:ScreenFormState = Object.fromEntries(MOBILITY_SCREENS.map(s=>[s.key,'']))
 
-function PowerTestCard({label,unit,value,tier}:{label:string,unit:string,value:number|null|undefined,tier:string|null}){
+type DetailModalState = {type:'power',def:PowerTestDef} | {type:'screen',def:MobilityScreenDef} | null
+
+function PowerTestCard({label,unit,value,tier,history,hasVideo,onOpen}:{label:string,unit:string,value:number|null|undefined,tier:string|null,history:{date:string,value:number}[],hasVideo:boolean,onOpen:()=>void}){
   const color=tier?POWER_TIER_COLORS[tier as keyof typeof POWER_TIER_COLORS]:C.textDim
   return (
-    <div style={{background:C.bg3,border:`1px solid ${C.border}`,borderRadius:8,padding:'12px 14px'}}>
-      <div style={{fontSize:11,color:C.textMuted,textTransform:'uppercase' as const,letterSpacing:'0.4px',marginBottom:6}}>{label}</div>
-      <div style={{display:'flex',justifyContent:'space-between',alignItems:'center'}}>
+    <div onClick={onOpen} style={{background:C.bg3,border:`1px solid ${C.border}`,borderRadius:8,padding:'12px 14px',cursor:'pointer'}}>
+      <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:6}}>
+        <div style={{fontSize:11,color:C.textMuted,textTransform:'uppercase' as const,letterSpacing:'0.4px'}}>{label}</div>
+        {hasVideo&&<span style={{fontSize:10,color:C.blue}}>▶</span>}
+      </div>
+      <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:6}}>
         <div style={{fontFamily:'monospace',fontSize:20,fontWeight:700,color:C.white}}>{value!=null?`${value}${unit}`:'—'}</div>
         <div style={{fontSize:10,fontWeight:700,padding:'3px 8px',borderRadius:12,textTransform:'uppercase' as const,letterSpacing:'0.4px',background:`${color}26`,color,border:`1px solid ${color}66`}}>{tier||'No data'}</div>
       </div>
+      {history.length>1&&<MiniSparkline data={history} color={color} unit={unit} height={40}/>}
     </div>
   )
 }
 
-function ScreenBadge({label,status}:{label:string,status:ScreenStatus|null}){
+function ScreenBadge({label,status,history,hasVideo,onOpen}:{label:string,status:ScreenStatus|null,history:{date:string,value:number}[],hasVideo:boolean,onOpen:()=>void}){
   const color=status?SCREEN_STATUS_COLORS[status]:C.textDim
   return (
-    <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'8px 10px',background:C.bg3,borderRadius:6}}>
-      <span style={{fontSize:12,color:C.text}}>{label}</span>
-      <span style={{fontSize:10,fontWeight:700,padding:'3px 8px',borderRadius:12,textTransform:'uppercase' as const,letterSpacing:'0.4px',background:`${color}26`,color,border:`1px solid ${color}66`}}>{status||'No data'}</span>
+    <div onClick={onOpen} style={{padding:'8px 10px',background:C.bg3,borderRadius:6,cursor:'pointer'}}>
+      <div style={{display:'flex',justifyContent:'space-between',alignItems:'center'}}>
+        <span style={{fontSize:12,color:C.text}}>{label}{hasVideo&&<span style={{color:C.blue,marginLeft:5,fontSize:10}}>▶</span>}</span>
+        <span style={{fontSize:10,fontWeight:700,padding:'3px 8px',borderRadius:12,textTransform:'uppercase' as const,letterSpacing:'0.4px',background:`${color}26`,color,border:`1px solid ${color}66`}}>{status||'No data'}</span>
+      </div>
+      {history.length>1&&<div style={{marginTop:6}}><MiniSparkline data={history} color={color} height={32}/></div>}
     </div>
   )
 }
 
-function BenchmarkBar({def,value}:{def:BenchmarkDef,value:number|null|undefined}){
+function BenchmarkBar({def,value,history,videos,onSaveVideo}:{def:BenchmarkDef,value:number|null|undefined,history:{date:string,value:number}[],videos:Record<string,string>,onSaveVideo:(key:string,url:string)=>void}){
   const status=benchmarkStatus(def,value)
   const fillPct=value!=null&&!isNaN(value)?scalePct(def,value):0
   const p50Pct=scalePct(def,def.p50)
@@ -92,32 +105,39 @@ function BenchmarkBar({def,value}:{def:BenchmarkDef,value:number|null|undefined}
         {def.mlbAvg!=null&&<span style={{color:C.purple}}>MLB average: {def.mlbAvg}{def.unit}</span>}
         {def.normalRange&&<span style={{color:C.teal}}>Healthy range: {def.normalRange[0]}–{def.normalRange[1]}{def.unit}</span>}
       </div>
+      {history.length>1&&<div style={{marginTop:6}}><MiniSparkline data={history} color={status?status.color:C.textMuted} unit={def.unit} height={40}/></div>}
+      <div style={{marginTop:4}}><TestVideoLink testKey={def.key} videos={videos} onSave={onSaveVideo}/></div>
     </div>
   )
 }
 
 export default function AthleticBenchmarks({pitcherId}:{pitcherId:string}){
   const supabase=createClient()
-  const [latest,setLatest]=useState<any>(null)
-  const [screenLatest,setScreenLatest]=useState<any>(null)
+  const {videos,saveVideo}=useTestVideos()
+  const [benchHistory,setBenchHistory]=useState<any[]>([])
+  const [screenHistory,setScreenHistory]=useState<any[]>([])
   const [loading,setLoading]=useState(true)
   const [showForm,setShowForm]=useState(false)
   const [form,setForm]=useState<FormState>(BLANK_FORM)
   const [screenForm,setScreenForm]=useState<ScreenFormState>(BLANK_SCREEN_FORM)
   const [saving,setSaving]=useState(false)
+  const [detailModal,setDetailModal]=useState<DetailModalState>(null)
 
-  const fetchLatest=useCallback(async()=>{
+  const fetchHistory=useCallback(async()=>{
     setLoading(true)
     const [{data:bench},{data:screens}]=await Promise.all([
-      supabase.from('athletic_benchmarks').select('*').eq('pitcher_id',pitcherId).order('test_date',{ascending:false}).limit(1),
-      supabase.from('mobility_screens').select('*').eq('pitcher_id',pitcherId).order('test_date',{ascending:false}).limit(1),
+      supabase.from('athletic_benchmarks').select('*').eq('pitcher_id',pitcherId).order('test_date',{ascending:true}),
+      supabase.from('mobility_screens').select('*').eq('pitcher_id',pitcherId).order('test_date',{ascending:true}),
     ])
-    setLatest(bench?.[0]||null)
-    setScreenLatest(screens?.[0]||null)
+    setBenchHistory(bench||[])
+    setScreenHistory(screens||[])
     setLoading(false)
   },[pitcherId])
 
-  useEffect(()=>{fetchLatest()},[fetchLatest])
+  useEffect(()=>{fetchHistory()},[fetchHistory])
+
+  const latest = benchHistory[benchHistory.length-1]||null
+  const screenLatest = screenHistory[screenHistory.length-1]||null
 
   const submit=async()=>{
     setSaving(true)
@@ -144,10 +164,36 @@ export default function AthleticBenchmarks({pitcherId}:{pitcherId:string}){
       MOBILITY_SCREENS.forEach(s=>{screenRow[s.key]=screenForm[s.key]||null})
       await supabase.from('mobility_screens').insert(screenRow)
     }
-    await fetchLatest()
+    await fetchHistory()
     setSaving(false);setShowForm(false)
     setForm({...BLANK_FORM,date:new Date().toISOString().split('T')[0]})
     setScreenForm(BLANK_SCREEN_FORM)
+  }
+
+  // Writes a single benchmark column onto today's row (creating one if none exists yet) —
+  // used by the Power Test detail modal so a coach/athlete can log just that one result
+  // without opening the full assessment form.
+  const saveTodayBenchmarkValue=async(key:string,value:number)=>{
+    const today=new Date().toISOString().split('T')[0]
+    const todaysRow=benchHistory.find(r=>r.test_date===today)
+    if (todaysRow){
+      await supabase.from('athletic_benchmarks').update({[key]:value}).eq('id',todaysRow.id)
+    } else {
+      await supabase.from('athletic_benchmarks').insert({pitcher_id:pitcherId,test_date:today,[key]:value})
+    }
+    await fetchHistory()
+  }
+
+  // Same pattern for a single mobility screen status, from the detail modal's Pass/Limited/Fail buttons.
+  const setScreenStatus=async(key:string,status:ScreenStatus)=>{
+    const today=new Date().toISOString().split('T')[0]
+    const todaysRow=screenHistory.find(r=>r.test_date===today)
+    if (todaysRow){
+      await supabase.from('mobility_screens').update({[key]:status}).eq('id',todaysRow.id)
+    } else {
+      await supabase.from('mobility_screens').insert({pitcher_id:pitcherId,test_date:today,[key]:status})
+    }
+    await fetchHistory()
   }
 
   const numField=(key:keyof FormState,label:string,placeholder:string)=>(
@@ -219,7 +265,7 @@ export default function AthleticBenchmarks({pitcherId}:{pitcherId:string}){
               {numField('mb_situp_throw_ft','MB Sit-Up & Throw (ft)','e.g. 20')}
               {numField('mb_rotational_pass_ft','MB Rotational Pass (ft)','e.g. 30')}
             </div>
-            <div style={{fontSize:10,color:C.textDim,marginTop:6}}>Vertical Jump for this section reuses the Vertical Jump value entered above under Tier 2 — no separate field.</div>
+            <div style={{fontSize:10,color:C.textDim,marginTop:6}}>Vertical Jump for this section reuses the Vertical Jump value entered above under Tier 2 — no separate field. Or skip this form and click a Power Test card below to log just that one result.</div>
           </div>
 
           <div style={{marginBottom:14}}>
@@ -227,6 +273,7 @@ export default function AthleticBenchmarks({pitcherId}:{pitcherId:string}){
             <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(180px,1fr))',gap:10}}>
               {MOBILITY_SCREENS.map(s=>screenField(s))}
             </div>
+            <div style={{fontSize:10,color:C.textDim,marginTop:6}}>Or skip this form and click a screen below to see the test and set Pass / Limited / Fail directly.</div>
           </div>
 
           <div style={{fontSize:10,color:C.textDim,marginBottom:10}}>Leave any field blank if not tested this session — Total Body Strength only calculates when Squat, Bench, and Deadlift are all filled in.</div>
@@ -239,31 +286,72 @@ export default function AthleticBenchmarks({pitcherId}:{pitcherId:string}){
           <div style={{fontSize:11,fontWeight:700,color:C.gold,textTransform:'uppercase' as const,letterSpacing:'0.5px',marginBottom:2}}>{TIER_INFO[tier].label}</div>
           <div style={{fontSize:11,color:C.textDim,marginBottom:14}}>{TIER_INFO[tier].desc}</div>
           {BENCHMARKS.filter(b=>b.tier===tier).map(def=>(
-            <BenchmarkBar key={def.key} def={def} value={latest?.[def.key]}/>
+            <BenchmarkBar key={def.key} def={def} value={latest?.[def.key]}
+              history={benchHistory.map(r=>({date:r.test_date,value:r[def.key]})).filter(h=>h.value!=null)}
+              videos={videos} onSaveVideo={saveVideo}/>
           ))}
         </div>
       ))}
 
       <div style={{background:C.bg2,border:`1px solid ${C.border}`,borderRadius:8,padding:16,marginBottom:12}}>
         <div style={{fontSize:11,fontWeight:700,color:C.gold,textTransform:'uppercase' as const,letterSpacing:'0.5px',marginBottom:2}}>Power Tests</div>
-        <div style={{fontSize:11,color:C.textDim,marginBottom:14}}>Tour / Good / Marginal / Deficit tiers — separate grading model from the percentile bars above, not part of the TopVelocity predictive-tier system.</div>
+        <div style={{fontSize:11,color:C.textDim,marginBottom:14}}>Tour / Good / Marginal / Deficit tiers. Click a card for the test description, demo video, and to log a result.</div>
         <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(200px,1fr))',gap:10}}>
           {POWER_TESTS.map(def=>{
             const value=def.reuseKey?latest?.[def.reuseKey]:latest?.[def.key]
-            return <PowerTestCard key={def.key} label={def.label} unit={def.unit} value={value} tier={powerTestTier(def,value)}/>
+            const historyKey=def.reuseKey||def.key
+            return <PowerTestCard key={def.key} label={def.label} unit={def.unit} value={value} tier={powerTestTier(def,value)}
+              history={benchHistory.map(r=>({date:r.test_date,value:r[historyKey]})).filter(h=>h.value!=null)}
+              hasVideo={!!videos[def.key]} onOpen={()=>setDetailModal({type:'power',def})}/>
           })}
         </div>
       </div>
 
       <div style={{background:C.bg2,border:`1px solid ${C.border}`,borderRadius:8,padding:16,marginBottom:12}}>
         <div style={{fontSize:11,fontWeight:700,color:C.gold,textTransform:'uppercase' as const,letterSpacing:'0.5px',marginBottom:2}}>Mobility / Stability Screens</div>
-        <div style={{fontSize:11,color:C.textDim,marginBottom:14}}>Pass/fail movement screens — qualitative, not scored against the numeric benchmarks above.{screenLatest&&<span> Showing most recent screen: {screenLatest.test_date}.</span>}</div>
+        <div style={{fontSize:11,color:C.textDim,marginBottom:14}}>Pass/fail movement screens — qualitative, not scored against the numeric benchmarks above. Click a screen for the description, demo video, and to set a result.{screenLatest&&<span> Showing most recent screen: {screenLatest.test_date}.</span>}</div>
         <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(200px,1fr))',gap:8}}>
           {MOBILITY_SCREENS.map(s=>(
-            <ScreenBadge key={s.key} label={s.label} status={screenLatest?.[s.key]||null}/>
+            <ScreenBadge key={s.key} label={s.label} status={screenLatest?.[s.key]||null}
+              history={screenHistory.map(r=>({date:r.test_date,value:r[s.key]?{Pass:0,Limited:1,Fail:2}[r[s.key] as ScreenStatus]:undefined})).filter((h):h is {date:string,value:number}=>h.value!=null)}
+              hasVideo={!!videos[`screen_${s.key}`]} onOpen={()=>setDetailModal({type:'screen',def:s})}/>
           ))}
         </div>
       </div>
+
+      {detailModal?.type==='power' && (()=>{
+        const def=detailModal.def
+        const value=def.reuseKey?latest?.[def.reuseKey]:latest?.[def.key]
+        const historyKey=def.reuseKey||def.key
+        const tier=powerTestTier(def,value)
+        return (
+          <TestDetailModal
+            label={def.label} description={def.description} testKey={def.key}
+            history={benchHistory.map(r=>({date:r.test_date,value:r[historyKey]})).filter(h=>h.value!=null)}
+            color={tier?POWER_TIER_COLORS[tier]:C.textDim}
+            videos={videos} onSaveVideo={saveVideo}
+            onClose={()=>setDetailModal(null)}
+            variant={{kind:'power',unit:def.unit,currentValue:value??null,tier,tierColor:tier?POWER_TIER_COLORS[tier]:C.textDim,
+              onSaveValue:async(v)=>{await saveTodayBenchmarkValue(historyKey,v);setDetailModal(null)}}}
+          />
+        )
+      })()}
+
+      {detailModal?.type==='screen' && (()=>{
+        const def=detailModal.def
+        const status:ScreenStatus|null = screenLatest?.[def.key]||null
+        return (
+          <TestDetailModal
+            label={def.label} description={def.description} testKey={`screen_${def.key}`}
+            history={screenHistory.map(r=>({date:r.test_date,value:r[def.key]?{Pass:0,Limited:1,Fail:2}[r[def.key] as ScreenStatus]:undefined})).filter((h):h is {date:string,value:number}=>h.value!=null)}
+            color={status?SCREEN_STATUS_COLORS[status]:C.textDim}
+            videos={videos} onSaveVideo={saveVideo}
+            onClose={()=>setDetailModal(null)}
+            variant={{kind:'screen',currentStatus:status,statusColors:SCREEN_STATUS_COLORS,
+              onSetStatus:async(s)=>{await setScreenStatus(def.key,s);setDetailModal(null)}}}
+          />
+        )
+      })()}
     </div>
   )
 }
