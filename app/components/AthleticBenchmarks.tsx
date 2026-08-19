@@ -176,11 +176,10 @@ export default function AthleticBenchmarks({pitcherId}:{pitcherId:string}){
   const saveTodayBenchmarkValue=async(key:string,value:number)=>{
     const today=new Date().toISOString().split('T')[0]
     const todaysRow=benchHistory.find(r=>r.test_date===today)
-    if (todaysRow){
-      await supabase.from('athletic_benchmarks').update({[key]:value}).eq('id',todaysRow.id)
-    } else {
-      await supabase.from('athletic_benchmarks').insert({pitcher_id:pitcherId,test_date:today,[key]:value})
-    }
+    const {error} = todaysRow
+      ? await supabase.from('athletic_benchmarks').update({[key]:value}).eq('id',todaysRow.id)
+      : await supabase.from('athletic_benchmarks').insert({pitcher_id:pitcherId,test_date:today,[key]:value})
+    if (error) throw new Error(error.message)
     await fetchHistory()
   }
 
@@ -188,11 +187,10 @@ export default function AthleticBenchmarks({pitcherId}:{pitcherId:string}){
   const setScreenStatus=async(key:string,status:ScreenStatus)=>{
     const today=new Date().toISOString().split('T')[0]
     const todaysRow=screenHistory.find(r=>r.test_date===today)
-    if (todaysRow){
-      await supabase.from('mobility_screens').update({[key]:status}).eq('id',todaysRow.id)
-    } else {
-      await supabase.from('mobility_screens').insert({pitcher_id:pitcherId,test_date:today,[key]:status})
-    }
+    const {error} = todaysRow
+      ? await supabase.from('mobility_screens').update({[key]:status}).eq('id',todaysRow.id)
+      : await supabase.from('mobility_screens').insert({pitcher_id:pitcherId,test_date:today,[key]:status})
+    if (error) throw new Error(error.message)
     await fetchHistory()
   }
 

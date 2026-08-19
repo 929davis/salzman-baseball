@@ -34,14 +34,30 @@ export default function TestDetailModal({label, description, testKey, history, c
 }){
   const [valueInput,setValueInput] = useState(variant.kind==='power'&&variant.currentValue!=null?String(variant.currentValue):'')
   const [saving,setSaving] = useState(false)
+  const [saveError,setSaveError] = useState('')
   const embedUrl = videos[testKey] ? toEmbedUrl(videos[testKey]) : null
 
   const saveValue = async () => {
     if (variant.kind!=='power') return
     const v = parseFloat(valueInput)
     if (isNaN(v)) return
-    setSaving(true)
-    await variant.onSaveValue(v)
+    setSaving(true); setSaveError('')
+    try {
+      await variant.onSaveValue(v)
+    } catch (err:any) {
+      setSaveError(err?.message || 'Save failed — please try again.')
+    }
+    setSaving(false)
+  }
+
+  const setStatus = async (s:ScreenStatus) => {
+    if (variant.kind!=='screen') return
+    setSaving(true); setSaveError('')
+    try {
+      await variant.onSetStatus(s)
+    } catch (err:any) {
+      setSaveError(err?.message || 'Save failed — please try again.')
+    }
     setSaving(false)
   }
 
@@ -97,13 +113,14 @@ export default function TestDetailModal({label, description, testKey, history, c
               <div style={{fontSize:10,color:C.textMuted,textTransform:'uppercase' as const,letterSpacing:'0.5px',marginBottom:8}}>Set Result</div>
               <div style={{display:'flex',gap:8}}>
                 {(['Pass','Limited','Fail'] as ScreenStatus[]).map(s=>(
-                  <button key={s} onClick={()=>variant.onSetStatus(s)}
+                  <button key={s} onClick={()=>setStatus(s)} disabled={saving}
                     style={{flex:1,background:variant.currentStatus===s?`${variant.statusColors[s]}26`:C.bg3,color:variant.currentStatus===s?variant.statusColors[s]:C.textMuted,border:`1px solid ${variant.currentStatus===s?variant.statusColors[s]:C.border}`,borderRadius:6,padding:'10px 0',fontSize:13,fontWeight:700,cursor:'pointer'}}
-                  >{s}</button>
+                  >{saving?'...':s}</button>
                 ))}
               </div>
             </>
           )}
+          {saveError && <div style={{fontSize:11,color:'#f85149',marginTop:10,padding:'8px 10px',background:'rgba(248,81,73,0.1)',borderRadius:6}}>{saveError}</div>}
         </div>
       </div>
     </div>
