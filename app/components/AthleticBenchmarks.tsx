@@ -121,6 +121,7 @@ export default function AthleticBenchmarks({pitcherId}:{pitcherId:string}){
   const [form,setForm]=useState<FormState>(BLANK_FORM)
   const [screenForm,setScreenForm]=useState<ScreenFormState>(BLANK_SCREEN_FORM)
   const [saving,setSaving]=useState(false)
+  const [formError,setFormError]=useState('')
   const [detailModal,setDetailModal]=useState<DetailModalState>(null)
 
   const fetchHistory=useCallback(async()=>{
@@ -140,11 +141,11 @@ export default function AthleticBenchmarks({pitcherId}:{pitcherId:string}){
   const screenLatest = screenHistory[screenHistory.length-1]||null
 
   const submit=async()=>{
-    setSaving(true)
+    setSaving(true); setFormError('')
     const num=(s:string)=>s.trim()===''?null:parseFloat(s)
     const squat=num(form.squat_lbs),bench=num(form.bench_lbs),deadlift=num(form.deadlift_lbs)
     const total=(squat!=null&&bench!=null&&deadlift!=null)?squat+bench+deadlift:null
-    await supabase.from('athletic_benchmarks').insert({
+    const {error:benchErr} = await supabase.from('athletic_benchmarks').insert({
       pitcher_id:pitcherId,test_date:form.date,
       broad_jump_in:num(form.broad_jump_in),lateral_broad_jump_lr_in:num(form.lateral_broad_jump_lr_in),
       sprint_10yd_sec:num(form.sprint_10yd_sec),
@@ -158,11 +159,13 @@ export default function AthleticBenchmarks({pitcherId}:{pitcherId:string}){
       mb_seated_chest_pass_ft:num(form.mb_seated_chest_pass_ft),mb_situp_throw_ft:num(form.mb_situp_throw_ft),
       mb_rotational_pass_ft:num(form.mb_rotational_pass_ft),
     })
+    if (benchErr){ setFormError(benchErr.message); setSaving(false); return }
     const anyScreenFilled=MOBILITY_SCREENS.some(s=>screenForm[s.key])
     if (anyScreenFilled){
       const screenRow:any={pitcher_id:pitcherId,test_date:form.date}
       MOBILITY_SCREENS.forEach(s=>{screenRow[s.key]=screenForm[s.key]||null})
-      await supabase.from('mobility_screens').insert(screenRow)
+      const {error:screenErr} = await supabase.from('mobility_screens').insert(screenRow)
+      if (screenErr){ setFormError(`Assessment saved, but screens failed: ${screenErr.message}`); setSaving(false); await fetchHistory(); return }
     }
     await fetchHistory()
     setSaving(false);setShowForm(false)
@@ -275,6 +278,7 @@ export default function AthleticBenchmarks({pitcherId}:{pitcherId:string}){
           </div>
 
           <div style={{fontSize:10,color:C.textDim,marginBottom:10}}>Leave any field blank if not tested this session — Total Body Strength only calculates when Squat, Bench, and Deadlift are all filled in.</div>
+          {formError&&<div style={{fontSize:12,color:C.red,marginBottom:10,padding:'8px 10px',background:'rgba(248,81,73,0.1)',borderRadius:6}}>{formError}</div>}
           <button onClick={submit} disabled={saving} style={{background:C.gold,color:C.bg,border:'none',borderRadius:8,padding:'10px 16px',fontSize:13,fontWeight:700,cursor:'pointer'}}>{saving?'Saving...':'Save Assessment'}</button>
         </div>
       )}
