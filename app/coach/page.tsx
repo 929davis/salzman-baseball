@@ -4,6 +4,7 @@ import { useEffect, useState, useMemo } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { useRouter } from 'next/navigation'
 import PitchingIQ from '@/app/components/PitchingIQ'
+import CountLeverageTable from '@/app/components/CountLeverageTable'
 import AthleticBenchmarks from '@/app/components/AthleticBenchmarks'
 import PitchMechanics2D from '@/app/components/PitchMechanics2D'
 import ProgressOverview from '@/app/components/ProgressOverview'
@@ -960,7 +961,7 @@ Write next week's program by day and category (Pre-Throwing, Throwing, Post-Thro
               <ProgressOverview pitcherId={selected.id} mode="coach"/>
 
               <div style={{display:'flex',gap:6,marginBottom:16,flexWrap:'wrap' as const}}>
-                {['overview','logs','program','notes','messages','iq','benchmarks','mechanics'].map(t=>(
+                {['overview','logs','program','notes','messages','iq','situations','benchmarks','mechanics'].map(t=>(
                   <button key={t} style={S.tab(tab===t)} onClick={()=>setTab(t)}>{t}</button>
                 ))}
               </div>
@@ -1389,6 +1390,9 @@ Write next week's program by day and category (Pre-Throwing, Throwing, Post-Thro
               )}
               {tab==='iq'&&(
                 <div style={{padding:4}}><PitchingIQ/></div>
+              )}
+              {tab==='situations'&&(
+                <div style={{padding:4}}><CountLeverageTable/></div>
               )}
 
               {tab==='benchmarks'&&(
