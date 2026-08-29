@@ -306,12 +306,19 @@ export default function BaseScenarioTool(){
           ) : (
             <div style={{background:C.bg2,border:`1px solid ${C.border}`,borderRadius:8,padding:14,marginBottom:12}}>
               <div style={{fontSize:10,color:C.textMuted,textTransform:'uppercase' as const,letterSpacing:'0.5px',marginBottom:6}}>Pitch Type — usage % shows how often this pitch is actually thrown here</div>
-              <select value={pitchTypeGroup} onChange={e=>setPitchTypeGroup(e.target.value)} style={{width:'100%',background:C.bg3,border:`1px solid ${C.border}`,borderRadius:6,padding:'8px 10px',fontSize:13,color:C.text,marginBottom:10}}>
-                {PITCH_TYPE_GROUPS.map(g=>{
+              <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(130px,1fr))',gap:6,marginBottom:10}}>
+                {[...PITCH_TYPE_GROUPS].sort((a,b)=>(usage.find(x=>x.pitchTypeGroup===b)?.n||0)-(usage.find(x=>x.pitchTypeGroup===a)?.n||0)).map(g=>{
                   const u = usage.find(x=>x.pitchTypeGroup===g)
-                  return <option key={g} value={g}>{g}{u?` — ${u.pct.toFixed(1)}% usage (n=${u.n})`:' — no usage data'}</option>
+                  const selected = pitchTypeGroup===g
+                  const rare = u && u.pct < 5
+                  return (
+                    <button key={g} onClick={()=>setPitchTypeGroup(g)} style={{padding:'8px 8px',borderRadius:6,border:`1px solid ${selected?C.gold:rare?C.red:C.border}`,background:selected?`${C.gold}26`:C.bg3,color:selected?C.gold:C.text,cursor:'pointer',textAlign:'left' as const}}>
+                      <div style={{fontSize:12,fontWeight:600}}>{g}</div>
+                      <div style={{fontSize:10,color:selected?C.gold:rare?C.red:C.textMuted}}>{u?`${u.pct.toFixed(1)}% (n=${u.n})`:'no usage data'}</div>
+                    </button>
+                  )
                 })}
-              </select>
+              </div>
               {(() => {
                 const u = usage.find(x=>x.pitchTypeGroup===pitchTypeGroup)
                 if (u && u.pct < 5) return <div style={{fontSize:10,color:C.red,marginBottom:10}}>⚠ Rare choice at this count/matchup ({u.pct.toFixed(1)}% usage) — pitchers who throw this here are self-selected, not random. Treat this outcome distribution with extra skepticism.</div>

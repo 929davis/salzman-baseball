@@ -26,12 +26,12 @@ const BASE_STATE_TO_HFRO: Record<string, string | null> = {
 export const EXACT_BASE_STATES = new Set(['empty', 'loaded'])
 
 // Representative raw Statcast pitch_type code per pitch-type-group bucket (see
-// aggregate-base-scenario.mjs's PITCH_TYPE_GROUP_SQL) — a group can include rarer sibling
-// codes (e.g. Slider also covers ST/SV) the single-code Savant link won't reflect. Documented
-// simplification, not verified per-code the way hand/count/outs/base state are.
+// aggregate-base-scenario.mjs's PITCH_TYPE_GROUP_SQL) — Slider also covers the rarer SV
+// (slurve) code, which this single-code link won't reflect. Documented simplification, not
+// verified per-code the way hand/count/outs/base state are.
 export const PITCH_TYPE_GROUP_TO_CODE: Record<string, string> = {
   'Four-Seam': 'FF', 'Sinker': 'SI', 'Cutter': 'FC',
-  'Slider': 'SL', 'Curveball': 'CU', 'Changeup': 'CH',
+  'Slider': 'SL', 'Sweeper': 'ST', 'Curveball': 'CU', 'Changeup': 'CH',
 }
 
 // Per-outcome filter, verified empirically against the live CSV export. Two separate Savant

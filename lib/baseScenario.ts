@@ -99,7 +99,7 @@ export const OUTCOME_LABELS: Record<OutcomeKey,string> = {
   single:'Single', double:'Double', triple:'Triple', home_run:'Home Run', hbp:'Hit By Pitch',
 }
 
-export const PITCH_TYPE_GROUPS = ['Four-Seam','Sinker','Cutter','Slider','Curveball','Changeup','Other'] as const
+export const PITCH_TYPE_GROUPS = ['Four-Seam','Sinker','Cutter','Slider','Sweeper','Curveball','Changeup','Other'] as const
 
 export const BASE_STATES = ['empty','1st','2nd','3rd','1st_2nd','1st_3rd','2nd_3rd','loaded'] as const
 export type BaseState = typeof BASE_STATES[number]

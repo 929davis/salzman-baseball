@@ -27,13 +27,18 @@ const all = (con, sql) => new Promise((res, rej) => con.all(sql, (err, rows) => 
 
 // Pitch-type grouping — chosen to land near the spec's ~6-group estimate (see conversation):
 // fastball families kept separate (four-seam/sinker/cutter behave differently), breaking
-// balls and offspeed grouped by family, everything rare folded into Other.
+// balls and offspeed grouped by family, everything rare folded into Other. Slider and Sweeper
+// are kept as separate groups (not merged) per explicit request — they're mechanically
+// distinct pitches despite both being "sliders" colloquially. Slurve (SV) stays with Slider
+// as the closer traditional-breaking-ball match; it's rare enough (~0.4% of pitches) that
+// either placement barely moves the numbers.
 const PITCH_TYPE_GROUP_SQL = `
   CASE
     WHEN pitch_type IN ('FF','FA') THEN 'Four-Seam'
     WHEN pitch_type = 'SI' THEN 'Sinker'
     WHEN pitch_type = 'FC' THEN 'Cutter'
-    WHEN pitch_type IN ('SL','ST','SV') THEN 'Slider'
+    WHEN pitch_type IN ('SL','SV') THEN 'Slider'
+    WHEN pitch_type = 'ST' THEN 'Sweeper'
     WHEN pitch_type IN ('CU','KC','CS') THEN 'Curveball'
     WHEN pitch_type IN ('CH','FS','FO') THEN 'Changeup'
     ELSE 'Other'
@@ -279,8 +284,16 @@ async function computeCountLeverage(con) {
   return all(con, `SELECT count_bucket, COUNT(*)::INTEGER AS n, ${cols} FROM classified GROUP BY 1`)
 }
 
+// Every table here is a full recompute from the local backfill each run, never an
+// incremental update — so upsert-only leaves stale rows behind whenever a bucketing scheme
+// changes (e.g. splitting a pitch-type group no longer regenerates the old combined row's
+// exact key). Clearing first guarantees the table always matches exactly what was just
+// computed, not a superset of it.
 async function upsert(supabase, table, rows, conflictCols) {
-  if (DRY_RUN) { console.log(`[dry-run] would upsert ${rows.length} rows into ${table}`); return }
+  if (DRY_RUN) { console.log(`[dry-run] would replace ${table} with ${rows.length} rows`); return }
+  const clearCol = table === 'bs_ev_buckets' ? 'ev_bucket' : 'id'
+  const { error: delError } = await supabase.from(table).delete().gte(clearCol, 0)
+  if (delError) throw new Error(`${table} (clear): ${delError.message}`)
   const BATCH = 1000
   for (let i = 0; i < rows.length; i += BATCH) {
     const { error } = await supabase.from(table).upsert(rows.slice(i, i + BATCH), { onConflict: conflictCols })
