@@ -4,7 +4,7 @@ import { useEffect, useState, useMemo } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { useRouter } from 'next/navigation'
 import PitchingIQ from '@/app/components/PitchingIQ'
-import CountLeverageTable from '@/app/components/CountLeverageTable'
+import SituationsView from '@/app/components/SituationsView'
 import AthleticBenchmarks from '@/app/components/AthleticBenchmarks'
 import PitchMechanics2D from '@/app/components/PitchMechanics2D'
 import ProgressOverview from '@/app/components/ProgressOverview'
@@ -1392,7 +1392,7 @@ Write next week's program by day and category (Pre-Throwing, Throwing, Post-Thro
                 <div style={{padding:4}}><PitchingIQ/></div>
               )}
               {tab==='situations'&&(
-                <div style={{padding:4}}><CountLeverageTable/></div>
+                <div style={{padding:4}}><SituationsView/></div>
               )}
 
               {tab==='benchmarks'&&(

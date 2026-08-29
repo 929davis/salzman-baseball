@@ -4,7 +4,7 @@ import { useEffect, useState, useRef } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { useRouter } from 'next/navigation'
 import PitchingIQ from '@/app/components/PitchingIQ'
-import CountLeverageTable from '@/app/components/CountLeverageTable'
+import SituationsView from '@/app/components/SituationsView'
 import AthleticBenchmarks from '@/app/components/AthleticBenchmarks'
 import ProgressOverview from '@/app/components/ProgressOverview'
 import MiniSparkline from '@/app/components/MiniSparkline'
@@ -804,7 +804,7 @@ export default function PitcherDashboard(){
           </div>
         )}
         {tab==='iq'&&<PitchingIQ/>}
-        {tab==='situations'&&<CountLeverageTable/>}
+        {tab==='situations'&&<SituationsView/>}
 
       </div>
     </div>

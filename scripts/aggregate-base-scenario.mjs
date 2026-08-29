@@ -91,7 +91,8 @@ const OUTCOME_COUNT_COLUMNS = `
   SUM(CASE WHEN outcome='triple' THEN 1 ELSE 0 END)::INTEGER AS n_triple,
   SUM(CASE WHEN outcome='home_run' THEN 1 ELSE 0 END)::INTEGER AS n_home_run,
   SUM(CASE WHEN outcome='hbp' THEN 1 ELSE 0 END)::INTEGER AS n_hbp,
-  COALESCE(SUM(delta_run_exp), 0) AS sum_delta_run_exp
+  COALESCE(SUM(delta_run_exp), 0) AS sum_delta_run_exp,
+  COALESCE(SUM(delta_run_exp*delta_run_exp), 0) AS sum_delta_run_exp_sq
 `
 
 async function buildClassifiedView(con) {
@@ -122,9 +123,29 @@ async function computePitchMarginal(con) {
   `)
 }
 
+const ZONES = [1,2,3,4,5,6,7,8,9,11,12,13,14]
+
+// Real zone-location distribution per (matchup, pitch type, count, outcome) — used by the
+// zone panel to show a realistic pitch location for each simulated action, since the
+// production statcast_pitches table has no location data at all for ball/called-strike
+// outcomes (see conversation: that table only ever ingested swings). Deliberately a single
+// granularity level (no hybrid backoff like the run-value tables) — this is a visual aid,
+// not a statistical claim, so when a combo has no data the UI just won't have a sample for it.
+async function computeZoneSample(con) {
+  const zoneCols = ZONES.map(z => `SUM(CASE WHEN zone=${z} THEN 1 ELSE 0 END)::INTEGER AS zone_${z}`).join(',')
+  return all(con, `
+    SELECT p_throws, bats, pitch_type_group, count_bucket, outcome, COUNT(*)::INTEGER AS n, ${zoneCols}
+    FROM classified
+    WHERE zone IS NOT NULL AND outcome IN ('ball','called_strike','swinging_strike','foul','walk','strikeout','out_in_play','single','double','triple','home_run','hbp')
+    GROUP BY 1,2,3,4,5
+  `)
+}
+
 async function computeReMarginal(con) {
   return all(con, `
-    SELECT outs_when_up, base_state, count_bucket, COUNT(*)::INTEGER AS n, COALESCE(SUM(delta_run_exp), 0) AS sum_delta_run_exp
+    SELECT outs_when_up, base_state, count_bucket, COUNT(*)::INTEGER AS n,
+      COALESCE(SUM(delta_run_exp), 0) AS sum_delta_run_exp,
+      COALESCE(SUM(delta_run_exp*delta_run_exp), 0) AS sum_delta_run_exp_sq
     FROM classified
     GROUP BY 1,2,3
   `)
@@ -214,6 +235,10 @@ async function main() {
   const countLeverage = await computeCountLeverage(con)
   console.log(`  ${countLeverage.length} cells`)
 
+  console.log('Computing bs_zone_sample...')
+  const zoneSample = await computeZoneSample(con)
+  console.log(`  ${zoneSample.length} cells`)
+
   con.close()
 
   if (DRY_RUN) {
@@ -224,6 +249,7 @@ async function main() {
     console.log('re24.split[0]:', re24.split[0])
     console.log('re24.base[0]:', re24.base[0])
     console.log('countLeverage[0]:', countLeverage[0])
+    console.log('zoneSample[0]:', zoneSample[0])
     return
   }
 
@@ -237,6 +263,7 @@ async function main() {
   await upsert(supabase, 'bs_re24_split', re24.split, 'p_throws,bats,outs_when_up,base_state')
   await upsert(supabase, 'bs_re24_base', re24.base, 'outs_when_up,base_state')
   await upsert(supabase, 'bs_count_leverage', countLeverage, 'count_bucket')
+  await upsert(supabase, 'bs_zone_sample', zoneSample, 'p_throws,bats,pitch_type_group,count_bucket,outcome')
   console.log('Done.')
 }
 

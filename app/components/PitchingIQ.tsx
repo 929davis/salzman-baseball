@@ -1,6 +1,7 @@
 'use client'
 import { useEffect, useState, useCallback } from 'react'
 import { createClient } from '@/lib/supabase/client'
+import { buildSavantLink as buildSharedSavantLink } from '@/lib/savantLink'
 
 const C = {
   bg:'#0d1117',bg2:'#161b22',bg3:'#1c2333',border:'#30363d',
@@ -57,33 +58,14 @@ const buildSavantLink = (zone: number, countBucket: string, pitchFilter: string,
   yesterday.setDate(today.getDate() - 1)
   const weekAgo = new Date(today)
   weekAgo.setDate(today.getDate() - 7)
-
   const fmt = (d: Date) => d.toISOString().split('T')[0]
-
-  const params = new URLSearchParams({
-    hfGT: 'R|',
-    hfNewZones: `${zone}|`,
-    hfSea: '2026|',
-    player_type: 'pitcher',
-    group_by: 'name-date',
-    min_pitches: '0',
-    min_results: '0',
-    min_pas: '0',
-    sort_col: 'pitches',
-    sort_order: 'desc',
-    game_date_gt: fmt(weekAgo),
-    game_date_lt: fmt(yesterday),
+  return buildSharedSavantLink({
+    dateGt: fmt(weekAgo), dateLt: fmt(yesterday),
+    zone,
+    countBucket: countBucket !== 'all' ? countBucket : undefined,
+    pitchType: pitchFilter !== 'all' ? pitchFilter : undefined,
+    metric: metric as 'whiff' | 'hard_hit' | undefined,
   })
-  if (countBucket !== 'all') {
-    const [balls, strikes] = countBucket.split('-')
-    params.set('hfC', `${balls}${strikes}|`)
-  }
-  if (pitchFilter !== 'all') params.set('hfPT', `${pitchFilter}|`)
-  // hfPR (pitch result) and hfFlag (Statcast flag) verified against Savant's live CSV export —
-  // confirmed hfPR filters strictly by description, hfFlag's hardhit value strictly by launch_speed>=95 on balls in play.
-  if (metric === 'whiff') params.set('hfPR', 'swinging\\.\\.strike|swinging\\.\\.strike\\.\\.blocked|')
-  else if (metric === 'hard_hit') params.set('hfFlag', 'is\\.\\.hit\\.\\.into\\.\\.play\\.\\.hardhit|')
-  return `https://baseballsavant.mlb.com/statcast_search?${params.toString()}#results`
 }
 
 function heatColor(val:number,min:number,max:number):string {
