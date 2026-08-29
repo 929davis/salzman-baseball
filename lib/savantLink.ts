@@ -34,6 +34,27 @@ export const PITCH_TYPE_GROUP_TO_CODE: Record<string, string> = {
   'Slider': 'SL', 'Curveball': 'CU', 'Changeup': 'CH',
 }
 
+// Per-outcome filter, verified empirically against the live CSV export. Two separate Savant
+// params are in play: hfPR ("pitch result", by description — for pitches that don't end the
+// PA) and hfAB ("at-bat result", by event — for pitches that do). Both pipe-combine with OR
+// semantics (confirmed: hfAB=field_out|double| returns the union, not the intersection —
+// opposite of hfRO's AND behavior, verified separately). out_in_play combines every real
+// Statcast "ball in play, not a hit" event type for an exact (not inclusive) match.
+const OUTCOME_TO_SAVANT_FILTER: Record<string, { param: 'hfPR' | 'hfAB', value: string }> = {
+  ball: { param:'hfPR', value:'ball' },
+  called_strike: { param:'hfPR', value:'called\\.\\.strike' },
+  swinging_strike: { param:'hfPR', value:'swinging\\.\\.strike|swinging\\.\\.strike\\.\\.blocked' },
+  foul: { param:'hfPR', value:'foul' }, // majority case — doesn't separately cover the rarer foul_tip/foul_bunt description values
+  walk: { param:'hfAB', value:'walk' },
+  strikeout: { param:'hfAB', value:'strikeout' },
+  out_in_play: { param:'hfAB', value:'field\\.\\.out|grounded\\.\\.into\\.\\.double\\.\\.play|force\\.\\.out|double\\.\\.play|fielders\\.\\.choice\\.\\.out|fielders\\.\\.choice|sac\\.\\.fly|sac\\.\\.bunt|field\\.\\.error' },
+  single: { param:'hfAB', value:'single' },
+  double: { param:'hfAB', value:'double' },
+  triple: { param:'hfAB', value:'triple' },
+  home_run: { param:'hfAB', value:'home\\.\\.run' },
+  hbp: { param:'hfAB', value:'hit\\.\\.by\\.\\.pitch' },
+}
+
 export type SavantLinkParams = {
   dateGt: string
   dateLt: string
@@ -45,6 +66,7 @@ export type SavantLinkParams = {
   pitchType?: string         // raw Statcast code (e.g. 'FF') — map pitch_type_group via PITCH_TYPE_GROUP_TO_CODE before passing
   zone?: number
   metric?: 'whiff' | 'hard_hit'
+  outcome?: string           // key into OUTCOME_TO_SAVANT_FILTER — for per-outcome-row deep links
 }
 
 export function buildSavantLink(p: SavantLinkParams): string {
@@ -78,5 +100,9 @@ export function buildSavantLink(p: SavantLinkParams): string {
   // confirmed hfPR filters strictly by description, hfFlag's hardhit value strictly by launch_speed>=95 on balls in play.
   if (p.metric === 'whiff') params.set('hfPR', 'swinging\\.\\.strike|swinging\\.\\.strike\\.\\.blocked|')
   else if (p.metric === 'hard_hit') params.set('hfFlag', 'is\\.\\.hit\\.\\.into\\.\\.play\\.\\.hardhit|')
+  if (p.outcome) {
+    const filter = OUTCOME_TO_SAVANT_FILTER[p.outcome]
+    if (filter) params.set(filter.param, `${filter.value}|`)
+  }
   return `https://baseballsavant.mlb.com/statcast_search?${params.toString()}#results`
 }

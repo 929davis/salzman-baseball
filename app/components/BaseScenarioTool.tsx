@@ -173,6 +173,12 @@ export default function BaseScenarioTool(){
     countBucket, outs: startOuts, baseState: startBaseState,
     pitchType: undefined,
   })
+  const savantLinkForOutcome = (outcome: string) => buildSavantLink({
+    dateGt: daysAgo(30), dateLt: today(),
+    pitcherThrows: pThrows, batterStands: bats,
+    countBucket, outs: startOuts, baseState: startBaseState,
+    outcome,
+  })
   const baseStateExact = EXACT_BASE_STATES.has(startBaseState)
 
   return (
@@ -234,7 +240,7 @@ export default function BaseScenarioTool(){
             ))}
           </div>
           <div style={{textAlign:'center' as const,fontSize:9,color:C.textDim,marginTop:8}}>catcher's view · zones 1–9 in-zone · 11–14 shadow/chase · dot color = pitch result</div>
-          <div style={{fontSize:9,color:C.textDim,marginTop:4,lineHeight:1.5}}>Location shown is a real pitch sampled from this matchup+count+outcome — not a prediction. Zone box drawn using a fixed representative batter height (not the actual batter's height, which isn't tracked in this data).</div>
+          <div style={{fontSize:9,color:C.textDim,marginTop:4,lineHeight:1.5}}>Location shown is a real pitch sampled from this matchup+count+outcome — not a prediction. Each pitch's zone cell comes from Statcast's own per-pitch classification, which already accounts for that specific batter's real tracked strike zone — the on-screen grid box itself is a fixed size and doesn't visually stretch per batter, but the pitch-to-cell assignment isn't approximated.</div>
         </div>
 
         {/* Count/base/out strip + action selector + info panel */}
@@ -343,22 +349,23 @@ export default function BaseScenarioTool(){
                       <div style={{fontSize:9,color:C.textDim}}>95% CI [{battedBall.avgRunValue.lower.toFixed(3)}, {battedBall.avgRunValue.upper.toFixed(3)}]</div>
                     </div>
                   )}
-                  <div style={{fontSize:9,color:C.textMuted,textTransform:'uppercase' as const,marginBottom:6}}>Outcome Breakdown</div>
+                  <div style={{fontSize:9,color:C.textMuted,textTransform:'uppercase' as const,marginBottom:6}}>Outcome Breakdown — click a row to see the real pitches on Savant</div>
                   <div style={{display:'flex',flexDirection:'column' as const,gap:4}}>
                     {BATTED_OUTCOME_KEYS.map(k=>{
                       const o = battedBall.outcomes[k]
                       if (!o) return null
                       const showRate = o.n>=MIN_RENDER_N || battedBall.n>=MIN_RENDER_N
                       return (
-                        <div key={k} style={{display:'flex',justifyContent:'space-between',alignItems:'center',fontSize:11}}>
-                          <span style={{color:C.text}}>{BATTED_OUTCOME_LABELS[k]}</span>
+                        <a key={k} href={savantLinkForOutcome(k==='out'?'out_in_play':k)} target="_blank" rel="noopener noreferrer" style={{display:'flex',justifyContent:'space-between',alignItems:'center',fontSize:11,textDecoration:'none',padding:'3px 4px',borderRadius:4}}>
+                          <span style={{color:C.blue}}>{BATTED_OUTCOME_LABELS[k]} ↗</span>
                           {o.ci && showRate ? (
                             <span style={{color:C.textMuted}}>{(o.ci.p*100).toFixed(1)}% <span style={{color:C.textDim,fontSize:9}}>[{(o.ci.lower*100).toFixed(1)}–{(o.ci.upper*100).toFixed(1)}%]</span></span>
                           ) : <span style={{color:C.textDim,fontSize:10}}>n={o.n} — too few to rate</span>}
-                        </div>
+                        </a>
                       )
                     })}
                   </div>
+                  <div style={{fontSize:9,color:C.textDim,marginTop:8}}>These Savant links use the same count/outs/base filters as above but can't filter by exit velocity, launch angle, or direction — Savant's search doesn't expose those as filter params.</div>
                 </>
               )}
             </div>
@@ -383,25 +390,25 @@ export default function BaseScenarioTool(){
                       <div style={{fontSize:9,color:C.textDim}}>95% CI [{resolved.avgRunValue.lower.toFixed(3)}, {resolved.avgRunValue.upper.toFixed(3)}]</div>
                     </div>
                   )}
-                  <div style={{fontSize:9,color:C.textMuted,textTransform:'uppercase' as const,marginBottom:6}}>Outcome Breakdown</div>
+                  <div style={{fontSize:9,color:C.textMuted,textTransform:'uppercase' as const,marginBottom:6}}>Outcome Breakdown — click a row to see the real pitches on Savant</div>
                   <div style={{display:'flex',flexDirection:'column' as const,gap:4,marginBottom:10}}>
                     {OUTCOME_KEYS.filter(k=>(resolved.outcomes[k]?.n||0)>0).sort((a,b)=>(resolved.outcomes[b]?.n||0)-(resolved.outcomes[a]?.n||0)).map(k=>{
                       const o = resolved.outcomes[k]!
                       const showRate = o.n>=MIN_RENDER_N || resolved.n>=MIN_RENDER_N
                       return (
-                        <div key={k} style={{display:'flex',justifyContent:'space-between',alignItems:'center',fontSize:11}}>
-                          <span style={{color:C.text}}>{OUTCOME_LABELS[k]}</span>
+                        <a key={k} href={savantLinkForOutcome(k)} target="_blank" rel="noopener noreferrer" style={{display:'flex',justifyContent:'space-between',alignItems:'center',fontSize:11,textDecoration:'none',padding:'3px 4px',borderRadius:4}}>
+                          <span style={{color:C.blue}}>{OUTCOME_LABELS[k]} ↗</span>
                           {o.ci && showRate ? (
                             <span style={{color:C.textMuted}}>{(o.ci.p*100).toFixed(1)}% <span style={{color:C.textDim,fontSize:9}}>[{(o.ci.lower*100).toFixed(1)}–{(o.ci.upper*100).toFixed(1)}%]</span></span>
                           ) : <span style={{color:C.textDim,fontSize:10}}>n={o.n} — too few to rate</span>}
-                        </div>
+                        </a>
                       )
                     })}
                   </div>
                 </>
               )}
-              <a href={savantLink} target="_blank" rel="noopener noreferrer" style={{fontSize:11,color:C.blue,display:'block',marginBottom:2}}>View on Baseball Savant ↗</a>
-              {!baseStateExact && <div style={{fontSize:9,color:C.textDim}}>Savant link shows "{BASE_STATE_LABELS[startBaseState]}" inclusively (may include other runners too) — Savant has no way to filter to this exact base state alone.</div>}
+              <a href={savantLink} target="_blank" rel="noopener noreferrer" style={{fontSize:11,color:C.blue,display:'block',marginBottom:2}}>View whole situation on Baseball Savant ↗</a>
+              {!baseStateExact && <div style={{fontSize:9,color:C.textDim}}>Savant links show "{BASE_STATE_LABELS[startBaseState]}" inclusively (may include other runners too) — Savant has no way to filter to this exact base state alone.</div>}
             </div>
           )}
         </div>
