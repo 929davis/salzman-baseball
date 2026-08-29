@@ -18,18 +18,13 @@ const LIMITATIONS = [
 
 // Single entry point for the whole Base Scenario Tool, mounted identically in the coach
 // pitcher-detail tab bar and the athlete dashboard — no forked copies of this logic.
+// At-Bat Simulator and Count Leverage are one continuous view, not separate sub-tabs.
 export default function SituationsView(){
-  const [sub,setSub] = useState<'simulator'|'leverage'>('simulator')
   const [showLimitations,setShowLimitations] = useState(false)
   return (
     <div>
-      <div style={{display:'flex',gap:6,marginBottom:14,alignItems:'center',flexWrap:'wrap' as const}}>
-        {(['simulator','leverage'] as const).map(s=>(
-          <button key={s} onClick={()=>setSub(s)} style={{background:sub===s?C.gold:C.bg3,color:sub===s?C.bg:C.textMuted,border:`1px solid ${sub===s?C.gold:C.border}`,borderRadius:8,padding:'8px 14px',fontSize:12,fontWeight:sub===s?700:400,cursor:'pointer'}}>
-            {s==='simulator'?'At-Bat Simulator':'Count Leverage'}
-          </button>
-        ))}
-        <button onClick={()=>setShowLimitations(s=>!s)} style={{marginLeft:'auto',background:'transparent',color:C.textMuted,border:`1px solid ${C.border}`,borderRadius:8,padding:'8px 14px',fontSize:11,cursor:'pointer'}}>
+      <div style={{display:'flex',justifyContent:'flex-end',marginBottom:14}}>
+        <button onClick={()=>setShowLimitations(s=>!s)} style={{background:'transparent',color:C.textMuted,border:`1px solid ${C.border}`,borderRadius:8,padding:'8px 14px',fontSize:11,cursor:'pointer'}}>
           {showLimitations?'Hide':'ⓘ'} Limitations
         </button>
       </div>
@@ -43,7 +38,10 @@ export default function SituationsView(){
         </div>
       )}
 
-      {sub==='simulator' ? <BaseScenarioTool/> : <CountLeverageTable/>}
+      <BaseScenarioTool/>
+      <div style={{marginTop:20,paddingTop:20,borderTop:`1px solid ${C.border}`}}>
+        <CountLeverageTable/>
+      </div>
     </div>
   )
 }

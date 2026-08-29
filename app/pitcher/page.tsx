@@ -3,8 +3,7 @@
 import { useEffect, useState, useRef } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { useRouter } from 'next/navigation'
-import PitchingIQ from '@/app/components/PitchingIQ'
-import SituationsView from '@/app/components/SituationsView'
+import PitchingIQTab from '@/app/components/PitchingIQTab'
 import AthleticBenchmarks from '@/app/components/AthleticBenchmarks'
 import ProgressOverview from '@/app/components/ProgressOverview'
 import MiniSparkline from '@/app/components/MiniSparkline'
@@ -372,7 +371,6 @@ export default function PitcherDashboard(){
           {id:'messages',icon:'💬',label:unread>0?`(${unread})`:'Chat'},
           {id:'notes',icon:'📌',label:'Notes'},
           {id:'iq',icon:'🎯',label:'Pitching IQ'},
-          {id:'situations',icon:'📊',label:'Situations'},
           {id:'anatomy',icon:'🦴',label:'Anatomy',external:true},
         ].map(t=>(
           <button key={t.id} onClick={()=>t.external?router.push('/anatomy'):setTab(t.id)} style={{flex:1,background:'transparent',border:'none',borderBottom:`2px solid ${tab===t.id?C.gold:'transparent'}`,padding:'8px 2px',cursor:'pointer',color:tab===t.id?C.gold:C.textMuted,fontSize:9,fontWeight:tab===t.id?700:400,textTransform:'uppercase' as const,letterSpacing:'0.3px',whiteSpace:'nowrap' as const}}>
@@ -803,8 +801,7 @@ export default function PitcherDashboard(){
             ))}
           </div>
         )}
-        {tab==='iq'&&<PitchingIQ/>}
-        {tab==='situations'&&<SituationsView/>}
+        {tab==='iq'&&<PitchingIQTab/>}
 
       </div>
     </div>
