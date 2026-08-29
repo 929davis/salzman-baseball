@@ -141,6 +141,85 @@ async function computeZoneSample(con) {
   `)
 }
 
+// ---------------------------------------------------------------------------
+// Batted-ball model (spec §7) — Put In Play branch.
+//
+// Spray direction: uses hc_x/hc_y (real hit coordinates — where the ball was fielded),
+// NOT attack_direction (that's bat-sensor swing-path data, a different thing entirely —
+// verified empirically before using it: attack_direction correlates with intent, not
+// necessarily where the ball actually went). Formula and home-plate origin constants
+// (125.42, 198.27) are the standard public spray-angle calculation, cross-checked against
+// real 2026 data — confirmed RHH pull tendency sits on the negative-angle side and flips
+// for LHH, matching physical expectation. +/-15 degrees approximates Savant's own
+// pull/center/opposite field-thirds convention.
+const SPRAY_ANGLE_SQL = `DEGREES(ATAN2(hc_x - 125.42, 198.27 - hc_y))`
+const DIRECTION_SQL = `
+  CASE
+    WHEN (bats='R' AND ${SPRAY_ANGLE_SQL} < -15) OR (bats='L' AND ${SPRAY_ANGLE_SQL} > 15) THEN 'pull'
+    WHEN (bats='R' AND ${SPRAY_ANGLE_SQL} > 15) OR (bats='L' AND ${SPRAY_ANGLE_SQL} < -15) THEN 'opposite'
+    ELSE 'center'
+  END
+`
+// bb_type is Statcast's own official ground_ball/line_drive/fly_ball/popup classification —
+// reused directly rather than re-deriving approximate launch-angle thresholds ourselves.
+const BATTED_BALL_FILTER = `outcome IN ('out_in_play','single','double','triple','home_run') AND launch_speed IS NOT NULL AND bb_type IS NOT NULL AND hc_x IS NOT NULL AND hc_y IS NOT NULL`
+
+const BATTED_OUTCOME_COLUMNS = `
+  COUNT(*)::INTEGER AS n,
+  SUM(CASE WHEN outcome='out_in_play' THEN 1 ELSE 0 END)::INTEGER AS n_out,
+  SUM(CASE WHEN outcome='single' THEN 1 ELSE 0 END)::INTEGER AS n_single,
+  SUM(CASE WHEN outcome='double' THEN 1 ELSE 0 END)::INTEGER AS n_double,
+  SUM(CASE WHEN outcome='triple' THEN 1 ELSE 0 END)::INTEGER AS n_triple,
+  SUM(CASE WHEN outcome='home_run' THEN 1 ELSE 0 END)::INTEGER AS n_home_run
+`
+
+// 7 evenly-populated EV bands via NTILE — guarantees even population by construction,
+// rather than picking fixed mph cutoffs (spec explicitly warns against mean+-SD bands
+// since EV is left-skewed with a hard ceiling near 120mph).
+async function computeEvBuckets(con) {
+  return all(con, `
+    WITH bucketed AS (
+      SELECT launch_speed, (NTILE(7) OVER (ORDER BY launch_speed))::INTEGER AS ev_bucket
+      FROM classified WHERE ${BATTED_BALL_FILTER}
+    )
+    SELECT ev_bucket, COUNT(*)::INTEGER AS n, MIN(launch_speed) AS mph_min, MAX(launch_speed) AS mph_max
+    FROM bucketed GROUP BY 1 ORDER BY 1
+  `)
+}
+
+async function computeBattedBallOutcome(con) {
+  return all(con, `
+    WITH bucketed AS (
+      SELECT *, (NTILE(7) OVER (ORDER BY launch_speed))::INTEGER AS ev_bucket,
+        ${DIRECTION_SQL} AS direction
+      FROM classified WHERE ${BATTED_BALL_FILTER}
+    )
+    SELECT ev_bucket, bb_type AS launch_angle_category, direction, ${BATTED_OUTCOME_COLUMNS}
+    FROM bucketed
+    GROUP BY 1,2,3
+  `)
+}
+
+// Run-value at the exact 8-state base/outs granularity — the resolver (lib/baseScenario.ts)
+// rolls this up client-side through the backoff ladder (spec §3: exact 8-state -> 4 grouped
+// states -> outs-only) by summing matching rows, since it's already fully loaded and raw
+// counts are additive. No separate marginal tables needed for this one.
+async function computeBattedBallRE(con) {
+  return all(con, `
+    WITH bucketed AS (
+      SELECT *, (NTILE(7) OVER (ORDER BY launch_speed))::INTEGER AS ev_bucket,
+        ${DIRECTION_SQL} AS direction
+      FROM classified WHERE ${BATTED_BALL_FILTER}
+    )
+    SELECT ev_bucket, bb_type AS launch_angle_category, direction, outs_when_up, base_state,
+      COUNT(*)::INTEGER AS n,
+      COALESCE(SUM(delta_run_exp), 0) AS sum_delta_run_exp,
+      COALESCE(SUM(delta_run_exp*delta_run_exp), 0) AS sum_delta_run_exp_sq
+    FROM bucketed
+    GROUP BY 1,2,3,4,5
+  `)
+}
+
 async function computeReMarginal(con) {
   return all(con, `
     SELECT outs_when_up, base_state, count_bucket, COUNT(*)::INTEGER AS n,
@@ -239,6 +318,18 @@ async function main() {
   const zoneSample = await computeZoneSample(con)
   console.log(`  ${zoneSample.length} cells`)
 
+  console.log('Computing bs_ev_buckets...')
+  const evBuckets = await computeEvBuckets(con)
+  console.log(`  ${evBuckets.length} buckets:`, evBuckets.map(b=>`${b.mph_min}-${b.mph_max}`).join(', '))
+
+  console.log('Computing bs_batted_ball_outcome...')
+  const battedOutcome = await computeBattedBallOutcome(con)
+  console.log(`  ${battedOutcome.length} cells`)
+
+  console.log('Computing bs_batted_ball_re...')
+  const battedRE = await computeBattedBallRE(con)
+  console.log(`  ${battedRE.length} cells`)
+
   con.close()
 
   if (DRY_RUN) {
@@ -250,6 +341,9 @@ async function main() {
     console.log('re24.base[0]:', re24.base[0])
     console.log('countLeverage[0]:', countLeverage[0])
     console.log('zoneSample[0]:', zoneSample[0])
+    console.log('evBuckets:', evBuckets)
+    console.log('battedOutcome[0]:', battedOutcome[0])
+    console.log('battedRE[0]:', battedRE[0])
     return
   }
 
@@ -264,6 +358,9 @@ async function main() {
   await upsert(supabase, 'bs_re24_base', re24.base, 'outs_when_up,base_state')
   await upsert(supabase, 'bs_count_leverage', countLeverage, 'count_bucket')
   await upsert(supabase, 'bs_zone_sample', zoneSample, 'p_throws,bats,pitch_type_group,count_bucket,outcome')
+  await upsert(supabase, 'bs_ev_buckets', evBuckets, 'ev_bucket')
+  await upsert(supabase, 'bs_batted_ball_outcome', battedOutcome, 'ev_bucket,launch_angle_category,direction')
+  await upsert(supabase, 'bs_batted_ball_re', battedRE, 'ev_bucket,launch_angle_category,direction,outs_when_up,base_state')
   console.log('Done.')
 }
 

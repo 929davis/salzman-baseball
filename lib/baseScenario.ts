@@ -162,6 +162,85 @@ export function resolveOutcomes(jointRow: any | undefined, pitchMarginalRow: any
   return { source: useExact ? 'exact' : 'estimated', n: row.n, outcomes, avgRunValue }
 }
 
+// ---------------------------------------------------------------------------
+// Batted-ball model — spec §7 ("Put In Play" branch).
+// ---------------------------------------------------------------------------
+
+export const LAUNCH_ANGLE_CATEGORIES = ['ground_ball','line_drive','fly_ball','popup'] as const
+export const LAUNCH_ANGLE_LABELS: Record<string,string> = {
+  ground_ball:'Ground Ball', line_drive:'Line Drive', fly_ball:'Fly Ball', popup:'Popup',
+}
+
+export const DIRECTIONS = ['pull','center','opposite'] as const
+export const DIRECTION_LABELS: Record<string,string> = { pull:'Pull', center:'Center', opposite:'Opposite Field' }
+
+export const BATTED_OUTCOME_KEYS = ['out','single','double','triple','home_run'] as const
+export const BATTED_OUTCOME_LABELS: Record<string,string> = {
+  out:'Out', single:'Single', double:'Double', triple:'Triple', home_run:'Home Run',
+}
+
+export type BaseGroup4 = 'empty' | '1st' | 'risp' | 'loaded'
+
+// Clean 4-way partition of all 8 exact base states for the batted-ball RE backoff ladder
+// (spec §3) — defined by "furthest occupied base," so every exact state maps to exactly
+// one group (no ambiguity/overlap). "risp" here means any state with a runner on 2nd or
+// 3rd that isn't bases-loaded (2nd, 3rd, 1st_2nd, 1st_3rd, 2nd_3rd) — broader than the
+// broadcast-stat definition of RISP (which ignores whether 1st is also occupied), but this
+// is the only way to keep all 4 groups mutually exclusive while preserving loaded as its
+// own bucket (it has the biggest defensive-alignment effect — infield forced at every base).
+export function baseGroup4(b: BaseState): BaseGroup4 {
+  if (b === 'empty') return 'empty'
+  if (b === '1st') return '1st'
+  if (b === 'loaded') return 'loaded'
+  return 'risp'
+}
+
+export type ResolvedBattedBall = {
+  n: number
+  outcomes: Partial<Record<string, { n: number, ci: WilsonResult | null }>>
+  avgRunValue: CIResult | null
+  reSource: 'exact' | 'grouped' | 'outs_only' | 'no_data'
+}
+
+// bs_batted_ball_outcome gives the out/1B/2B/3B/HR distribution directly (single granularity —
+// EV bucket x launch angle x direction only, no base/out backoff, since contact-quality-to-
+// outcome is a physics question that doesn't depend on the game situation). bs_batted_ball_re
+// gives the run-value swing, which DOES depend on base/out state (a single is worth very
+// different runs with the bases loaded vs. empty) — so that one backs off through the ladder:
+// exact 8-state -> 4 grouped states -> outs-only, summing already-loaded raw rows at each step
+// since counts are additive.
+export function resolveBattedBall(
+  outcomeRows: any[], reRows: any[],
+  evBucket: number, launchAngleCategory: string, direction: string, outs: number, baseState: BaseState,
+): ResolvedBattedBall {
+  const outcomeRow = outcomeRows.find(r => r.ev_bucket === evBucket && r.launch_angle_category === launchAngleCategory && r.direction === direction)
+  const n = outcomeRow?.n ?? 0
+  const outcomes: ResolvedBattedBall['outcomes'] = {}
+  for (const key of BATTED_OUTCOME_KEYS) {
+    const k = outcomeRow?.[`n_${key}`] ?? 0
+    outcomes[key] = { n: k, ci: n > 0 ? wilsonCI(k, n) : null }
+  }
+
+  const matchBB = (r:any) => r.ev_bucket===evBucket && r.launch_angle_category===launchAngleCategory && r.direction===direction && r.outs_when_up===outs
+  const toBucket = (rows:any[]) => addBuckets(...rows.map(r => ({ n:r.n, sum:r.sum_delta_run_exp, sumSq:r.sum_delta_run_exp_sq })))
+
+  let bucket = toBucket(reRows.filter(r => matchBB(r) && r.base_state === baseState))
+  let reSource: ResolvedBattedBall['reSource'] = 'exact'
+  if (bucket.n < EXACT_CELL_THRESHOLD) {
+    const group = baseGroup4(baseState)
+    const grouped = toBucket(reRows.filter(r => matchBB(r) && baseGroup4(r.base_state) === group))
+    if (grouped.n >= EXACT_CELL_THRESHOLD) { bucket = grouped; reSource = 'grouped' }
+    else {
+      const outsOnly = toBucket(reRows.filter(matchBB))
+      bucket = outsOnly
+      reSource = outsOnly.n > 0 ? 'outs_only' : 'no_data'
+    }
+  }
+  const avgRunValue = bucket.n > 1 ? meanCI(bucket.n, bucket.sum, bucket.sumSq) : null
+
+  return { n, outcomes, avgRunValue, reSource }
+}
+
 export type UsageShare = { pitchTypeGroup: string, n: number, pct: number }
 
 // Pitch-type usage % at the current matchup+count — the selection-bias guard (spec §4).

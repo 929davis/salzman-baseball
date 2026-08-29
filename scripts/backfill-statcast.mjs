@@ -45,7 +45,7 @@ const COLUMNS = [
   ['bat_score', 'INTEGER'], ['post_bat_score', 'INTEGER'],
   ['on_1b', 'BOOLEAN'], ['on_2b', 'BOOLEAN'], ['on_3b', 'BOOLEAN'],
   ['delta_run_exp', 'DOUBLE'], ['woba_value', 'DOUBLE'], ['woba_denom', 'DOUBLE'],
-  ['launch_speed', 'DOUBLE'], ['launch_angle', 'DOUBLE'], ['hc_x', 'DOUBLE'], ['hc_y', 'DOUBLE'],
+  ['launch_speed', 'DOUBLE'], ['launch_angle', 'DOUBLE'], ['bb_type', 'VARCHAR'], ['hc_x', 'DOUBLE'], ['hc_y', 'DOUBLE'],
   ['attack_direction', 'DOUBLE'],
 ]
 
@@ -114,7 +114,7 @@ async function fetchDay(date, attempt = 1) {
         int(col(row, 'bat_score')), int(col(row, 'post_bat_score')),
         bool(col(row, 'on_1b')), bool(col(row, 'on_2b')), bool(col(row, 'on_3b')),
         num(col(row, 'delta_run_exp')), num(col(row, 'woba_value')), num(col(row, 'woba_denom')),
-        num(col(row, 'launch_speed')), num(col(row, 'launch_angle')), num(col(row, 'hc_x')), num(col(row, 'hc_y')),
+        num(col(row, 'launch_speed')), num(col(row, 'launch_angle')), col(row, 'bb_type'), num(col(row, 'hc_x')), num(col(row, 'hc_y')),
         num(col(row, 'attack_direction')),
       ])
     }

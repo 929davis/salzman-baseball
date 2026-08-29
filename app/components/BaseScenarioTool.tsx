@@ -3,9 +3,10 @@ import { useEffect, useState, useMemo } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import {
   OUTCOME_KEYS, OUTCOME_LABELS, PITCH_TYPE_GROUPS, BASE_STATES, BASE_STATE_LABELS,
+  LAUNCH_ANGLE_CATEGORIES, LAUNCH_ANGLE_LABELS, DIRECTIONS, DIRECTION_LABELS, BATTED_OUTCOME_KEYS, BATTED_OUTCOME_LABELS,
   type OutcomeKey, type BaseState,
   jointKey, pitchMarginalKey, zoneSampleKey,
-  resolveOutcomes, computeUsageShares, sampleZone, MIN_RENDER_N, fetchAllRows,
+  resolveOutcomes, computeUsageShares, sampleZone, resolveBattedBall, MIN_RENDER_N, fetchAllRows,
 } from '@/lib/baseScenario'
 import { buildSavantLink, EXACT_BASE_STATES } from '@/lib/savantLink'
 
@@ -53,6 +54,9 @@ export default function BaseScenarioTool(){
   const [jointRows,setJointRows] = useState<any[]>([])
   const [pitchMarginalRows,setPitchMarginalRows] = useState<any[]>([])
   const [zoneSampleRows,setZoneSampleRows] = useState<any[]>([])
+  const [evBuckets,setEvBuckets] = useState<any[]>([])
+  const [battedOutcomeRows,setBattedOutcomeRows] = useState<any[]>([])
+  const [battedReRows,setBattedReRows] = useState<any[]>([])
 
   // Starting filters — fixed for the whole at-bat, per spec §4.
   const [pThrows,setPThrows] = useState<'R'|'L'>('R')
@@ -68,17 +72,29 @@ export default function BaseScenarioTool(){
   const [ended,setEnded] = useState(false)
   const [endReason,setEndReason] = useState('')
 
+  // Batted-ball selector (spec §7) — shown after "Put In Play" instead of ending immediately.
+  const [pickingBattedBall,setPickingBattedBall] = useState(false)
+  const [bbEvBucket,setBbEvBucket] = useState(4)
+  const [bbAngle,setBbAngle] = useState<string>('line_drive')
+  const [bbDirection,setBbDirection] = useState<string>('center')
+
   useEffect(()=>{
     let cancelled = false
     Promise.all([
       fetchAllRows(supabase, 'bs_joint'),
       fetchAllRows(supabase, 'bs_pitch_marginal'),
       fetchAllRows(supabase, 'bs_zone_sample'),
-    ]).then(([j,pm,zs])=>{
+      fetchAllRows(supabase, 'bs_ev_buckets'),
+      fetchAllRows(supabase, 'bs_batted_ball_outcome'),
+      fetchAllRows(supabase, 'bs_batted_ball_re'),
+    ]).then(([j,pm,zs,evb,bbo,bbre])=>{
       if (cancelled) return
       setJointRows(j)
       setPitchMarginalRows(pm)
       setZoneSampleRows(zs)
+      setEvBuckets(evb.sort((a,b)=>a.ev_bucket-b.ev_bucket))
+      setBattedOutcomeRows(bbo)
+      setBattedReRows(bbre)
       setLoading(false)
     })
     return ()=>{cancelled=true}
@@ -114,12 +130,16 @@ export default function BaseScenarioTool(){
   })()
 
   const startNewAtBat = () => {
-    setBalls(0); setStrikes(0); setHistory([]); setEnded(false); setEndReason('')
+    setBalls(0); setStrikes(0); setHistory([]); setEnded(false); setEndReason(''); setPickingBattedBall(false)
   }
 
   const takeAction = (action: Action) => {
-    if (ended) return
-    const zone = sampleZone(zoneSampleMap.get(zoneSampleKey({...dims, outcome: action==='put_in_play' ? 'out_in_play' : (ACTIONS.find(a=>a.key===action)?.outcomeKey || 'ball')})))
+    if (ended || pickingBattedBall) return
+    if (action==='put_in_play'){
+      setPickingBattedBall(true)
+      return
+    }
+    const zone = sampleZone(zoneSampleMap.get(zoneSampleKey({...dims, outcome: ACTIONS.find(a=>a.key===action)?.outcomeKey || 'ball'})))
     setHistory(h => [...h, { pitchTypeGroup, action, zone }])
 
     if (action==='ball'){
@@ -131,9 +151,18 @@ export default function BaseScenarioTool(){
     } else if (action==='foul'){
       if (strikes<2) setStrikes(s=>s+1)
       // foul at 2 strikes: count doesn't change, PA continues
-    } else if (action==='put_in_play'){
-      setEnded(true); setEndReason('Ball In Play')
     }
+  }
+
+  const battedBall = resolveBattedBall(battedOutcomeRows, battedReRows, bbEvBucket, bbAngle, bbDirection, startOuts, startBaseState)
+  const bbEvBucketInfo = evBuckets.find(b=>b.ev_bucket===bbEvBucket)
+
+  const confirmBattedBall = () => {
+    const zone = sampleZone(zoneSampleMap.get(zoneSampleKey({...dims, outcome: 'out_in_play'})))
+    setHistory(h => [...h, { pitchTypeGroup, action: 'put_in_play', zone }])
+    setPickingBattedBall(false)
+    setEnded(true)
+    setEndReason('Ball In Play')
   }
 
   if (loading) return <div style={{textAlign:'center' as const,padding:30,color:C.textMuted,fontSize:13}}>Loading...</div>
@@ -238,6 +267,36 @@ export default function BaseScenarioTool(){
               <div style={{fontSize:14,fontWeight:700,color:C.gold,marginBottom:8}}>At-bat ended: {endReason}</div>
               <button onClick={startNewAtBat} style={{background:C.gold,color:C.bg,border:'none',borderRadius:6,padding:'8px 16px',fontSize:13,fontWeight:700,cursor:'pointer'}}>New At-Bat</button>
             </div>
+          ) : pickingBattedBall ? (
+            <div style={{background:C.bg2,border:`1px solid ${C.border}`,borderRadius:8,padding:14,marginBottom:12}}>
+              <div style={{fontSize:11,fontWeight:700,color:C.gold,textTransform:'uppercase' as const,letterSpacing:'0.5px',marginBottom:10}}>Describe the Contact</div>
+
+              <div style={{fontSize:10,color:C.textMuted,textTransform:'uppercase' as const,marginBottom:4}}>Exit Velocity</div>
+              <select value={bbEvBucket} onChange={e=>setBbEvBucket(Number(e.target.value))} style={{width:'100%',background:C.bg3,border:`1px solid ${C.border}`,borderRadius:6,padding:'7px 10px',fontSize:12,color:C.text,marginBottom:10}}>
+                {evBuckets.map(b=>(
+                  <option key={b.ev_bucket} value={b.ev_bucket}>{b.mph_min.toFixed(0)}–{b.mph_max.toFixed(0)} mph {b.ev_bucket===1?'(softest 1/7)':b.ev_bucket===7?'(hardest 1/7)':`(bucket ${b.ev_bucket}/7)`}</option>
+                ))}
+              </select>
+
+              <div style={{fontSize:10,color:C.textMuted,textTransform:'uppercase' as const,marginBottom:4}}>Launch Angle</div>
+              <div style={{display:'grid',gridTemplateColumns:'repeat(2,1fr)',gap:6,marginBottom:10}}>
+                {LAUNCH_ANGLE_CATEGORIES.map(a=>(
+                  <button key={a} onClick={()=>setBbAngle(a)} style={{padding:'8px 0',borderRadius:6,border:`1px solid ${bbAngle===a?C.gold:C.border}`,background:bbAngle===a?`${C.gold}26`:C.bg3,color:bbAngle===a?C.gold:C.textMuted,cursor:'pointer',fontSize:11,fontWeight:600}}>{LAUNCH_ANGLE_LABELS[a]}</button>
+                ))}
+              </div>
+
+              <div style={{fontSize:10,color:C.textMuted,textTransform:'uppercase' as const,marginBottom:4}}>Direction</div>
+              <div style={{display:'grid',gridTemplateColumns:'repeat(3,1fr)',gap:6,marginBottom:12}}>
+                {DIRECTIONS.map(d=>(
+                  <button key={d} onClick={()=>setBbDirection(d)} style={{padding:'8px 0',borderRadius:6,border:`1px solid ${bbDirection===d?C.gold:C.border}`,background:bbDirection===d?`${C.gold}26`:C.bg3,color:bbDirection===d?C.gold:C.textMuted,cursor:'pointer',fontSize:11,fontWeight:600}}>{DIRECTION_LABELS[d]}</button>
+                ))}
+              </div>
+
+              <div style={{display:'flex',gap:8}}>
+                <button onClick={()=>setPickingBattedBall(false)} style={{flex:1,padding:'9px 0',borderRadius:6,border:`1px solid ${C.border}`,background:C.bg3,color:C.textMuted,cursor:'pointer',fontSize:12}}>Back</button>
+                <button onClick={confirmBattedBall} style={{flex:2,padding:'9px 0',borderRadius:6,border:'none',background:C.gold,color:C.bg,cursor:'pointer',fontSize:12,fontWeight:700}}>Confirm — End At-Bat</button>
+              </div>
+            </div>
           ) : (
             <div style={{background:C.bg2,border:`1px solid ${C.border}`,borderRadius:8,padding:14,marginBottom:12}}>
               <div style={{fontSize:10,color:C.textMuted,textTransform:'uppercase' as const,letterSpacing:'0.5px',marginBottom:6}}>Pitch Type — usage % shows how often this pitch is actually thrown here</div>
@@ -262,46 +321,89 @@ export default function BaseScenarioTool(){
           )}
 
           {/* Info panel */}
-          <div style={{background:C.bg2,border:`1px solid ${C.border}`,borderRadius:8,padding:14}}>
-            <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:8}}>
-              <div style={{fontSize:11,fontWeight:700,color:C.textMuted,textTransform:'uppercase' as const,letterSpacing:'0.5px'}}>This Situation</div>
-              <span style={{fontSize:9,fontWeight:700,padding:'2px 7px',borderRadius:10,textTransform:'uppercase' as const,background:resolved.source==='exact'?`${C.teal}26`:resolved.source==='estimated'?`${C.gold}26`:`${C.textDim}26`,color:resolved.source==='exact'?C.teal:resolved.source==='estimated'?C.gold:C.textDim,border:`1px solid ${resolved.source==='exact'?C.teal:resolved.source==='estimated'?C.gold:C.textDim}66`}}>
-                {resolved.source==='exact'?'Exact cell':resolved.source==='estimated'?'Estimated (broader sample)':'No data'}
-              </span>
-            </div>
-            <div style={{fontSize:10,color:C.textDim,marginBottom:10}}>{pThrows}HP vs {bats}HH · {countBucket} · {startOuts} out{startOuts!==1?'s':''} · {BASE_STATE_LABELS[startBaseState]} · {pitchTypeGroup} · n={resolved.n.toLocaleString()}</div>
+          {pickingBattedBall || (ended && endReason==='Ball In Play') ? (
+            <div style={{background:C.bg2,border:`1px solid ${C.border}`,borderRadius:8,padding:14}}>
+              <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:8}}>
+                <div style={{fontSize:11,fontWeight:700,color:C.textMuted,textTransform:'uppercase' as const,letterSpacing:'0.5px'}}>Contact Outcome Distribution</div>
+                <span style={{fontSize:9,fontWeight:700,padding:'2px 7px',borderRadius:10,textTransform:'uppercase' as const,background:battedBall.reSource==='exact'?`${C.teal}26`:battedBall.reSource==='no_data'?`${C.textDim}26`:`${C.gold}26`,color:battedBall.reSource==='exact'?C.teal:battedBall.reSource==='no_data'?C.textDim:C.gold,border:`1px solid ${battedBall.reSource==='exact'?C.teal:battedBall.reSource==='no_data'?C.textDim:C.gold}66`}}>
+                  {{exact:'Exact cell',grouped:'Estimated (grouped bases)',outs_only:'Estimated (outs only)',no_data:'No run-value data'}[battedBall.reSource]}
+                </span>
+              </div>
+              <div style={{fontSize:10,color:C.textDim,marginBottom:10}}>{bbEvBucketInfo?`${bbEvBucketInfo.mph_min.toFixed(0)}–${bbEvBucketInfo.mph_max.toFixed(0)} mph`:''} · {LAUNCH_ANGLE_LABELS[bbAngle]} · {DIRECTION_LABELS[bbDirection]} · n={battedBall.n.toLocaleString()}</div>
+              <div style={{fontSize:9,color:C.textDim,marginBottom:10,lineHeight:1.5}}>This is a distribution of what actually happened on real matching batted balls, not a single prediction. No park or defensive-positioning adjustment — league-wide aggregation washes out large park effects on fly balls especially.</div>
 
-            {resolved.source==='no_data' ? (
-              <div style={{fontSize:12,color:C.textDim,textAlign:'center' as const,padding:12}}>No pitches on record for this exact combination yet.</div>
-            ) : (
-              <>
-                {resolved.avgRunValue && (
-                  <div style={{marginBottom:10,padding:'8px 10px',background:C.bg3,borderRadius:6}}>
-                    <div style={{fontSize:9,color:C.textMuted,textTransform:'uppercase' as const,marginBottom:2}}>Avg. Run Value (positive = favors batter)</div>
-                    <div style={{fontSize:16,fontWeight:700,color:resolved.avgRunValue.mean>=0?C.teal:C.red}}>{resolved.avgRunValue.mean>=0?'+':''}{resolved.avgRunValue.mean.toFixed(3)}</div>
-                    <div style={{fontSize:9,color:C.textDim}}>95% CI [{resolved.avgRunValue.lower.toFixed(3)}, {resolved.avgRunValue.upper.toFixed(3)}]</div>
+              {battedBall.n===0 ? (
+                <div style={{fontSize:12,color:C.textDim,textAlign:'center' as const,padding:12}}>No batted balls on record for this exact combination yet.</div>
+              ) : (
+                <>
+                  {battedBall.avgRunValue && (
+                    <div style={{marginBottom:10,padding:'8px 10px',background:C.bg3,borderRadius:6}}>
+                      <div style={{fontSize:9,color:C.textMuted,textTransform:'uppercase' as const,marginBottom:2}}>Avg. Run Value in This Situation (positive = favors batter)</div>
+                      <div style={{fontSize:16,fontWeight:700,color:battedBall.avgRunValue.mean>=0?C.teal:C.red}}>{battedBall.avgRunValue.mean>=0?'+':''}{battedBall.avgRunValue.mean.toFixed(3)}</div>
+                      <div style={{fontSize:9,color:C.textDim}}>95% CI [{battedBall.avgRunValue.lower.toFixed(3)}, {battedBall.avgRunValue.upper.toFixed(3)}]</div>
+                    </div>
+                  )}
+                  <div style={{fontSize:9,color:C.textMuted,textTransform:'uppercase' as const,marginBottom:6}}>Outcome Breakdown</div>
+                  <div style={{display:'flex',flexDirection:'column' as const,gap:4}}>
+                    {BATTED_OUTCOME_KEYS.map(k=>{
+                      const o = battedBall.outcomes[k]
+                      if (!o) return null
+                      const showRate = o.n>=MIN_RENDER_N || battedBall.n>=MIN_RENDER_N
+                      return (
+                        <div key={k} style={{display:'flex',justifyContent:'space-between',alignItems:'center',fontSize:11}}>
+                          <span style={{color:C.text}}>{BATTED_OUTCOME_LABELS[k]}</span>
+                          {o.ci && showRate ? (
+                            <span style={{color:C.textMuted}}>{(o.ci.p*100).toFixed(1)}% <span style={{color:C.textDim,fontSize:9}}>[{(o.ci.lower*100).toFixed(1)}–{(o.ci.upper*100).toFixed(1)}%]</span></span>
+                          ) : <span style={{color:C.textDim,fontSize:10}}>n={o.n} — too few to rate</span>}
+                        </div>
+                      )
+                    })}
                   </div>
-                )}
-                <div style={{fontSize:9,color:C.textMuted,textTransform:'uppercase' as const,marginBottom:6}}>Outcome Breakdown</div>
-                <div style={{display:'flex',flexDirection:'column' as const,gap:4,marginBottom:10}}>
-                  {OUTCOME_KEYS.filter(k=>(resolved.outcomes[k]?.n||0)>0).sort((a,b)=>(resolved.outcomes[b]?.n||0)-(resolved.outcomes[a]?.n||0)).map(k=>{
-                    const o = resolved.outcomes[k]!
-                    const showRate = o.n>=MIN_RENDER_N || resolved.n>=MIN_RENDER_N
-                    return (
-                      <div key={k} style={{display:'flex',justifyContent:'space-between',alignItems:'center',fontSize:11}}>
-                        <span style={{color:C.text}}>{OUTCOME_LABELS[k]}</span>
-                        {o.ci && showRate ? (
-                          <span style={{color:C.textMuted}}>{(o.ci.p*100).toFixed(1)}% <span style={{color:C.textDim,fontSize:9}}>[{(o.ci.lower*100).toFixed(1)}–{(o.ci.upper*100).toFixed(1)}%]</span></span>
-                        ) : <span style={{color:C.textDim,fontSize:10}}>n={o.n} — too few to rate</span>}
-                      </div>
-                    )
-                  })}
-                </div>
-              </>
-            )}
-            <a href={savantLink} target="_blank" rel="noopener noreferrer" style={{fontSize:11,color:C.blue,display:'block',marginBottom:2}}>View on Baseball Savant ↗</a>
-            {!baseStateExact && <div style={{fontSize:9,color:C.textDim}}>Savant link shows "{BASE_STATE_LABELS[startBaseState]}" inclusively (may include other runners too) — Savant has no way to filter to this exact base state alone.</div>}
-          </div>
+                </>
+              )}
+            </div>
+          ) : (
+            <div style={{background:C.bg2,border:`1px solid ${C.border}`,borderRadius:8,padding:14}}>
+              <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:8}}>
+                <div style={{fontSize:11,fontWeight:700,color:C.textMuted,textTransform:'uppercase' as const,letterSpacing:'0.5px'}}>This Situation</div>
+                <span style={{fontSize:9,fontWeight:700,padding:'2px 7px',borderRadius:10,textTransform:'uppercase' as const,background:resolved.source==='exact'?`${C.teal}26`:resolved.source==='estimated'?`${C.gold}26`:`${C.textDim}26`,color:resolved.source==='exact'?C.teal:resolved.source==='estimated'?C.gold:C.textDim,border:`1px solid ${resolved.source==='exact'?C.teal:resolved.source==='estimated'?C.gold:C.textDim}66`}}>
+                  {resolved.source==='exact'?'Exact cell':resolved.source==='estimated'?'Estimated (broader sample)':'No data'}
+                </span>
+              </div>
+              <div style={{fontSize:10,color:C.textDim,marginBottom:10}}>{pThrows}HP vs {bats}HH · {countBucket} · {startOuts} out{startOuts!==1?'s':''} · {BASE_STATE_LABELS[startBaseState]} · {pitchTypeGroup} · n={resolved.n.toLocaleString()}</div>
+
+              {resolved.source==='no_data' ? (
+                <div style={{fontSize:12,color:C.textDim,textAlign:'center' as const,padding:12}}>No pitches on record for this exact combination yet.</div>
+              ) : (
+                <>
+                  {resolved.avgRunValue && (
+                    <div style={{marginBottom:10,padding:'8px 10px',background:C.bg3,borderRadius:6}}>
+                      <div style={{fontSize:9,color:C.textMuted,textTransform:'uppercase' as const,marginBottom:2}}>Avg. Run Value (positive = favors batter)</div>
+                      <div style={{fontSize:16,fontWeight:700,color:resolved.avgRunValue.mean>=0?C.teal:C.red}}>{resolved.avgRunValue.mean>=0?'+':''}{resolved.avgRunValue.mean.toFixed(3)}</div>
+                      <div style={{fontSize:9,color:C.textDim}}>95% CI [{resolved.avgRunValue.lower.toFixed(3)}, {resolved.avgRunValue.upper.toFixed(3)}]</div>
+                    </div>
+                  )}
+                  <div style={{fontSize:9,color:C.textMuted,textTransform:'uppercase' as const,marginBottom:6}}>Outcome Breakdown</div>
+                  <div style={{display:'flex',flexDirection:'column' as const,gap:4,marginBottom:10}}>
+                    {OUTCOME_KEYS.filter(k=>(resolved.outcomes[k]?.n||0)>0).sort((a,b)=>(resolved.outcomes[b]?.n||0)-(resolved.outcomes[a]?.n||0)).map(k=>{
+                      const o = resolved.outcomes[k]!
+                      const showRate = o.n>=MIN_RENDER_N || resolved.n>=MIN_RENDER_N
+                      return (
+                        <div key={k} style={{display:'flex',justifyContent:'space-between',alignItems:'center',fontSize:11}}>
+                          <span style={{color:C.text}}>{OUTCOME_LABELS[k]}</span>
+                          {o.ci && showRate ? (
+                            <span style={{color:C.textMuted}}>{(o.ci.p*100).toFixed(1)}% <span style={{color:C.textDim,fontSize:9}}>[{(o.ci.lower*100).toFixed(1)}–{(o.ci.upper*100).toFixed(1)}%]</span></span>
+                          ) : <span style={{color:C.textDim,fontSize:10}}>n={o.n} — too few to rate</span>}
+                        </div>
+                      )
+                    })}
+                  </div>
+                </>
+              )}
+              <a href={savantLink} target="_blank" rel="noopener noreferrer" style={{fontSize:11,color:C.blue,display:'block',marginBottom:2}}>View on Baseball Savant ↗</a>
+              {!baseStateExact && <div style={{fontSize:9,color:C.textDim}}>Savant link shows "{BASE_STATE_LABELS[startBaseState]}" inclusively (may include other runners too) — Savant has no way to filter to this exact base state alone.</div>}
+            </div>
+          )}
         </div>
       </div>
 
