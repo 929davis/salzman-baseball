@@ -13,6 +13,14 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const DB_PATH = path.join(__dirname, '..', 'data', 'statcast_2026.duckdb')
 const DRY_RUN = process.argv.includes('--dry-run')
 
+// Frozen to the 2026 first half (Opening Day through the All-Star break cutoff) — matches
+// the statcast_pitches table backfilled by scripts/backfill-statcast-pitches.mjs, replacing
+// the daily Savant cron. The local DuckDB store has data past this date (it was backfilled
+// further for other purposes); this cap keeps both halves of the app in sync on the same
+// frozen range instead of silently drifting apart. NOTE: 2026-07-13 is an unverified
+// placeholder for "day before the All-Star break" — update if the real date differs.
+const FIRST_HALF_END = '2026-07-13'
+
 // Minimal .env.local loader — avoids adding a dotenv dependency for one script.
 function loadEnv() {
   const envPath = path.join(__dirname, '..', '.env.local')
@@ -109,6 +117,7 @@ async function buildClassifiedView(con) {
       (balls::VARCHAR || '-' || strikes::VARCHAR) AS count_bucket,
       ${OUTCOME_SQL} AS outcome
     FROM pitches
+    WHERE game_date <= '${FIRST_HALF_END}'
   `, err => err ? rej(err) : res()))
 }
 
@@ -222,6 +231,88 @@ async function computeBattedBallRE(con) {
       COALESCE(SUM(delta_run_exp*delta_run_exp), 0) AS sum_delta_run_exp_sq
     FROM bucketed
     GROUP BY 1,2,3,4,5
+  `)
+}
+
+// ---------------------------------------------------------------------------
+// Pitch Sequence tool — most common (pitch type, location) sequences leading to a
+// target outcome (strikeout looking, weak contact, barrel, etc).
+//
+// Barrel: Statcast doesn't expose a precomputed `barrel` column in the public CSV export
+// (verified empirically — checked both player_type=batter and player_type=pitcher, neither
+// includes it; the existing production cron's `barrel` field has silently always been false
+// because of this, a pre-existing bug unrelated to this tool). Computed here instead from
+// the two verified anchor points in MLB's official glossary: 98mph -> 26-30 degree window,
+// 116mph -> 8-50 degree window. Linearly interpolated between them (center ~28 degrees,
+// half-width growing ~1.06 degrees/mph) — Statcast's real internal table is not perfectly
+// linear mph-to-mph, so treat this as a close approximation, not an exact replication.
+// "Blast" (squared-up + fast swing) is skipped entirely — squared-up needs a max-possible-
+// exit-velocity formula (from bat speed + pitch speed) that isn't published anywhere found.
+const BARREL_SQL = `
+  CASE
+    WHEN launch_speed IS NULL OR launch_angle IS NULL THEN FALSE
+    WHEN launch_speed < 98 THEN FALSE
+    WHEN launch_speed >= 116 THEN launch_angle BETWEEN 8 AND 50
+    ELSE launch_angle BETWEEN (28 - (2 + (launch_speed-98)*(19.0/18))) AND (28 + (2 + (launch_speed-98)*(19.0/18)))
+  END
+`
+
+// 3-way location bucket (coarser than the 13-zone grid used elsewhere) — keeps the sequence
+// combinatorial space small enough for real patterns to surface rather than one-off noise.
+const LOCATION_BUCKET_SQL = `
+  CASE
+    WHEN zone = 5 THEN 'heart'
+    WHEN zone IN (1,2,3,4,6,7,8,9) THEN 'edge'
+    WHEN zone IN (11,12,13,14) THEN 'chase'
+    ELSE NULL
+  END
+`
+
+async function computeSequences(con) {
+  return all(con, `
+    WITH located AS (
+      SELECT *, ROW_NUMBER() OVER () AS rid, ${LOCATION_BUCKET_SQL} AS location_bucket
+      FROM classified
+    ),
+    -- EV bucket computed ONLY over real batted balls (matching bs_ev_buckets' own scoping
+    -- exactly) — computing it over every pitch would shift the bucket boundaries wrong.
+    ev_ranked AS (
+      SELECT rid, (NTILE(7) OVER (ORDER BY launch_speed))::INTEGER AS ev_bucket
+      FROM located WHERE ${BATTED_BALL_FILTER}
+    ),
+    target_tagged AS (
+      SELECT located.*,
+        CASE
+          WHEN located.outcome='strikeout' AND located.description='called_strike' THEN 'strikeout_looking'
+          WHEN located.outcome='strikeout' AND located.description IN ('swinging_strike','swinging_strike_blocked') THEN 'strikeout_swinging'
+          WHEN located.outcome IN ('out_in_play','single','double','triple','home_run') AND located.launch_speed IS NOT NULL AND ${BARREL_SQL} THEN 'barrel'
+          WHEN ev_ranked.ev_bucket IS NOT NULL AND ev_ranked.ev_bucket <= 2 THEN 'weak_contact'
+          ELSE 'other'
+        END AS target
+      FROM located LEFT JOIN ev_ranked USING (rid)
+    ),
+    pa_ending AS (
+      -- the last pitch of each PA, with the previous pitch's type/location via LAG
+      SELECT
+        p_throws, bats,
+        LAG(pitch_type_group) OVER w AS pt1, LAG(location_bucket) OVER w AS loc1,
+        pitch_type_group AS pt2, location_bucket AS loc2,
+        target,
+        pitch_number, game_pk, at_bat_number
+      FROM target_tagged
+      WINDOW w AS (PARTITION BY game_pk, at_bat_number ORDER BY pitch_number)
+      QUALIFY pitch_number = MAX(pitch_number) OVER (PARTITION BY game_pk, at_bat_number)
+    )
+    SELECT p_throws, bats, pt1, loc1, pt2, loc2,
+      COUNT(*)::INTEGER AS n_total,
+      SUM(CASE WHEN target='strikeout_looking' THEN 1 ELSE 0 END)::INTEGER AS n_strikeout_looking,
+      SUM(CASE WHEN target='strikeout_swinging' THEN 1 ELSE 0 END)::INTEGER AS n_strikeout_swinging,
+      SUM(CASE WHEN target='weak_contact' THEN 1 ELSE 0 END)::INTEGER AS n_weak_contact,
+      SUM(CASE WHEN target='barrel' THEN 1 ELSE 0 END)::INTEGER AS n_barrel,
+      SUM(CASE WHEN target='other' THEN 1 ELSE 0 END)::INTEGER AS n_other
+    FROM pa_ending
+    WHERE pt1 IS NOT NULL AND loc1 IS NOT NULL AND loc2 IS NOT NULL
+    GROUP BY 1,2,3,4,5,6
   `)
 }
 
@@ -343,6 +434,10 @@ async function main() {
   const battedRE = await computeBattedBallRE(con)
   console.log(`  ${battedRE.length} cells`)
 
+  console.log('Computing bs_sequence...')
+  const sequences = await computeSequences(con)
+  console.log(`  ${sequences.length} cells`)
+
   con.close()
 
   if (DRY_RUN) {
@@ -357,6 +452,9 @@ async function main() {
     console.log('evBuckets:', evBuckets)
     console.log('battedOutcome[0]:', battedOutcome[0])
     console.log('battedRE[0]:', battedRE[0])
+    console.log('sequences[0]:', sequences[0])
+    const topByN = [...sequences].sort((a,b)=>b.n_total-a.n_total).slice(0,3)
+    console.log('top 3 by n_total:', topByN)
     return
   }
 
@@ -374,6 +472,7 @@ async function main() {
   await upsert(supabase, 'bs_ev_buckets', evBuckets, 'ev_bucket')
   await upsert(supabase, 'bs_batted_ball_outcome', battedOutcome, 'ev_bucket,launch_angle_category,direction')
   await upsert(supabase, 'bs_batted_ball_re', battedRE, 'ev_bucket,launch_angle_category,direction,outs_when_up,base_state')
+  await upsert(supabase, 'bs_sequence', sequences, 'p_throws,bats,pt1,loc1,pt2,loc2')
   console.log('Done.')
 }
 

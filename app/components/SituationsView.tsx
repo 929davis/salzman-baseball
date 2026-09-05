@@ -2,7 +2,8 @@
 import { useState } from 'react'
 import BaseScenarioTool from '@/app/components/BaseScenarioTool'
 import CountLeverageTable from '@/app/components/CountLeverageTable'
-import { EXACT_CELL_THRESHOLD } from '@/lib/baseScenario'
+import PitchSequenceTool from '@/app/components/PitchSequenceTool'
+import { EXACT_CELL_THRESHOLD, SEQUENCE_MIN_N } from '@/lib/baseScenario'
 
 const C = {
   bg2:'#161b22', bg3:'#1c2333', border:'#30363d', gold:'#e8b84b', textMuted:'#7d8590', textDim:'#484f58', text:'#e6edf3', bg:'#0d1117',
@@ -14,6 +15,7 @@ const LIMITATIONS = [
   <>Numbers can jump when a filter change crosses the sample-size threshold ({EXACT_CELL_THRESHOLD} pitches). Below that threshold, the tool switches from the exact matchup to a broader estimate — a hard switch, not a smooth blend. A jump right at that line is the model changing which data it trusts, not a real baseball effect.</>,
   <>"This situation" means what real pitches thrown at that <i>exact</i> count actually did — it doesn't track what eventually happened to at-bats that passed through a count and then moved on to a different one.</>,
   <>Pitch selection isn't random. A rare pitch at a given count was thrown by a pitcher who chose it, to a hitter they weren't worried about. The data shows what happened when that pitch was chosen — not what would happen if you called for it yourself. Usage % next to each pitch type is there to flag this.</>,
+  <>Pitch Sequences uses a coarser 3-way location bucket (heart/edge/chase, not the full 13-zone grid) and only looks at the last 2 pitches of each at-bat — enough to find real patterns without the data getting too thin, but it won't catch a setup pitch from earlier in a longer at-bat. "Barrel" is computed from the two verified anchor points in MLB's official glossary (98mph→26-30°, 116mph→8-50°) with a straight line drawn between them — real barrel classification isn't perfectly linear mph-to-mph, so treat it as a close approximation. Sequences with fewer than {SEQUENCE_MIN_N} occurrences are dropped entirely rather than shown as noise.</>,
 ]
 
 // Single entry point for the whole Base Scenario Tool, mounted identically in the coach
@@ -41,6 +43,9 @@ export default function SituationsView(){
       <BaseScenarioTool/>
       <div style={{marginTop:20,paddingTop:20,borderTop:`1px solid ${C.border}`}}>
         <CountLeverageTable/>
+      </div>
+      <div style={{marginTop:20,paddingTop:20,borderTop:`1px solid ${C.border}`}}>
+        <PitchSequenceTool/>
       </div>
     </div>
   )

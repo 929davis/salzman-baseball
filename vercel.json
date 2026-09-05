@@ -1,8 +1,1 @@
-{
-  "crons": [
-    {
-      "path": "/api/cron/fetch-statcast",
-      "schedule": "0 10 * * *"
-    }
-  ]
-}
+{}

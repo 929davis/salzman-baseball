@@ -269,3 +269,54 @@ export function sampleZone(zoneSampleRow: any | undefined): number | null {
   }
   return zones[zones.length - 1]
 }
+
+// ---------------------------------------------------------------------------
+// Pitch Sequence tool — most common (pitch type, location) 2-pitch sequences leading to a
+// target outcome. See aggregate-base-scenario.mjs's computeSequences for how bs_sequence
+// is built (last 2 pitches of each plate appearance).
+// ---------------------------------------------------------------------------
+
+export const TARGET_OUTCOMES = ['strikeout_looking','strikeout_swinging','weak_contact','barrel'] as const
+export type TargetOutcome = typeof TARGET_OUTCOMES[number]
+export const TARGET_OUTCOME_LABELS: Record<TargetOutcome,string> = {
+  strikeout_looking: 'Strikeout Looking', strikeout_swinging: 'Strikeout Swinging',
+  weak_contact: 'Weak Contact', barrel: 'Barrel',
+}
+
+export const LOCATION_BUCKETS = ['heart','edge','chase'] as const
+export const LOCATION_BUCKET_LABELS: Record<string,string> = {
+  heart: 'Heart (down the middle)', edge: 'Edge (in-zone corner)', chase: 'Chase (off the plate)',
+}
+
+// "If it happened once or twice, don't worry about it" — floor on the raw count of the
+// target outcome itself for the frequency ranking, and on total sequence occurrences for
+// the rate ranking (a rate computed from n=3 isn't a rate, it's noise).
+export const SEQUENCE_MIN_N = 20
+
+export type SequenceResult = {
+  pt1: string, loc1: string, pt2: string, loc2: string,
+  nTarget: number, nTotal: number, rate: WilsonResult | null,
+}
+
+// Definition B (mode) — of every plate appearance ending in this target outcome, which
+// 2-pitch sequences show up most often. Simple frequency count. Dominated by whatever
+// pitch is thrown most in general (e.g. four-seam) — that's expected, not a bug; pair with
+// getTopSequencesByRate to separate "common sequence" from "uniquely dangerous sequence."
+export function getTopSequencesByFrequency(rows: any[], target: TargetOutcome, pThrows: string, bats: string, limit = 10): SequenceResult[] {
+  return rows
+    .filter(r => r.p_throws === pThrows && r.bats === bats && r[`n_${target}`] >= SEQUENCE_MIN_N)
+    .map(r => ({ pt1:r.pt1, loc1:r.loc1, pt2:r.pt2, loc2:r.loc2, nTarget:r[`n_${target}`], nTotal:r.n_total, rate: wilsonCI(r[`n_${target}`], r.n_total) }))
+    .sort((a, b) => b.nTarget - a.nTarget)
+    .slice(0, limit)
+}
+
+// Definition A (rate) — of sequences thrown often enough to trust a rate, which ones
+// resulted in the target outcome most often. Requires n_total (not just n_target) above
+// the floor, since this is a rate over ALL outcomes of that sequence, not just the target.
+export function getTopSequencesByRate(rows: any[], target: TargetOutcome, pThrows: string, bats: string, limit = 10): SequenceResult[] {
+  return rows
+    .filter(r => r.p_throws === pThrows && r.bats === bats && r.n_total >= SEQUENCE_MIN_N)
+    .map(r => ({ pt1:r.pt1, loc1:r.loc1, pt2:r.pt2, loc2:r.loc2, nTarget:r[`n_${target}`], nTotal:r.n_total, rate: wilsonCI(r[`n_${target}`], r.n_total) }))
+    .sort((a, b) => (b.rate?.p ?? 0) - (a.rate?.p ?? 0))
+    .slice(0, limit)
+}
