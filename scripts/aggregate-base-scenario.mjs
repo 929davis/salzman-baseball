@@ -140,9 +140,12 @@ async function computePitchMarginal(con) {
 const ZONES = [1,2,3,4,5,6,7,8,9,11,12,13,14]
 
 // Real zone-location distribution per (matchup, pitch type, count, outcome) — used by the
-// zone panel to show a realistic pitch location for each simulated action, since the
-// production statcast_pitches table has no location data at all for ball/called-strike
-// outcomes (see conversation: that table only ever ingested swings). Deliberately a single
+// zone panel to show a realistic pitch location for each simulated action. This table still
+// covers ball/called-strike outcomes independently of statcast_pitches (which turned out to
+// have them all along too — its hfDes filter was found to be a no-op against Savant's live
+// CSV endpoint, verified by direct A/B request: filtered and unfiltered pulls for the same
+// date returned identical row counts. A stale assumption, not a current gap; corrected here
+// since an earlier version of this comment claimed the opposite). Deliberately a single
 // granularity level (no hybrid backoff like the run-value tables) — this is a visual aid,
 // not a statistical claim, so when a combo has no data the UI just won't have a sample for it.
 async function computeZoneSample(con) {
@@ -316,6 +319,83 @@ async function computeSequences(con) {
   `)
 }
 
+// ---------------------------------------------------------------------------
+// Effective Velocity (Perry Husband's theory) — Phase 2: bucket every consecutive pitch pair
+// within an at-bat by how much perceived speed changed between them, joined to the real
+// outcome of the pitch that followed. Phase 3 (client-side, lib/effectiveVelocity.ts) turns
+// these buckets into actual rate/mean-run-value comparisons with confidence intervals —
+// OUR data assigning the weights, not Husband's published (and independently disputed —
+// see conversation/Driveline citation) numbers taken on faith.
+//
+// SQL re-implementation of lib/effectiveVelocity.ts's formula (DuckDB SQL can't import a TS
+// module) — the two must be kept in sync. Same coefficient (2.75 mph / 6in) and same
+// additive (not true-perpendicular) combination of the insideness/height axes, for the same
+// reason documented there: Husband's own material never gives an unambiguous combined-axis
+// formula, and the additive form reproduces his cited ~8-10mph corner-to-corner spread
+// against our real 2026 zone dimensions.
+const EV_MPH_PER_INCH = 2.75 / 6
+const ATTENTION_ZONE_MPH = 6
+
+// plate_x sign verified empirically against real 2026 pull-tendency data (see
+// lib/effectiveVelocity.ts) — positive plate_x is away-for-RHH/inside-for-LHH, so it flips
+// sign per batter side to get a batter-relative "insideness".
+function evSql(prefix) {
+  const px = `${prefix}plate_x`, pz = `${prefix}plate_z`, top = `${prefix}sz_top`, bot = `${prefix}sz_bot`, spd = `${prefix}release_speed`
+  const insideness = `(CASE WHEN bats='R' THEN -${px} ELSE ${px} END) * 12`
+  const height = `(${pz} - (${top}+${bot})/2) * 12`
+  return `(${spd} + ((${insideness}) + (${height})) * ${EV_MPH_PER_INCH})`
+}
+
+// Only the CURRENT pitch's outcome/delta_run_exp is the dependent variable here (not the
+// whole rest of the at-bat) — matching Driveline's own pitch-level methodology, and keeping
+// this a bivariate view: no matchup/pitch-type split (that would spread ~1.7M pairs too thin
+// across cells), unlike the rest of this tool. A documented scope choice, not an oversight.
+async function computeEvPairs(con) {
+  return all(con, `
+    WITH ordered AS (
+      SELECT *,
+        LAG(release_speed) OVER w AS prev_release_speed,
+        LAG(plate_x) OVER w AS prev_plate_x,
+        LAG(plate_z) OVER w AS prev_plate_z,
+        LAG(sz_top) OVER w AS prev_sz_top,
+        LAG(sz_bot) OVER w AS prev_sz_bot
+      FROM classified
+      WINDOW w AS (PARTITION BY game_pk, at_bat_number ORDER BY pitch_number)
+    ),
+    pairs AS (
+      SELECT *,
+        (release_speed - prev_release_speed) AS actual_diff,
+        (${evSql('')} - ${evSql('prev_')}) AS ev_diff
+      FROM ordered
+      WHERE release_speed IS NOT NULL AND prev_release_speed IS NOT NULL
+        AND plate_x IS NOT NULL AND plate_z IS NOT NULL AND sz_top IS NOT NULL AND sz_bot IS NOT NULL
+        AND prev_plate_x IS NOT NULL AND prev_plate_z IS NOT NULL AND prev_sz_top IS NOT NULL AND prev_sz_bot IS NOT NULL
+    ),
+    bucketed AS (
+      SELECT *,
+        (ROUND(ev_diff/2.0)*2)::INTEGER AS ev_diff_bucket,
+        (ROUND(actual_diff/2.0)*2)::INTEGER AS actual_diff_bucket,
+        (ABS(ev_diff) <= ${ATTENTION_ZONE_MPH}) AS within_attention_zone,
+        (SIGN(actual_diff) = SIGN(ev_diff) AND SIGN(actual_diff) != 0) AS same_direction,
+        (outcome = 'swinging_strike') AS is_whiff,
+        (outcome IN ('out_in_play','single','double','triple','home_run')) AS is_in_play,
+        (outcome IN ('out_in_play','single','double','triple','home_run') AND launch_speed IS NOT NULL AND launch_speed >= 95) AS is_hard_hit,
+        (outcome IN ('out_in_play','single','double','triple','home_run') AND launch_speed IS NOT NULL AND launch_angle IS NOT NULL AND ${BARREL_SQL}) AS is_barrel
+      FROM pairs
+    )
+    SELECT ev_diff_bucket, actual_diff_bucket, within_attention_zone, same_direction,
+      COUNT(*)::INTEGER AS n,
+      SUM(CASE WHEN is_whiff THEN 1 ELSE 0 END)::INTEGER AS n_whiff,
+      SUM(CASE WHEN is_in_play THEN 1 ELSE 0 END)::INTEGER AS n_in_play,
+      SUM(CASE WHEN is_hard_hit THEN 1 ELSE 0 END)::INTEGER AS n_hard_hit,
+      SUM(CASE WHEN is_barrel THEN 1 ELSE 0 END)::INTEGER AS n_barrel,
+      COALESCE(SUM(delta_run_exp), 0) AS sum_delta_run_exp,
+      COALESCE(SUM(delta_run_exp*delta_run_exp), 0) AS sum_delta_run_exp_sq
+    FROM bucketed
+    GROUP BY 1,2,3,4
+  `)
+}
+
 async function computeReMarginal(con) {
   return all(con, `
     SELECT outs_when_up, base_state, count_bucket, COUNT(*)::INTEGER AS n,
@@ -438,6 +518,10 @@ async function main() {
   const sequences = await computeSequences(con)
   console.log(`  ${sequences.length} cells`)
 
+  console.log('Computing bs_ev_pairs...')
+  const evPairs = await computeEvPairs(con)
+  console.log(`  ${evPairs.length} cells`)
+
   con.close()
 
   if (DRY_RUN) {
@@ -455,6 +539,8 @@ async function main() {
     console.log('sequences[0]:', sequences[0])
     const topByN = [...sequences].sort((a,b)=>b.n_total-a.n_total).slice(0,3)
     console.log('top 3 by n_total:', topByN)
+    console.log('evPairs[0]:', evPairs[0])
+    console.log('evPairs total n:', evPairs.reduce((s,r)=>s+r.n,0))
     return
   }
 
@@ -473,6 +559,7 @@ async function main() {
   await upsert(supabase, 'bs_batted_ball_outcome', battedOutcome, 'ev_bucket,launch_angle_category,direction')
   await upsert(supabase, 'bs_batted_ball_re', battedRE, 'ev_bucket,launch_angle_category,direction,outs_when_up,base_state')
   await upsert(supabase, 'bs_sequence', sequences, 'p_throws,bats,pt1,loc1,pt2,loc2')
+  await upsert(supabase, 'bs_ev_pairs', evPairs, 'ev_diff_bucket,actual_diff_bucket,within_attention_zone,same_direction')
   console.log('Done.')
 }
 
