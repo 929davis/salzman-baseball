@@ -271,7 +271,16 @@ const LOCATION_BUCKET_SQL = `
   END
 `
 
-async function computeSequences(con) {
+// Both sequence tables below share the same EV-differential math as bs_ev_pairs (evSql,
+// ATTENTION_ZONE_MPH — defined further down in the Effective Velocity section; referenced
+// here only inside template literals evaluated at call time, after the whole module has
+// loaded, so the physical ordering in this file doesn't matter).
+//
+// bs_sequence_pa: last-2-pitches-of-the-at-bat only, since single/double/HR/walk/strikeout
+// can each only happen once per at-bat — a true final result, not a per-pitch reaction.
+// Barrel and weak-contact are independent flags (not mutually exclusive with the hit type) —
+// a ball can be both a barrel AND a single, same pattern as bs_ev_pairs' n_hard_hit/n_barrel.
+async function computeSequencePA(con) {
   return all(con, `
     WITH located AS (
       SELECT *, ROW_NUMBER() OVER () AS rid, ${LOCATION_BUCKET_SQL} AS location_bucket
@@ -283,38 +292,126 @@ async function computeSequences(con) {
       SELECT rid, (NTILE(7) OVER (ORDER BY launch_speed))::INTEGER AS ev_bucket
       FROM located WHERE ${BATTED_BALL_FILTER}
     ),
-    target_tagged AS (
+    tagged AS (
       SELECT located.*,
         CASE
+          WHEN located.outcome='single' THEN 'single'
+          WHEN located.outcome='double' THEN 'double'
+          WHEN located.outcome='triple' THEN 'triple'
+          WHEN located.outcome='home_run' THEN 'home_run'
+          WHEN located.outcome='walk' THEN 'walk'
+          WHEN located.outcome='hbp' THEN 'hbp'
           WHEN located.outcome='strikeout' AND located.description='called_strike' THEN 'strikeout_looking'
           WHEN located.outcome='strikeout' AND located.description IN ('swinging_strike','swinging_strike_blocked') THEN 'strikeout_swinging'
-          WHEN located.outcome IN ('out_in_play','single','double','triple','home_run') AND located.launch_speed IS NOT NULL AND ${BARREL_SQL} THEN 'barrel'
-          WHEN ev_ranked.ev_bucket IS NOT NULL AND ev_ranked.ev_bucket <= 2 THEN 'weak_contact'
+          WHEN located.outcome='out_in_play' THEN 'out_in_play'
           ELSE 'other'
-        END AS target
+        END AS final_outcome,
+        (located.outcome IN ('out_in_play','single','double','triple','home_run') AND located.launch_speed IS NOT NULL AND located.launch_angle IS NOT NULL AND ${BARREL_SQL}) AS is_barrel,
+        (ev_ranked.ev_bucket IS NOT NULL AND ev_ranked.ev_bucket <= 2) AS is_weak_contact
       FROM located LEFT JOIN ev_ranked USING (rid)
     ),
     pa_ending AS (
-      -- the last pitch of each PA, with the previous pitch's type/location via LAG
+      -- the last pitch of each PA, with the previous pitch's type/location/geometry via LAG
       SELECT
         p_throws, bats,
         LAG(pitch_type_group) OVER w AS pt1, LAG(location_bucket) OVER w AS loc1,
         pitch_type_group AS pt2, location_bucket AS loc2,
-        target,
+        LAG(release_speed) OVER w AS prev_release_speed,
+        LAG(plate_x) OVER w AS prev_plate_x, LAG(plate_z) OVER w AS prev_plate_z,
+        LAG(sz_top) OVER w AS prev_sz_top, LAG(sz_bot) OVER w AS prev_sz_bot,
+        release_speed, plate_x, plate_z, sz_top, sz_bot,
+        final_outcome, is_barrel, is_weak_contact, delta_run_exp,
         pitch_number, game_pk, at_bat_number
-      FROM target_tagged
+      FROM tagged
       WINDOW w AS (PARTITION BY game_pk, at_bat_number ORDER BY pitch_number)
       QUALIFY pitch_number = MAX(pitch_number) OVER (PARTITION BY game_pk, at_bat_number)
+    ),
+    withev AS (
+      SELECT *,
+        (${evSql('')} - ${evSql('prev_')}) AS ev_diff,
+        (release_speed - prev_release_speed) AS actual_diff
+      FROM pa_ending
+      WHERE pt1 IS NOT NULL AND loc1 IS NOT NULL AND loc2 IS NOT NULL
+        AND release_speed IS NOT NULL AND prev_release_speed IS NOT NULL
+        AND plate_x IS NOT NULL AND plate_z IS NOT NULL AND sz_top IS NOT NULL AND sz_bot IS NOT NULL
+        AND prev_plate_x IS NOT NULL AND prev_plate_z IS NOT NULL AND prev_sz_top IS NOT NULL AND prev_sz_bot IS NOT NULL
     )
     SELECT p_throws, bats, pt1, loc1, pt2, loc2,
-      COUNT(*)::INTEGER AS n_total,
-      SUM(CASE WHEN target='strikeout_looking' THEN 1 ELSE 0 END)::INTEGER AS n_strikeout_looking,
-      SUM(CASE WHEN target='strikeout_swinging' THEN 1 ELSE 0 END)::INTEGER AS n_strikeout_swinging,
-      SUM(CASE WHEN target='weak_contact' THEN 1 ELSE 0 END)::INTEGER AS n_weak_contact,
-      SUM(CASE WHEN target='barrel' THEN 1 ELSE 0 END)::INTEGER AS n_barrel,
-      SUM(CASE WHEN target='other' THEN 1 ELSE 0 END)::INTEGER AS n_other
-    FROM pa_ending
-    WHERE pt1 IS NOT NULL AND loc1 IS NOT NULL AND loc2 IS NOT NULL
+      COUNT(*)::INTEGER AS n,
+      SUM(CASE WHEN final_outcome='single' THEN 1 ELSE 0 END)::INTEGER AS n_single,
+      SUM(CASE WHEN final_outcome='double' THEN 1 ELSE 0 END)::INTEGER AS n_double,
+      SUM(CASE WHEN final_outcome='triple' THEN 1 ELSE 0 END)::INTEGER AS n_triple,
+      SUM(CASE WHEN final_outcome='home_run' THEN 1 ELSE 0 END)::INTEGER AS n_home_run,
+      SUM(CASE WHEN final_outcome='walk' THEN 1 ELSE 0 END)::INTEGER AS n_walk,
+      SUM(CASE WHEN final_outcome='hbp' THEN 1 ELSE 0 END)::INTEGER AS n_hbp,
+      SUM(CASE WHEN final_outcome='strikeout_looking' THEN 1 ELSE 0 END)::INTEGER AS n_strikeout_looking,
+      SUM(CASE WHEN final_outcome='strikeout_swinging' THEN 1 ELSE 0 END)::INTEGER AS n_strikeout_swinging,
+      SUM(CASE WHEN final_outcome='out_in_play' THEN 1 ELSE 0 END)::INTEGER AS n_out_in_play,
+      SUM(CASE WHEN is_barrel THEN 1 ELSE 0 END)::INTEGER AS n_barrel,
+      SUM(CASE WHEN is_weak_contact THEN 1 ELSE 0 END)::INTEGER AS n_weak_contact,
+      SUM(CASE WHEN ABS(ev_diff) <= ${ATTENTION_ZONE_MPH} THEN 1 ELSE 0 END)::INTEGER AS n_within_attention_zone,
+      SUM(CASE WHEN SIGN(actual_diff)=SIGN(ev_diff) AND SIGN(actual_diff)!=0 THEN 1 ELSE 0 END)::INTEGER AS n_same_direction,
+      COALESCE(SUM(ev_diff),0) AS sum_ev_diff,
+      COALESCE(SUM(ev_diff*ev_diff),0) AS sum_ev_diff_sq,
+      COALESCE(SUM(actual_diff),0) AS sum_actual_diff,
+      COALESCE(SUM(actual_diff*actual_diff),0) AS sum_actual_diff_sq,
+      COALESCE(SUM(delta_run_exp),0) AS sum_delta_run_exp,
+      COALESCE(SUM(delta_run_exp*delta_run_exp),0) AS sum_delta_run_exp_sq
+    FROM withev
+    GROUP BY 1,2,3,4,5,6
+  `)
+}
+
+// bs_sequence_any: EVERY consecutive pitch pair (not just PA-ending), tagging the immediate
+// single-pitch reaction of the 2nd pitch — ball, called strike, swinging strike, foul, or
+// in-play (with hard-hit/barrel as flags). This is the "swing and miss anywhere" view — a
+// whiff mid-at-bat never appears in bs_sequence_pa since it doesn't end the PA. Terminal hit
+// types (single/HR/etc) live exclusively in bs_sequence_pa — kept out here to avoid double-
+// counting the same event under two different tables.
+async function computeSequenceAny(con) {
+  return all(con, `
+    WITH located AS (
+      SELECT *, ${LOCATION_BUCKET_SQL} AS location_bucket
+      FROM classified
+    ),
+    ordered AS (
+      SELECT *,
+        LAG(pitch_type_group) OVER w AS pt1, LAG(location_bucket) OVER w AS loc1,
+        pitch_type_group AS pt2, location_bucket AS loc2,
+        LAG(release_speed) OVER w AS prev_release_speed,
+        LAG(plate_x) OVER w AS prev_plate_x, LAG(plate_z) OVER w AS prev_plate_z,
+        LAG(sz_top) OVER w AS prev_sz_top, LAG(sz_bot) OVER w AS prev_sz_bot
+      FROM located
+      WINDOW w AS (PARTITION BY game_pk, at_bat_number ORDER BY pitch_number)
+    ),
+    pairs AS (
+      SELECT *,
+        (${evSql('')} - ${evSql('prev_')}) AS ev_diff,
+        (release_speed - prev_release_speed) AS actual_diff
+      FROM ordered
+      WHERE pt1 IS NOT NULL AND loc1 IS NOT NULL AND loc2 IS NOT NULL
+        AND release_speed IS NOT NULL AND prev_release_speed IS NOT NULL
+        AND plate_x IS NOT NULL AND plate_z IS NOT NULL AND sz_top IS NOT NULL AND sz_bot IS NOT NULL
+        AND prev_plate_x IS NOT NULL AND prev_plate_z IS NOT NULL AND prev_sz_top IS NOT NULL AND prev_sz_bot IS NOT NULL
+    )
+    SELECT p_throws, bats, pt1, loc1, pt2, loc2,
+      COUNT(*)::INTEGER AS n,
+      SUM(CASE WHEN outcome='ball' THEN 1 ELSE 0 END)::INTEGER AS n_ball,
+      SUM(CASE WHEN outcome='called_strike' THEN 1 ELSE 0 END)::INTEGER AS n_called_strike,
+      SUM(CASE WHEN outcome='swinging_strike' THEN 1 ELSE 0 END)::INTEGER AS n_swinging_strike,
+      SUM(CASE WHEN outcome='foul' THEN 1 ELSE 0 END)::INTEGER AS n_foul,
+      SUM(CASE WHEN outcome IN ('out_in_play','single','double','triple','home_run') THEN 1 ELSE 0 END)::INTEGER AS n_in_play,
+      SUM(CASE WHEN outcome IN ('out_in_play','single','double','triple','home_run') AND launch_speed IS NOT NULL AND launch_speed>=95 THEN 1 ELSE 0 END)::INTEGER AS n_hard_hit,
+      SUM(CASE WHEN outcome IN ('out_in_play','single','double','triple','home_run') AND launch_speed IS NOT NULL AND launch_angle IS NOT NULL AND ${BARREL_SQL} THEN 1 ELSE 0 END)::INTEGER AS n_barrel,
+      SUM(CASE WHEN ABS(ev_diff) <= ${ATTENTION_ZONE_MPH} THEN 1 ELSE 0 END)::INTEGER AS n_within_attention_zone,
+      SUM(CASE WHEN SIGN(actual_diff)=SIGN(ev_diff) AND SIGN(actual_diff)!=0 THEN 1 ELSE 0 END)::INTEGER AS n_same_direction,
+      COALESCE(SUM(ev_diff),0) AS sum_ev_diff,
+      COALESCE(SUM(ev_diff*ev_diff),0) AS sum_ev_diff_sq,
+      COALESCE(SUM(actual_diff),0) AS sum_actual_diff,
+      COALESCE(SUM(actual_diff*actual_diff),0) AS sum_actual_diff_sq,
+      COALESCE(SUM(delta_run_exp),0) AS sum_delta_run_exp,
+      COALESCE(SUM(delta_run_exp*delta_run_exp),0) AS sum_delta_run_exp_sq
+    FROM pairs
     GROUP BY 1,2,3,4,5,6
   `)
 }
@@ -514,9 +611,13 @@ async function main() {
   const battedRE = await computeBattedBallRE(con)
   console.log(`  ${battedRE.length} cells`)
 
-  console.log('Computing bs_sequence...')
-  const sequences = await computeSequences(con)
-  console.log(`  ${sequences.length} cells`)
+  console.log('Computing bs_sequence_pa...')
+  const sequencePA = await computeSequencePA(con)
+  console.log(`  ${sequencePA.length} cells`)
+
+  console.log('Computing bs_sequence_any...')
+  const sequenceAny = await computeSequenceAny(con)
+  console.log(`  ${sequenceAny.length} cells`)
 
   console.log('Computing bs_ev_pairs...')
   const evPairs = await computeEvPairs(con)
@@ -536,9 +637,11 @@ async function main() {
     console.log('evBuckets:', evBuckets)
     console.log('battedOutcome[0]:', battedOutcome[0])
     console.log('battedRE[0]:', battedRE[0])
-    console.log('sequences[0]:', sequences[0])
-    const topByN = [...sequences].sort((a,b)=>b.n_total-a.n_total).slice(0,3)
-    console.log('top 3 by n_total:', topByN)
+    console.log('sequencePA[0]:', sequencePA[0])
+    const topByN = [...sequencePA].sort((a,b)=>b.n-a.n).slice(0,3)
+    console.log('top 3 PA-ending by n:', topByN)
+    console.log('sequenceAny[0]:', sequenceAny[0])
+    console.log('sequenceAny total n:', sequenceAny.reduce((s,r)=>s+r.n,0))
     console.log('evPairs[0]:', evPairs[0])
     console.log('evPairs total n:', evPairs.reduce((s,r)=>s+r.n,0))
     return
@@ -558,7 +661,8 @@ async function main() {
   await upsert(supabase, 'bs_ev_buckets', evBuckets, 'ev_bucket')
   await upsert(supabase, 'bs_batted_ball_outcome', battedOutcome, 'ev_bucket,launch_angle_category,direction')
   await upsert(supabase, 'bs_batted_ball_re', battedRE, 'ev_bucket,launch_angle_category,direction,outs_when_up,base_state')
-  await upsert(supabase, 'bs_sequence', sequences, 'p_throws,bats,pt1,loc1,pt2,loc2')
+  await upsert(supabase, 'bs_sequence_pa', sequencePA, 'p_throws,bats,pt1,loc1,pt2,loc2')
+  await upsert(supabase, 'bs_sequence_any', sequenceAny, 'p_throws,bats,pt1,loc1,pt2,loc2')
   await upsert(supabase, 'bs_ev_pairs', evPairs, 'ev_diff_bucket,actual_diff_bucket,within_attention_zone,same_direction')
   console.log('Done.')
 }
