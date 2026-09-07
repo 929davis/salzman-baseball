@@ -83,6 +83,33 @@ export const THREE_TIER_COLORS:Record<ThreeTierStatus,string> = {
   OK:'#39d353', Caution:'#e8b84b', Flag:'#f85149',
 }
 
+export type TrendPoint = { date: string, value: number }
+export type ArmCareTrends = {
+  svr: TrendPoint[], erPct: TrendPoint[], irPct: TrendPoint[], romAsym: TrendPoint[],
+}
+
+// Full history (not just the latest test) for all 4 derived arm-care metrics, in
+// chronological order — shared by the coach and athlete arm-care views so both chart the
+// same way instead of each re-deriving this from raw armCareTests rows. Every test uses the
+// SAME current effectiveVelocity for its SVR point (we don't have a historical velocity per
+// test date, only per-pitcher) — consistent with how ProgressOverview already does this for
+// its flagged-metric sparklines.
+export function computeArmCareTrends(armCareTests: any[], effectiveVelocity: number | null): ArmCareTrends {
+  const asc = [...armCareTests].sort((a, b) => a.created_at.localeCompare(b.created_at))
+  const svr: TrendPoint[] = [], erPct: TrendPoint[] = [], irPct: TrendPoint[] = [], romAsym: TrendPoint[] = []
+  for (const t of asc) {
+    const s = calcStrengthVelocityRatio(t.er_load_lbs, t.ir_load_lbs, effectiveVelocity)
+    if (s) svr.push({ date: t.created_at, value: Math.round(s.ratio * 100) / 100 })
+    const er = calcBodyweightPct(t.er_load_lbs, t.bodyweight_lbs)
+    if (er != null) erPct.push({ date: t.created_at, value: Math.round(er) })
+    const ir = calcBodyweightPct(t.ir_load_lbs, t.bodyweight_lbs)
+    if (ir != null) irPct.push({ date: t.created_at, value: Math.round(ir) })
+    const rom = calcRomAsymmetry(t.er_rom_deg, t.ir_rom_deg)
+    if (rom) romAsym.push({ date: t.created_at, value: Math.round(rom.pctDiff) })
+  }
+  return { svr, erPct, irPct, romAsym }
+}
+
 // ---------------------------------------------------------------------------
 // Strength-depletion-based arm care model.
 // strengthDepletionLbs: throw volume converted to an estimated strength-depletion figure.

@@ -165,6 +165,7 @@ export default function PitcherDashboard(){
   const [cmjResults,setCmjResults]=useState<any[]>([])
   const [foodLogs,setFoodLogs]=useState<any[]>([])
   const [dailyFuelScore,setDailyFuelScore]=useState<any>(null)
+  const [weekFuelScores,setWeekFuelScores]=useState<any[]>([])
   const [loading,setLoading]=useState(true)
   const [msgText,setMsgText]=useState('')
   const [logForm,setLogForm]=useState({date:new Date().toISOString().split('T')[0],velocity:'',weightLifted:'',sprintTime:'',pitchCount:'',highEffortThrows:'',feeling:7,soreness:[] as string[],readiness:'',notes:''})
@@ -196,7 +197,8 @@ export default function PitcherDashboard(){
       const {data:prof}=await supabase.from('profiles').select('*').eq('id',user.id).single()
       if (!prof||prof.role==='coach'){router.push('/coach');return}
       setProfile(prof)
-      const [progRes,logsRes,msgsRes,notesRes,cmjRes,foodRes,fuelRes,videosRes]=await Promise.all([
+      const sevenDaysAgo=new Date(Date.now()-7*24*60*60*1000).toISOString().split('T')[0]
+      const [progRes,logsRes,msgsRes,notesRes,cmjRes,foodRes,fuelRes,weekFuelRes,videosRes]=await Promise.all([
         supabase.from('programs').select('*').eq('pitcher_id',prof.id).order('week_of',{ascending:false}).limit(1),
         supabase.from('session_logs').select('*').eq('pitcher_id',prof.id).order('log_date',{ascending:false}).limit(20),
         supabase.from('messages').select('*').eq('pitcher_id',prof.id).order('created_at'),
@@ -204,6 +206,7 @@ export default function PitcherDashboard(){
         supabase.from('cmj_results').select('*').eq('pitcher_id',prof.id).order('test_date',{ascending:false}),
         supabase.from('food_logs').select('*').eq('pitcher_id',prof.id).eq('log_date',today).order('created_at'),
         supabase.from('daily_fuel_scores').select('*').eq('pitcher_id',prof.id).eq('log_date',today).single(),
+        supabase.from('daily_fuel_scores').select('*').eq('pitcher_id',prof.id).gte('log_date',sevenDaysAgo).order('log_date'),
         supabase.from('exercise_videos').select('*'),
       ])
       setProgram(progRes.data?.[0]||null)
@@ -213,6 +216,7 @@ export default function PitcherDashboard(){
       setCmjResults(cmjRes.data||[])
       setFoodLogs(foodRes.data||[])
       setDailyFuelScore(fuelRes.data||null)
+      setWeekFuelScores(weekFuelRes.data||[])
       const videoMap: Record<string, string> = {}
       ;(videosRes.data || []).forEach((v: any) => { videoMap[v.exercise_id] = v.video_url })
       setExerciseVideos(videoMap)
@@ -274,6 +278,10 @@ export default function PitcherDashboard(){
         total_score:dayScores.total,water_oz:dailyFuelScore?.water_oz||0
       },{onConflict:'pitcher_id,log_date'})
       setDailyFuelScore((prev:any)=>({...prev,...dayScores,total_score:dayScores.total}))
+      setWeekFuelScores((prev:any[])=>{
+        const others=prev.filter(s=>s.log_date!==today)
+        return [...others,{log_date:today,total_score:dayScores.total}].sort((a,b)=>a.log_date.localeCompare(b.log_date))
+      })
     }
     setMealForm(BLANK_MEAL)
     setMealSaved(true);setTimeout(()=>setMealSaved(false),2000)
@@ -384,7 +392,31 @@ export default function PitcherDashboard(){
 
         {/* OVERVIEW TAB */}
         {tab==='overview'&&profile&&(
-          <ProgressOverview pitcherId={profile.id} mode="athlete"/>
+          <div>
+            <ProgressOverview pitcherId={profile.id} mode="athlete"/>
+            {/* Workload Trend — from logged sessions, a real time series (unlike the
+                throw-volume breakdown on the coach side, which is a snapshot of the current
+                week's program by category, not something with a history to chart). */}
+            {logs.length>1&&(()=>{
+              const asc=[...logs].reverse()
+              const pitchHist=asc.map(r=>({date:r.log_date,value:r.pitch_count})).filter(h=>h.value!=null)
+              const heHist=asc.map(r=>({date:r.log_date,value:r.high_effort_throws})).filter(h=>h.value!=null)
+              if (pitchHist.length<2 && heHist.length<2) return null
+              return (
+                <div style={card}>
+                  <div style={{fontSize:14,fontWeight:700,color:C.white,marginBottom:10}}>Workload Trend</div>
+                  <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(140px,1fr))',gap:10}}>
+                    {[{label:'Pitch Count',hist:pitchHist,color:C.blue,unit:''},{label:'High-Effort Throws',hist:heHist,color:C.red,unit:''}].map(m=>(
+                      <div key={m.label}>
+                        <div style={{fontSize:10,color:C.textMuted,textTransform:'uppercase' as const,letterSpacing:'0.5px',marginBottom:4}}>{m.label}</div>
+                        {m.hist.length>1?<MiniSparkline data={m.hist} color={m.color} unit={m.unit} height={70}/>:<div style={{fontSize:11,color:C.textDim,padding:'20px 0',textAlign:'center' as const}}>Not enough data</div>}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )
+            })()}
+          </div>
         )}
 
         {/* PROGRAM TAB */}
@@ -467,6 +499,23 @@ export default function PitcherDashboard(){
                 </div>
               )}
               {todayScores.total===0&&<div style={{fontSize:12,color:C.textDim}}>Log your first meal to see your score</div>}
+              {weekFuelScores.length>1&&(
+                <div style={{marginTop:16,paddingTop:16,borderTop:`1px solid ${C.border}`,textAlign:'left' as const}}>
+                  <div style={{fontSize:10,color:C.textMuted,fontWeight:700,textTransform:'uppercase' as const,letterSpacing:'0.5px',marginBottom:8}}>7-Day Fuel Trend</div>
+                  <div style={{display:'flex',gap:4,alignItems:'flex-end',height:48}}>
+                    {weekFuelScores.map((s:any,i:number)=>{
+                      const score=s.total_score||0
+                      const height=Math.max(4,Math.round((score/100)*44))
+                      return(
+                        <div key={i} style={{flex:1,display:'flex',flexDirection:'column' as const,alignItems:'center',gap:2}}>
+                          <div style={{width:'100%',height,background:scoreColor(score),borderRadius:2,minHeight:4}}/>
+                          <div style={{fontSize:8,color:C.textDim}}>{score}</div>
+                        </div>
+                      )
+                    })}
+                  </div>
+                </div>
+              )}
             </div>
 
             {/* Water */}

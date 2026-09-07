@@ -4,10 +4,11 @@ import { createClient } from '@/lib/supabase/client'
 import {
   calcArmCare, getEffectiveThrowCount, getRecoveryModifier,
   calcStrengthVelocityRatio, calcBodyweightPct, bodyweightPctStatus,
-  calcRomAsymmetry, THREE_TIER_COLORS,
+  calcRomAsymmetry, computeArmCareTrends, THREE_TIER_COLORS,
 } from '@/lib/armCare'
 import { useTestVideos } from '@/lib/testVideos'
 import TestVideoLink from '@/app/components/TestVideoLink'
+import MiniSparkline from '@/app/components/MiniSparkline'
 
 const C = {
   bg2:'#161b22',bg3:'#1c2333',border:'#30363d',
@@ -55,6 +56,7 @@ export default function ArmCareSummary({pitcherId}:{pitcherId:string}){
   const erPct = latestTest ? calcBodyweightPct(latestTest.er_load_lbs, latestTest.bodyweight_lbs) : null
   const irPct = latestTest ? calcBodyweightPct(latestTest.ir_load_lbs, latestTest.bodyweight_lbs) : null
   const romAsym = latestTest ? calcRomAsymmetry(latestTest.er_rom_deg, latestTest.ir_rom_deg) : null
+  const trends = computeArmCareTrends(armCareTests, effectiveVelocity)
 
   return (
     <div style={{color:C.text,fontSize:13}}>
@@ -112,6 +114,25 @@ export default function ArmCareSummary({pitcherId}:{pitcherId:string}){
           <div style={{fontSize:11,color:C.textDim,paddingTop:latestTest?0:0}}>No arm care test on file yet — your coach administers this with dumbbells and a stopwatch.</div>
         )}
       </div>
+
+      {armCareTests.length>1 && (
+        <div style={{background:C.bg2,border:`1px solid ${C.border}`,borderRadius:8,padding:16}}>
+          <div style={{fontSize:11,color:C.textMuted,fontWeight:700,textTransform:'uppercase' as const,letterSpacing:'1px',marginBottom:12}}>Arm Care Trends</div>
+          <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(160px,1fr))',gap:10}}>
+            {[
+              {label:'Strength-Velocity Ratio', hist:trends.svr, color:C.gold, unit:''},
+              {label:'Outward (ER) Strength', hist:trends.erPct, color:'#58a6ff', unit:'%'},
+              {label:'Inward (IR) Strength', hist:trends.irPct, color:'#a371f7', unit:'%'},
+              {label:'ROM Balance', hist:trends.romAsym, color:'#f85149', unit:'%'},
+            ].map(m=>(
+              <div key={m.label}>
+                <div style={{fontSize:10,color:C.textMuted,textTransform:'uppercase' as const,letterSpacing:'0.5px',marginBottom:4}}>{m.label}</div>
+                {m.hist.length>1?<MiniSparkline data={m.hist} color={m.color} unit={m.unit} height={70}/>:<div style={{fontSize:11,color:C.textDim,padding:'20px 0',textAlign:'center' as const}}>Not enough data</div>}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   )
 }

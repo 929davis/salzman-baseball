@@ -13,7 +13,7 @@ import { useTestVideos } from '@/lib/testVideos'
 import { angleAt } from '@/lib/angles'
 import {
   calcStrengthVelocityRatio, calcBodyweightPct, bodyweightPctStatus,
-  calcRomAsymmetry, THREE_TIER_COLORS,
+  calcRomAsymmetry, computeArmCareTrends, THREE_TIER_COLORS,
   calcArmCare, getEffectiveThrowCount, getRecoveryModifier,
 } from '@/lib/armCare'
 import { parseTime, calcCMJFn } from '@/lib/cmj'
@@ -985,6 +985,7 @@ Write next week's program by day and category (Pre-Throwing, Throwing, Post-Thro
                     const erPct=latestTest?calcBodyweightPct(latestTest.er_load_lbs,latestTest.bodyweight_lbs):null
                     const irPct=latestTest?calcBodyweightPct(latestTest.ir_load_lbs,latestTest.bodyweight_lbs):null
                     const romAsym=latestTest?calcRomAsymmetry(latestTest.er_rom_deg,latestTest.ir_rom_deg):null
+                    const armCareTrends=computeArmCareTrends(armCareTests,getEffectiveVelocity(selected,cmjResults)||null)
                     return (
                       <div style={{...S.card,marginBottom:12}}>
                         <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:12}}>
@@ -1037,6 +1038,24 @@ Write next week's program by day and category (Pre-Throwing, Throwing, Post-Thro
                             </div>
                           </div>
                         )}
+                        {armCareTests.length>1&&(
+                          <div style={{marginTop:12,paddingTop:12,borderTop:`1px solid ${C.border}`}}>
+                            <div style={{fontSize:10,color:C.textMuted,fontWeight:700,textTransform:'uppercase' as const,letterSpacing:'0.5px',marginBottom:8}}>Arm Care Trends</div>
+                            <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(150px,1fr))',gap:10}}>
+                              {[
+                                {label:'Strength-Velocity Ratio', hist:armCareTrends.svr, color:C.gold, unit:''},
+                                {label:'ER % Bodyweight', hist:armCareTrends.erPct, color:C.blue, unit:'%'},
+                                {label:'IR % Bodyweight', hist:armCareTrends.irPct, color:C.purple, unit:'%'},
+                                {label:'ROM Asymmetry', hist:armCareTrends.romAsym, color:C.red, unit:'%'},
+                              ].map(m=>(
+                                <div key={m.label}>
+                                  <div style={{fontSize:9,color:C.textMuted,textTransform:'uppercase' as const,marginBottom:3}}>{m.label}</div>
+                                  {m.hist.length>1?<MiniSparkline data={m.hist} color={m.color} unit={m.unit} height={60}/>:<div style={{fontSize:11,color:C.textDim,padding:'14px 0',textAlign:'center' as const}}>Not enough data</div>}
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        )}
                         {showArmCareHistory&&armCareTests.length>0&&(
                           <div style={{marginTop:12,paddingTop:12,borderTop:`1px solid ${C.border}`,display:'flex',flexDirection:'column' as const,gap:6}}>
                             {armCareTests.map((t:any)=>(
@@ -1050,6 +1069,29 @@ Write next week's program by day and category (Pre-Throwing, Throwing, Post-Thro
                             ))}
                           </div>
                         )}
+                      </div>
+                    )
+                  })()}
+
+                  {/* Workload Trend — from logged sessions, not the throw_volume_entries
+                      breakdown (that table is a snapshot of the CURRENT week's program by
+                      category, not a time series, so it has nothing to chart over time). */}
+                  {logs.length>1&&(()=>{
+                    const asc=[...logs].reverse()
+                    const pitchHist=asc.map(r=>({date:r.log_date,value:r.pitch_count})).filter(h=>h.value!=null)
+                    const heHist=asc.map(r=>({date:r.log_date,value:r.high_effort_throws})).filter(h=>h.value!=null)
+                    if (pitchHist.length<2 && heHist.length<2) return null
+                    return (
+                      <div style={{...S.card,marginBottom:12}}>
+                        <div style={{fontSize:11,color:C.textMuted,fontWeight:700,textTransform:'uppercase' as const,letterSpacing:'1px',marginBottom:12}}>Workload Trend</div>
+                        <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(160px,1fr))',gap:10}}>
+                          {[{label:'Pitch Count',hist:pitchHist,color:C.blue,unit:''},{label:'High-Effort Throws',hist:heHist,color:C.red,unit:''}].map(m=>(
+                            <div key={m.label}>
+                              <div style={{fontSize:10,color:C.textMuted,textTransform:'uppercase' as const,letterSpacing:'0.5px',marginBottom:4}}>{m.label}</div>
+                              {m.hist.length>1?<MiniSparkline data={m.hist} color={m.color} unit={m.unit} height={70}/>:<div style={{fontSize:11,color:C.textDim,padding:'20px 0',textAlign:'center' as const}}>Not enough data</div>}
+                            </div>
+                          ))}
+                        </div>
                       </div>
                     )
                   })()}
