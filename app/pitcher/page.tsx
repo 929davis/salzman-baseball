@@ -11,6 +11,7 @@ import ArmCareSummary from '@/app/components/ArmCareSummary'
 import TestVideoLink from '@/app/components/TestVideoLink'
 import { useTestVideos } from '@/lib/testVideos'
 import { parseTime, calcCMJFn } from '@/lib/cmj'
+import { CATEGORY_ORDER, CATEGORY_COLORS } from '@/lib/exerciseCategories'
 
 const C = {
   bg:'#0d1117',bg2:'#161b22',bg3:'#1c2333',border:'#30363d',
@@ -29,11 +30,8 @@ const READINESS_COLORS:Record<string,string> = {trusts_it:'#39d353',hesitant:'#e
 const RTT_PHASE_LABELS:Record<string,string> = {protective:'Protective',retraining:'Retraining',integration:'Integration',performance:'Performance'}
 const RTT_PHASE_COLORS:Record<string,string> = {protective:'#f85149',retraining:'#e8b84b',integration:'#58a6ff',performance:'#39d353'}
 const DAYS = ['Monday','Tuesday','Wednesday','Thursday','Friday','Saturday','Sunday']
-const NEW_CATS = ['Pre-Throwing','Throwing','Post-Throwing','Main Exercises','Accessory','Conditioning','Recovery']
-const CAT_COLORS:Record<string,string> = {
-  'Pre-Throwing':'#38bdf8','Throwing':'#39d353','Post-Throwing':'#34d399',
-  'Main Exercises':'#e8b84b','Accessory':'#a371f7','Conditioning':'#58a6ff','Recovery':'#f97316',
-}
+const NEW_CATS = CATEGORY_ORDER
+const CAT_COLORS:Record<string,string> = Object.fromEntries(CATEGORY_ORDER.map(k=>[k,CATEGORY_COLORS[k].color]))
 
 const MEAL_TYPES = ['Pre-Training','Post-Training','Recovery Meal','Regular Meal']
 const MEAL_TYPE_COLORS:Record<string,string> = {

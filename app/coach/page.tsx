@@ -17,6 +17,7 @@ import {
   calcArmCare, getEffectiveThrowCount, getRecoveryModifier,
 } from '@/lib/armCare'
 import { parseTime, calcCMJFn } from '@/lib/cmj'
+import { CATEGORY_ORDER, CATEGORY_COLORS } from '@/lib/exerciseCategories'
 
 const C = {
   bg:'#0d1117',bg2:'#161b22',bg3:'#1c2333',border:'#30363d',
@@ -34,15 +35,9 @@ const getEffectiveVelocity = (selected: any, cmjResults: any[]) => {
   return selected?.avg_velocity || 0
 }
 
-const CATEGORIES = [
-  { key:'Pre-Throwing',   color:'#38bdf8', bg:'rgba(56,189,248,0.10)',  border:'rgba(56,189,248,0.35)'  },
-  { key:'Throwing',       color:'#39d353', bg:'rgba(57,211,83,0.10)',   border:'rgba(57,211,83,0.35)'   },
-  { key:'Post-Throwing',  color:'#34d399', bg:'rgba(52,211,153,0.10)',  border:'rgba(52,211,153,0.35)'  },
-  { key:'Main Exercises', color:'#e8b84b', bg:'rgba(232,184,75,0.10)', border:'rgba(232,184,75,0.35)'  },
-  { key:'Accessory',      color:'#a371f7', bg:'rgba(163,113,247,0.10)',border:'rgba(163,113,247,0.35)' },
-  { key:'Conditioning',   color:'#58a6ff', bg:'rgba(88,166,255,0.10)', border:'rgba(88,166,255,0.35)'  },
-  { key:'Recovery',       color:'#f97316', bg:'rgba(249,115,22,0.10)', border:'rgba(249,115,22,0.35)'  },
-]
+// CATEGORY_ORDER's sequence IS the program-builder's layout order — see
+// lib/exerciseCategories.ts for why Speed/Power sits where it does.
+const CATEGORIES = CATEGORY_ORDER.map(key => ({ key, ...CATEGORY_COLORS[key] }))
 const CAT_MAP:Record<string,typeof CATEGORIES[0]> = Object.fromEntries(CATEGORIES.map(c=>[c.key,c]))
 
 const CNS_COLORS:Record<string,{bg:string,border:string,text:string,dot:string}> = {
@@ -150,7 +145,7 @@ const BUILT_IN_EXERCISES = [
   {id:'ex_007',name:'Single Leg RDL',pattern:'Hinge',category:'Accessory',cns:'Moderate',description:'Hinge on one leg, rear leg floats back as counterbalance.'},
   {id:'ex_008',name:'Sumo Deadlift',pattern:'Hinge',category:'Main Exercises',cns:'High',description:'Wide stance deadlift emphasizing inner thigh and hip strength.'},
   {id:'ex_009',name:'Trap Bar Deadlift',pattern:'Hinge',category:'Main Exercises',cns:'High',description:'Stand in center of trap bar. More upright than conventional, easier to learn.'},
-  {id:'ex_010',name:'Kettlebell Swing',pattern:'Hinge',category:'Conditioning',cns:'High',description:'Ballistic hip hinge. Bell driven by hips not arms.'},
+  {id:'ex_010',name:'Kettlebell Swing',pattern:'Hinge',category:'Speed/Power',cns:'High',description:'Ballistic hip hinge. Bell driven by hips not arms.'},
   {id:'ex_011',name:'Barbell Bench Press',pattern:'Horizontal Push',category:'Main Exercises',cns:'High',description:'Lie flat, grip slightly wider than shoulder-width. Lower bar to lower chest.'},
   {id:'ex_012',name:'1-Arm DB Bench Press',pattern:'Horizontal Push',category:'Accessory',cns:'Moderate',description:'Unilateral pressing that challenges rotational stability.'},
   {id:'ex_013',name:'Landmine Press',pattern:'Horizontal Push',category:'Accessory',cns:'Moderate',description:'Shoulder-friendly pressing variation with a natural arc.'},
@@ -164,18 +159,18 @@ const BUILT_IN_EXERCISES = [
   {id:'ex_021',name:'DB Shoulder Press',pattern:'Vertical Push',category:'Main Exercises',cns:'Moderate',description:'Press dumbbells from shoulder height to full lockout overhead.'},
   {id:'ex_022',name:'Power Clean',pattern:'Hinge',category:'Main Exercises',cns:'High',description:'Pull bar from floor, triple extend, catch in front rack.'},
   {id:'ex_023',name:'Hang Clean',pattern:'Hinge',category:'Main Exercises',cns:'High',description:'Power clean starting from hang position at mid-thigh.'},
-  {id:'ex_024',name:'Med Ball Scoop Toss',pattern:'Rotation',category:'Conditioning',cns:'High',description:'Load into back hip, drive hips through, scoop ball upward and forward.'},
-  {id:'ex_025',name:'Med Ball Rotational Chest Pass',pattern:'Rotation',category:'Conditioning',cns:'High',description:'Explosive rotational throw from parallel stance into wall.'},
-  {id:'ex_026',name:'Med Ball Overhead Slam',pattern:'Rotation',category:'Conditioning',cns:'High',description:'Reach overhead then slam into ground using entire body.'},
-  {id:'ex_027',name:'Med Ball Side Slam',pattern:'Rotation',category:'Conditioning',cns:'High',description:'Lateral rotational slam training same pattern as pitching.'},
-  {id:'ex_028',name:'Landmine Rotational Press',pattern:'Rotation',category:'Conditioning',cns:'Moderate',description:'Rotational pressing from parallel stance.'},
-  {id:'ex_029',name:'Broad Jump',pattern:'Locomotion',category:'Conditioning',cns:'High',description:'Horizontal plyometric training explosive hip extension.'},
-  {id:'ex_030',name:'Triple Broad Jump',pattern:'Locomotion',category:'Conditioning',cns:'High',description:'Three consecutive broad jumps for maximum distance.'},
-  {id:'ex_031',name:'Depth Jump',pattern:'Locomotion',category:'Conditioning',cns:'High',description:'Step off box, land and immediately jump as high as possible.'},
-  {id:'ex_032',name:'Lateral Bound',pattern:'Locomotion',category:'Conditioning',cns:'High',description:'Jump from one foot to the other laterally.'},
-  {id:'ex_033',name:'Skater Jump',pattern:'Locomotion',category:'Conditioning',cns:'High',description:'Continuous lateral bounds with brief hold on each landing.'},
-  {id:'ex_034',name:'Pogo Hops',pattern:'Locomotion',category:'Conditioning',cns:'High',description:'Rapid low-amplitude bilateral hops. Minimal knee bend.'},
-  {id:'ex_035',name:'30-Yard Sprint',pattern:'Locomotion',category:'Conditioning',cns:'High',description:'Short acceleration sprint. Drive phase first 10 yards.'},
+  {id:'ex_024',name:'Med Ball Scoop Toss',pattern:'Rotation',category:'Speed/Power',cns:'High',description:'Load into back hip, drive hips through, scoop ball upward and forward.'},
+  {id:'ex_025',name:'Med Ball Rotational Chest Pass',pattern:'Rotation',category:'Speed/Power',cns:'High',description:'Explosive rotational throw from parallel stance into wall.'},
+  {id:'ex_026',name:'Med Ball Overhead Slam',pattern:'Rotation',category:'Speed/Power',cns:'High',description:'Reach overhead then slam into ground using entire body.'},
+  {id:'ex_027',name:'Med Ball Side Slam',pattern:'Rotation',category:'Speed/Power',cns:'High',description:'Lateral rotational slam training same pattern as pitching.'},
+  {id:'ex_028',name:'Landmine Rotational Press',pattern:'Rotation',category:'Speed/Power',cns:'Moderate',description:'Rotational pressing from parallel stance.'},
+  {id:'ex_029',name:'Broad Jump',pattern:'Locomotion',category:'Speed/Power',cns:'High',description:'Horizontal plyometric training explosive hip extension.'},
+  {id:'ex_030',name:'Triple Broad Jump',pattern:'Locomotion',category:'Speed/Power',cns:'High',description:'Three consecutive broad jumps for maximum distance.'},
+  {id:'ex_031',name:'Depth Jump',pattern:'Locomotion',category:'Speed/Power',cns:'High',description:'Step off box, land and immediately jump as high as possible.'},
+  {id:'ex_032',name:'Lateral Bound',pattern:'Locomotion',category:'Speed/Power',cns:'High',description:'Jump from one foot to the other laterally.'},
+  {id:'ex_033',name:'Skater Jump',pattern:'Locomotion',category:'Speed/Power',cns:'High',description:'Continuous lateral bounds with brief hold on each landing.'},
+  {id:'ex_034',name:'Pogo Hops',pattern:'Locomotion',category:'Speed/Power',cns:'High',description:'Rapid low-amplitude bilateral hops. Minimal knee bend.'},
+  {id:'ex_035',name:'30-Yard Sprint',pattern:'Locomotion',category:'Speed/Power',cns:'High',description:'Short acceleration sprint. Drive phase first 10 yards.'},
   {id:'ex_036',name:'Dead Bug',pattern:'Core',category:'Accessory',cns:'Low',description:'Lie on back, arms up, knees at 90 degrees. Extend opposite arm and leg.'},
   {id:'ex_037',name:'Plank',pattern:'Core',category:'Accessory',cns:'Low',description:'Static anti-extension hold. Body in one rigid line.'},
   {id:'ex_038',name:'Side Plank',pattern:'Core',category:'Accessory',cns:'Low',description:'Lateral anti-flexion hold.'},
@@ -584,7 +579,7 @@ export default function CoachDashboard(){
     if(!program&&!selected) return
     setImportSaving(true)
     const VALID_DAYS=['MONDAY','TUESDAY','WEDNESDAY','THURSDAY','FRIDAY','SATURDAY','SUNDAY']
-    const VALID_CATS=['Pre-Throwing','Throwing','Post-Throwing','Main Exercises','Accessory','Conditioning','Recovery']
+    const VALID_CATS:string[]=[...CATEGORY_ORDER]
     const lines=text.split('\n').map((l:string)=>l.trim()).filter((l:string)=>l.length>0)
     const newStructured={...structuredDays}
     let currentDay=''
@@ -598,8 +593,11 @@ export default function CoachDashboard(){
       if(!currentDay) continue
       const parts=line.split('|').map((p:string)=>p.trim())
       if(parts.length<3) continue
-      const [cat,exName,prescription]=parts
-      if(!VALID_CATS.includes(cat)){skipped.push('Bad category: '+cat);continue}
+      const [catRaw,exName,prescription]=parts
+      // Accept the old "Conditioning" header for backward compatibility with pasted text
+      // from before the rename — every exercise that used to live there is Speed/Power now.
+      const cat=catRaw==='Conditioning'?'Speed/Power':catRaw
+      if(!VALID_CATS.includes(cat)){skipped.push('Bad category: '+catRaw);continue}
       const setsRepsMatch=prescription.match(/(\d+)\s*x\s*(\d+)(?:\s*@\s*(\d+)%?)?/i)
       if(!setsRepsMatch){skipped.push('Bad prescription: '+prescription);continue}
       const sets=parseInt(setsRepsMatch[1])
@@ -656,7 +654,7 @@ export default function CoachDashboard(){
 
   const bulkImportExercises=async(text:string)=>{
     setExerciseImportSaving(true)
-    const categoryValues=CATEGORIES.map(c=>c.key)
+    const categoryValues:string[]=CATEGORIES.map(c=>c.key)
     const existingNames=new Set(EXERCISE_DB.map((e:any)=>e.name.toLowerCase()))
     const seenThisBatch=new Set<string>()
     const flagged:string[]=[]
@@ -1848,7 +1846,7 @@ Accessory | Single Arm DB Row | 3 x 6 @ 70%`}
             <div style={{fontSize:11,color:'#888',marginBottom:4}}>Category</div>
             <select value={copyToCat} onChange={e=>setCopyToCat(e.target.value)} style={{width:'100%',background:'#0d0d1a',border:'1px solid rgba(255,255,255,0.1)',borderRadius:6,padding:'8px 10px',fontSize:13,color:'#fff',outline:'none'}}>
               <option value=''>Select category...</option>
-              {['Pre-Throwing','Throwing','Post-Throwing','Main Exercises','Accessory','Conditioning','Recovery'].map(c=>(
+              {CATEGORY_ORDER.map(c=>(
                 <option key={c} value={c}>{c}</option>
               ))}
             </select>
