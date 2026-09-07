@@ -110,6 +110,24 @@ export function computeArmCareTrends(armCareTests: any[], effectiveVelocity: num
   return { svr, erPct, irPct, romAsym }
 }
 
+// The 4 arm-care flag statuses for the latest test only (not history) — used wherever
+// something needs "is this pitcher's arm care currently flagged," e.g. the Speed/Power
+// volume guardrail in lib/speedPowerVolume.ts, without re-deriving each metric by hand.
+export function computeArmCareFlagStatuses(latestTest: any, effectiveVelocity: number | null): ThreeTierStatus[] {
+  if (!latestTest) return []
+  const svr = calcStrengthVelocityRatio(latestTest.er_load_lbs, latestTest.ir_load_lbs, effectiveVelocity)
+  const erPct = calcBodyweightPct(latestTest.er_load_lbs, latestTest.bodyweight_lbs)
+  const irPct = calcBodyweightPct(latestTest.ir_load_lbs, latestTest.bodyweight_lbs)
+  const romAsym = calcRomAsymmetry(latestTest.er_rom_deg, latestTest.ir_rom_deg)
+  const statuses: (ThreeTierStatus | null)[] = [
+    svr ? (svr.flagged ? 'Flag' : 'OK') : null,
+    bodyweightPctStatus(erPct, 'ER'),
+    bodyweightPctStatus(irPct, 'IR'),
+    romAsym?.status ?? null,
+  ]
+  return statuses.filter((s): s is ThreeTierStatus => s != null)
+}
+
 // ---------------------------------------------------------------------------
 // Workload vs. Arm Health cross-reference — the actual point of charting both trends is
 // spotting when they move in a concerning combination, not just eyeballing two separate

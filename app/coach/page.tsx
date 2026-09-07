@@ -13,11 +13,12 @@ import { useTestVideos } from '@/lib/testVideos'
 import { angleAt } from '@/lib/angles'
 import {
   calcStrengthVelocityRatio, calcBodyweightPct, bodyweightPctStatus,
-  calcRomAsymmetry, computeArmCareTrends, computeWorkloadArmHealthCallout, THREE_TIER_COLORS,
+  calcRomAsymmetry, computeArmCareTrends, computeArmCareFlagStatuses, computeWorkloadArmHealthCallout, THREE_TIER_COLORS,
   calcArmCare, getEffectiveThrowCount, getRecoveryModifier,
 } from '@/lib/armCare'
 import { parseTime, calcCMJFn } from '@/lib/cmj'
 import { CATEGORY_ORDER, CATEGORY_COLORS } from '@/lib/exerciseCategories'
+import { computeSpeedPowerGuardrail } from '@/lib/speedPowerVolume'
 
 const C = {
   bg:'#0d1117',bg2:'#161b22',bg3:'#1c2333',border:'#30363d',
@@ -285,7 +286,7 @@ function RecommendedExercisesBlock({exercises, accentColor, parsedPrinciples}:{e
   )
 }
 
-const BLANK_CUSTOM = {name:'',pattern:'',category:'Main Exercises',cns:'Moderate',description:''}
+const BLANK_CUSTOM = {name:'',pattern:'',category:'Main Exercises',cns:'Moderate',description:'',ground_contacts_per_rep:''}
 
 export default function CoachDashboard(){
   const [user,setUser]=useState<any>(null)
@@ -644,7 +645,8 @@ export default function CoachDashboard(){
     const exercise_id=`custom_${Date.now()}`
     const {data}=await supabase.from('custom_exercises').insert({
       exercise_id,name:customForm.name.trim(),pattern:customForm.pattern.trim(),
-      category:customForm.category,cns:customForm.cns,description:customForm.description.trim()
+      category:customForm.category,cns:customForm.cns,description:customForm.description.trim(),
+      ground_contacts_per_rep:customForm.ground_contacts_per_rep?parseInt(customForm.ground_contacts_per_rep):null,
     }).select().single()
     if (data){setCustomExercises(prev=>[...prev,{...data,id:data.exercise_id}]);setCustomForm(BLANK_CUSTOM);setShowCustomForm(false)}
     setCustomSaving(false)
@@ -909,6 +911,12 @@ Write next week's program by day and category (Pre-Throwing, Throwing, Post-Thro
             const rule=recommendationRules.find(r=>r.classification===classification)
             const recommendedExercises=getRecommendedExercises(classification)
             const todayScore=todayFuelScore?.total_score||0
+            // Shared by the Program tab's Speed/Power guardrail — same recoveryModifier the
+            // Arm Care card's foot-lb target already uses, so a pitcher who hasn't bounced
+            // back from a prior outing gets a lower jump ceiling too, not just a lower
+            // recovery-work target.
+            const speedPowerRecoveryModifier=getRecoveryModifier(armCareTests)
+            const speedPowerArmCareStatuses=computeArmCareFlagStatuses(armCareTests[0]||null,getEffectiveVelocity(selected,cmjResults)||null)
 
             return(
             <div>
@@ -1396,8 +1404,17 @@ Write next week's program by day and category (Pre-Throwing, Throwing, Post-Thro
                             const exercises=structuredDays[key]||[]
                             const note=cellNotes[key]||''
                             const isExpanded=expandedCell===key
+                            const speedPowerGuardrail=cat.key==='Speed/Power'&&exercises.length>0?computeSpeedPowerGuardrail(
+                              exercises.map((ex:any)=>({id:ex.id,sets:ex.sets,reps:ex.reps,ground_contacts_per_rep:EXERCISE_DB.find((e:any)=>e.id===ex.id)?.ground_contacts_per_rep})),
+                              speedPowerRecoveryModifier,speedPowerArmCareStatuses,
+                            ):null
                             return(
                               <div key={day} style={{background:C.bg2,border:`1px solid ${C.border}`,borderRadius:6,padding:6,minHeight:60}}>
+                                {speedPowerGuardrail&&speedPowerGuardrail.status!=='OK'&&(
+                                  <div title={`${speedPowerGuardrail.totalContacts} ground contacts (Caution at ${speedPowerGuardrail.cautionCeiling}, Flag at ${speedPowerGuardrail.flagCeiling})${speedPowerGuardrail.reasons.length?' — '+speedPowerGuardrail.reasons.join(', '):''}`} style={{fontSize:9,fontWeight:700,padding:'2px 5px',borderRadius:4,marginBottom:3,background:speedPowerGuardrail.status==='Flag'?'rgba(248,81,73,0.15)':'rgba(232,184,75,0.15)',color:speedPowerGuardrail.status==='Flag'?C.red:C.gold,border:`1px solid ${speedPowerGuardrail.status==='Flag'?C.red:C.gold}66`}}>
+                                    {speedPowerGuardrail.totalContacts} contacts — {speedPowerGuardrail.status}
+                                  </div>
+                                )}
                                 {exercises.map((ex:any,i:number)=>(
                                   <div key={i} style={{background:cat.bg,borderLeft:`3px solid ${cat.color}`,borderRadius:4,padding:'4px 6px',marginBottom:3,display:'flex',alignItems:'flex-start',gap:5}}>
                                     <div style={{flex:1,minWidth:0}}>
@@ -1524,6 +1541,13 @@ Write next week's program by day and category (Pre-Throwing, Throwing, Post-Thro
                     <label style={{fontSize:10,color:C.textMuted,fontWeight:600,textTransform:'uppercase' as const,letterSpacing:'0.5px',marginBottom:4,display:'block'}}>Description</label>
                     <textarea style={{...S.input,minHeight:60,resize:'vertical' as const}} placeholder="Brief description..." value={customForm.description} onChange={e=>setCustomForm((f:any)=>({...f,description:e.target.value}))}/>
                   </div>
+                  {customForm.category==='Speed/Power'&&(
+                    <div style={{marginBottom:12}}>
+                      <label style={{fontSize:10,color:C.textMuted,fontWeight:600,textTransform:'uppercase' as const,letterSpacing:'0.5px',marginBottom:4,display:'block'}}>Ground Contacts / Rep</label>
+                      <input type="number" min="0" style={{...S.input,maxWidth:160}} placeholder="e.g. 1 (leave blank if not a jump/landing exercise)" value={customForm.ground_contacts_per_rep||''} onChange={e=>setCustomForm((f:any)=>({...f,ground_contacts_per_rep:e.target.value}))}/>
+                      <div style={{fontSize:10,color:C.textDim,marginTop:4}}>Only for exercises with a landing/ground-contact component (jumps, bounds). Leave blank for sprints, throws, or non-plyo work — those don't count toward the Speed/Power volume guardrail.</div>
+                    </div>
+                  )}
                   <div style={{display:'flex',gap:8}}>
                     <button style={S.btn('gold')} onClick={saveCustomExercise} disabled={!customForm.name.trim()||!customForm.pattern.trim()||customSaving}>{customSaving?'Saving...':'Save Exercise'}</button>
                     <button style={S.btn()} onClick={()=>setShowCustomForm(false)}>Cancel</button>

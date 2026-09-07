@@ -12,6 +12,8 @@ import TestVideoLink from '@/app/components/TestVideoLink'
 import { useTestVideos } from '@/lib/testVideos'
 import { parseTime, calcCMJFn } from '@/lib/cmj'
 import { CATEGORY_ORDER, CATEGORY_COLORS } from '@/lib/exerciseCategories'
+import { getRecoveryModifier, computeArmCareFlagStatuses } from '@/lib/armCare'
+import { computeSpeedPowerGuardrail, GROUND_CONTACTS_PER_REP } from '@/lib/speedPowerVolume'
 
 const C = {
   bg:'#0d1117',bg2:'#161b22',bg3:'#1c2333',border:'#30363d',
@@ -164,6 +166,8 @@ export default function PitcherDashboard(){
   const [foodLogs,setFoodLogs]=useState<any[]>([])
   const [dailyFuelScore,setDailyFuelScore]=useState<any>(null)
   const [weekFuelScores,setWeekFuelScores]=useState<any[]>([])
+  const [armCareTests,setArmCareTests]=useState<any[]>([])
+  const [customExercises,setCustomExercises]=useState<any[]>([])
   const [loading,setLoading]=useState(true)
   const [msgText,setMsgText]=useState('')
   const [logForm,setLogForm]=useState({date:new Date().toISOString().split('T')[0],velocity:'',weightLifted:'',sprintTime:'',pitchCount:'',highEffortThrows:'',feeling:7,soreness:[] as string[],readiness:'',notes:''})
@@ -196,7 +200,7 @@ export default function PitcherDashboard(){
       if (!prof||prof.role==='coach'){router.push('/coach');return}
       setProfile(prof)
       const sevenDaysAgo=new Date(Date.now()-7*24*60*60*1000).toISOString().split('T')[0]
-      const [progRes,logsRes,msgsRes,notesRes,cmjRes,foodRes,fuelRes,weekFuelRes,videosRes]=await Promise.all([
+      const [progRes,logsRes,msgsRes,notesRes,cmjRes,foodRes,fuelRes,weekFuelRes,videosRes,armCareRes,customExRes]=await Promise.all([
         supabase.from('programs').select('*').eq('pitcher_id',prof.id).order('week_of',{ascending:false}).limit(1),
         supabase.from('session_logs').select('*').eq('pitcher_id',prof.id).order('log_date',{ascending:false}).limit(20),
         supabase.from('messages').select('*').eq('pitcher_id',prof.id).order('created_at'),
@@ -206,6 +210,8 @@ export default function PitcherDashboard(){
         supabase.from('daily_fuel_scores').select('*').eq('pitcher_id',prof.id).eq('log_date',today).single(),
         supabase.from('daily_fuel_scores').select('*').eq('pitcher_id',prof.id).gte('log_date',sevenDaysAgo).order('log_date'),
         supabase.from('exercise_videos').select('*'),
+        supabase.from('arm_care_tests').select('*').eq('pitcher_id',prof.id).order('created_at',{ascending:false}),
+        supabase.from('custom_exercises').select('exercise_id,ground_contacts_per_rep'),
       ])
       setProgram(progRes.data?.[0]||null)
       setLogs(logsRes.data||[])
@@ -215,6 +221,8 @@ export default function PitcherDashboard(){
       setFoodLogs(foodRes.data||[])
       setDailyFuelScore(fuelRes.data||null)
       setWeekFuelScores(weekFuelRes.data||[])
+      setArmCareTests(armCareRes.data||[])
+      setCustomExercises(customExRes.data||[])
       const videoMap: Record<string, string> = {}
       ;(videosRes.data || []).forEach((v: any) => { videoMap[v.exercise_id] = v.video_url })
       setExerciseVideos(videoMap)
@@ -432,6 +440,11 @@ export default function PitcherDashboard(){
             {!program&&<div style={{...card,textAlign:'center',color:C.textMuted,padding:'32px 16px'}}>No program yet.</div>}
             {program&&(()=>{
               const structured=program.structured_days||{}
+              // Same recoveryModifier/arm-care statuses the coach's builder uses, so this
+              // read-only view always agrees with what the coach saw when they built it.
+              const speedPowerRecoveryModifier=getRecoveryModifier(armCareTests)
+              const speedPowerEffectiveVelocity=cmjResults[0]?.estimated_velocity||profile?.avg_velocity||null
+              const speedPowerArmCareStatuses=computeArmCareFlagStatuses(armCareTests[0]||null,speedPowerEffectiveVelocity)
               return DAYS.map(day=>{
                 const dayCats=NEW_CATS.filter(cat=>{
                   const key=`${day}___${cat}`
@@ -452,9 +465,20 @@ export default function PitcherDashboard(){
                       const note=program.days?.[key]||''
                       if (!exercises.length&&!note)return null
                       const catCol=CAT_COLORS[cat]||C.textMuted
+                      const speedPowerGuardrail=cat==='Speed/Power'&&exercises.length>0?computeSpeedPowerGuardrail(
+                        exercises.map((ex:any)=>({id:ex.id,sets:ex.sets,reps:ex.reps,ground_contacts_per_rep:GROUND_CONTACTS_PER_REP[ex.id]??customExercises.find((c:any)=>c.exercise_id===ex.id)?.ground_contacts_per_rep})),
+                        speedPowerRecoveryModifier,speedPowerArmCareStatuses,
+                      ):null
                       return(
                         <div key={cat} style={{marginBottom:10}}>
-                          <div style={{fontSize:10,color:catCol,fontWeight:700,textTransform:'uppercase' as const,letterSpacing:'0.5px',marginBottom:6}}>{cat}</div>
+                          <div style={{fontSize:10,color:catCol,fontWeight:700,textTransform:'uppercase' as const,letterSpacing:'0.5px',marginBottom:6,display:'flex',alignItems:'center',gap:8}}>
+                            <span>{cat}</span>
+                            {speedPowerGuardrail&&speedPowerGuardrail.status!=='OK'&&(
+                              <span title={`${speedPowerGuardrail.totalContacts} ground contacts (Caution at ${speedPowerGuardrail.cautionCeiling}, Flag at ${speedPowerGuardrail.flagCeiling})${speedPowerGuardrail.reasons.length?' — '+speedPowerGuardrail.reasons.join(', '):''}`} style={{fontSize:9,fontWeight:700,padding:'2px 6px',borderRadius:4,textTransform:'none' as const,letterSpacing:0,background:speedPowerGuardrail.status==='Flag'?'rgba(248,81,73,0.15)':'rgba(232,184,75,0.15)',color:speedPowerGuardrail.status==='Flag'?C.red:C.gold,border:`1px solid ${speedPowerGuardrail.status==='Flag'?C.red:C.gold}66`}}>
+                                {speedPowerGuardrail.totalContacts} contacts — {speedPowerGuardrail.status}
+                              </span>
+                            )}
+                          </div>
                           {exercises.map((ex:any,i:number)=>(
                             <div key={i} style={{padding:'8px 10px',background:C.bg3,borderRadius:8,marginBottom:6,borderLeft:`3px solid ${catCol}`}}>
                               <div style={{fontSize:13,fontWeight:600,color:C.white,marginBottom:2}}>{ex.name}</div>
