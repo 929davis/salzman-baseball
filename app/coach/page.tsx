@@ -782,7 +782,7 @@ ${recentLogs.map((l:any)=>`  ${l.log_date}: vel=${l.velocity||'—'}mph, feeling
 TRAINING PRINCIPLES:
 ${principles||'No principles yet.'}
 
-Write next week's program by day and category (Pre-Throwing, Throwing, Post-Throwing, Main Exercises, Accessory, Conditioning, Recovery). Use format: "Exercise Name SxR @ X%"`
+Write next week's program by day and category (Pre-Throwing, Throwing, Post-Throwing, Speed/Power, Main Exercises, Accessory, Recovery). Use format: "Exercise Name SxR @ X%"`
     navigator.clipboard.writeText(prompt).catch(()=>{})
     window.open('https://claude.ai','_blank')
     alert('Prompt copied! Paste into Claude.')
@@ -1769,7 +1769,7 @@ Trap Bar Jump | Main Exercises | Squat | High | Explosive jump holding empty tra
             style={{width:'100%',height:220,background:'#0d0d1a',border:'1px solid rgba(255,255,255,0.1)',borderRadius:8,padding:'10px 12px',fontSize:12,color:'#fff',outline:'none',resize:'vertical' as const,boxSizing:'border-box' as const,fontFamily:'monospace'}}
             placeholder={`MONDAY
 Main Exercises | Trap Bar Deadlift | 4 x 4 @ 70%
-Conditioning | Depth Jump | 4 x 3
+Speed/Power | Depth Jump | 4 x 3
 
 TUESDAY
 Accessory | Single Arm DB Row | 3 x 6 @ 70%`}
