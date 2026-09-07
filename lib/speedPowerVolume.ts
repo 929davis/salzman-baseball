@@ -56,10 +56,12 @@ export function speedPowerArmCareModifier(statuses: ThreeTierStatus[]): number {
 }
 
 export type SpeedPowerGuardrail = {
-  totalContacts: number
+  totalContacts: number        // this day alone
+  rolling48hContacts: number   // this day + the immediately preceding calendar day
   cautionCeiling: number
   flagCeiling: number
-  status: ContactStatus
+  status: ContactStatus        // the worse of the single-day and 48h-rolling checks
+  is48hDriven: boolean         // true when the day alone is fine but the 48h window isn't
   modifierApplied: boolean
   reasons: string[]
 }
@@ -68,22 +70,39 @@ export type SpeedPowerGuardrail = {
 // (from a recovery-check test vs baseline) — reused here rather than re-derived, so a
 // pitcher who hasn't bounced back from a prior outing gets a lower jump ceiling too, not
 // just a lower arm-care recovery target. armCareStatuses: computeArmCareFlagStatuses' output.
+//
+// priorDayExercises: the immediately preceding calendar day's Speed/Power exercises (empty
+// if none) — checked against the SAME ceiling as a rolling 48h sum, not a separately-invented
+// higher number. A day can look fine in isolation (e.g. 60 contacts) while still representing
+// too much impact volume back-to-back with yesterday (e.g. 60+60=120) — plyometric recovery
+// guidance generally wants at least 48h between high-impact sessions, and checking each day
+// alone can't see that. Reusing the same thresholds is deliberate: they were already framed
+// as "per session, not to be stacked without recovery," so applying them to the rolling
+// window is the more correct reading, not a new invented figure.
 export function computeSpeedPowerGuardrail(
   exercises: ContactExercise[],
   recoveryModifier: number,
   armCareStatuses: ThreeTierStatus[],
+  priorDayExercises: ContactExercise[] = [],
 ): SpeedPowerGuardrail {
   const totalContacts = exercises.reduce((s, ex) => s + exerciseGroundContacts(ex), 0)
+  const priorDayContacts = priorDayExercises.reduce((s, ex) => s + exerciseGroundContacts(ex), 0)
+  const rolling48hContacts = totalContacts + priorDayContacts
   const armMod = speedPowerArmCareModifier(armCareStatuses)
   const combinedMod = recoveryModifier * armMod
   const flagCeiling = Math.round(SPEED_POWER_FLAG_CONTACTS * combinedMod)
   const cautionCeiling = Math.round(SPEED_POWER_CAUTION_CONTACTS * combinedMod)
+  const todayStatus = contactStatus(totalContacts, cautionCeiling, flagCeiling)
+  const rollingStatus = contactStatus(rolling48hContacts, cautionCeiling, flagCeiling)
+  const statusRank: Record<ContactStatus, number> = { OK: 0, Caution: 1, Flag: 2 }
+  const status = statusRank[rollingStatus] > statusRank[todayStatus] ? rollingStatus : todayStatus
   const reasons: string[] = []
   if (recoveryModifier < 1) reasons.push('incomplete recovery from a prior outing')
   if (armMod < 1) reasons.push('multiple arm-care flags')
+  if (statusRank[rollingStatus] > statusRank[todayStatus]) reasons.push('combined with the prior day, within a 48h window')
   return {
-    totalContacts, cautionCeiling, flagCeiling,
-    status: contactStatus(totalContacts, cautionCeiling, flagCeiling),
+    totalContacts, rolling48hContacts, cautionCeiling, flagCeiling, status,
+    is48hDriven: statusRank[rollingStatus] > statusRank[todayStatus],
     modifierApplied: combinedMod < 1,
     reasons,
   }

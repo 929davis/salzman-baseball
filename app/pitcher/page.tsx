@@ -29,8 +29,7 @@ const READINESS_OPTIONS = [
   {value:'guarding',label:'Guarding'},
 ]
 const READINESS_COLORS:Record<string,string> = {trusts_it:'#39d353',hesitant:'#e8b84b',guarding:'#f85149'}
-const RTT_PHASE_LABELS:Record<string,string> = {protective:'Protective',retraining:'Retraining',integration:'Integration',performance:'Performance'}
-const RTT_PHASE_COLORS:Record<string,string> = {protective:'#f85149',retraining:'#e8b84b',integration:'#58a6ff',performance:'#39d353'}
+// RTT-phase UI removed for a rework — see app/coach/page.tsx for the matching note.
 const DAYS = ['Monday','Tuesday','Wednesday','Thursday','Friday','Saturday','Sunday']
 const NEW_CATS = CATEGORY_ORDER
 const CAT_COLORS:Record<string,string> = Object.fromEntries(CATEGORY_ORDER.map(k=>[k,CATEGORY_COLORS[k].color]))
@@ -160,8 +159,6 @@ export default function PitcherDashboard(){
   const [tab,setTab]=useState('overview')
   const [program,setProgram]=useState<any>(null)
   const [logs,setLogs]=useState<any[]>([])
-  const [messages,setMessages]=useState<any[]>([])
-  const [notes,setNotes]=useState<any[]>([])
   const [cmjResults,setCmjResults]=useState<any[]>([])
   const [foodLogs,setFoodLogs]=useState<any[]>([])
   const [dailyFuelScore,setDailyFuelScore]=useState<any>(null)
@@ -169,7 +166,6 @@ export default function PitcherDashboard(){
   const [armCareTests,setArmCareTests]=useState<any[]>([])
   const [customExercises,setCustomExercises]=useState<any[]>([])
   const [loading,setLoading]=useState(true)
-  const [msgText,setMsgText]=useState('')
   const [logForm,setLogForm]=useState({date:new Date().toISOString().split('T')[0],velocity:'',weightLifted:'',sprintTime:'',pitchCount:'',highEffortThrows:'',feeling:7,soreness:[] as string[],readiness:'',notes:''})
   const [logSaved,setLogSaved]=useState(false)
 
@@ -200,11 +196,9 @@ export default function PitcherDashboard(){
       if (!prof||prof.role==='coach'){router.push('/coach');return}
       setProfile(prof)
       const sevenDaysAgo=new Date(Date.now()-7*24*60*60*1000).toISOString().split('T')[0]
-      const [progRes,logsRes,msgsRes,notesRes,cmjRes,foodRes,fuelRes,weekFuelRes,videosRes,armCareRes,customExRes]=await Promise.all([
+      const [progRes,logsRes,cmjRes,foodRes,fuelRes,weekFuelRes,videosRes,armCareRes,customExRes]=await Promise.all([
         supabase.from('programs').select('*').eq('pitcher_id',prof.id).order('week_of',{ascending:false}).limit(1),
         supabase.from('session_logs').select('*').eq('pitcher_id',prof.id).order('log_date',{ascending:false}).limit(20),
-        supabase.from('messages').select('*').eq('pitcher_id',prof.id).order('created_at'),
-        supabase.from('coach_notes').select('*').eq('pitcher_id',prof.id).order('created_at',{ascending:false}),
         supabase.from('cmj_results').select('*').eq('pitcher_id',prof.id).order('test_date',{ascending:false}),
         supabase.from('food_logs').select('*').eq('pitcher_id',prof.id).eq('log_date',today).order('created_at'),
         supabase.from('daily_fuel_scores').select('*').eq('pitcher_id',prof.id).eq('log_date',today).single(),
@@ -215,8 +209,6 @@ export default function PitcherDashboard(){
       ])
       setProgram(progRes.data?.[0]||null)
       setLogs(logsRes.data||[])
-      setMessages(msgsRes.data||[])
-      setNotes(notesRes.data||[])
       setCmjResults(cmjRes.data||[])
       setFoodLogs(foodRes.data||[])
       setDailyFuelScore(fuelRes.data||null)
@@ -248,11 +240,6 @@ export default function PitcherDashboard(){
     setLogSaved(true);setTimeout(()=>setLogSaved(false),2000)
   }
 
-  const sendMessage=async()=>{
-    if (!msgText.trim()||!profile)return
-    const {data}=await supabase.from('messages').insert({pitcher_id:profile.id,sender_id:profile.id,sender_role:'pitcher',content:msgText.trim()}).select().single()
-    if (data){setMessages([...messages,data]);setMsgText('')}
-  }
 
   const toggleSoreness=(a:string)=>setLogForm(f=>({...f,soreness:f.soreness.includes(a)?f.soreness.filter(x=>x!==a):[...f.soreness,a]}))
   const setReadiness=(v:string)=>setLogForm(f=>({...f,readiness:f.readiness===v?'':v}))
@@ -336,7 +323,6 @@ export default function PitcherDashboard(){
   const latestCMJ=cmjResults[0]
   const {classification}=classifyCMJ(latestCMJ)
   const classCol=CLASS_COLORS[classification]||CLASS_COLORS['No Data']
-  const unread=messages.filter((m:any)=>m.sender_role==='coach'&&!m.read).length
   const todayScores=scoreFuelDay(foodLogs)
 
   // Live calorie preview
@@ -382,8 +368,6 @@ export default function PitcherDashboard(){
           {id:'food',icon:'🥗',label:'Food'},
           {id:'assess',icon:'🧪',label:'Assess'},
           {id:'log',icon:'📝',label:'Log'},
-          {id:'messages',icon:'💬',label:unread>0?`(${unread})`:'Chat'},
-          {id:'notes',icon:'📌',label:'Notes'},
           {id:'iq',icon:'🎯',label:'Pitching IQ'},
           {id:'anatomy',icon:'🦴',label:'Anatomy',external:true},
         ].map(t=>(
@@ -445,7 +429,7 @@ export default function PitcherDashboard(){
               const speedPowerRecoveryModifier=getRecoveryModifier(armCareTests)
               const speedPowerEffectiveVelocity=cmjResults[0]?.estimated_velocity||profile?.avg_velocity||null
               const speedPowerArmCareStatuses=computeArmCareFlagStatuses(armCareTests[0]||null,speedPowerEffectiveVelocity)
-              return DAYS.map(day=>{
+              return DAYS.map((day,dayIdx)=>{
                 const dayCats=NEW_CATS.filter(cat=>{
                   const key=`${day}___${cat}`
                   return (structured[key]||[]).length>0||(program.days?.[key])
@@ -465,17 +449,21 @@ export default function PitcherDashboard(){
                       const note=program.days?.[key]||''
                       if (!exercises.length&&!note)return null
                       const catCol=CAT_COLORS[cat]||C.textMuted
+                      const toContactExercise=(ex:any)=>({id:ex.id,sets:ex.sets,reps:ex.reps,ground_contacts_per_rep:GROUND_CONTACTS_PER_REP[ex.id]??customExercises.find((c:any)=>c.exercise_id===ex.id)?.ground_contacts_per_rep})
+                      const priorDay=DAYS[(dayIdx-1+DAYS.length)%DAYS.length]
+                      const priorDayExercises=structured[`${priorDay}___${cat}`]||[]
                       const speedPowerGuardrail=cat==='Speed/Power'&&exercises.length>0?computeSpeedPowerGuardrail(
-                        exercises.map((ex:any)=>({id:ex.id,sets:ex.sets,reps:ex.reps,ground_contacts_per_rep:GROUND_CONTACTS_PER_REP[ex.id]??customExercises.find((c:any)=>c.exercise_id===ex.id)?.ground_contacts_per_rep})),
+                        exercises.map(toContactExercise),
                         speedPowerRecoveryModifier,speedPowerArmCareStatuses,
+                        priorDayExercises.map(toContactExercise),
                       ):null
                       return(
                         <div key={cat} style={{marginBottom:10}}>
                           <div style={{fontSize:10,color:catCol,fontWeight:700,textTransform:'uppercase' as const,letterSpacing:'0.5px',marginBottom:6,display:'flex',alignItems:'center',gap:8}}>
                             <span>{cat}</span>
                             {speedPowerGuardrail&&speedPowerGuardrail.status!=='OK'&&(
-                              <span title={`${speedPowerGuardrail.totalContacts} ground contacts (Caution at ${speedPowerGuardrail.cautionCeiling}, Flag at ${speedPowerGuardrail.flagCeiling})${speedPowerGuardrail.reasons.length?' — '+speedPowerGuardrail.reasons.join(', '):''}`} style={{fontSize:9,fontWeight:700,padding:'2px 6px',borderRadius:4,textTransform:'none' as const,letterSpacing:0,background:speedPowerGuardrail.status==='Flag'?'rgba(248,81,73,0.15)':'rgba(232,184,75,0.15)',color:speedPowerGuardrail.status==='Flag'?C.red:C.gold,border:`1px solid ${speedPowerGuardrail.status==='Flag'?C.red:C.gold}66`}}>
-                                {speedPowerGuardrail.totalContacts} contacts — {speedPowerGuardrail.status}
+                              <span title={`${speedPowerGuardrail.totalContacts} ground contacts today, ${speedPowerGuardrail.rolling48hContacts} within the last 48h (Caution at ${speedPowerGuardrail.cautionCeiling}, Flag at ${speedPowerGuardrail.flagCeiling})${speedPowerGuardrail.reasons.length?' — '+speedPowerGuardrail.reasons.join(', '):''}`} style={{fontSize:9,fontWeight:700,padding:'2px 6px',borderRadius:4,textTransform:'none' as const,letterSpacing:0,background:speedPowerGuardrail.status==='Flag'?'rgba(248,81,73,0.15)':'rgba(232,184,75,0.15)',color:speedPowerGuardrail.status==='Flag'?C.red:C.gold,border:`1px solid ${speedPowerGuardrail.status==='Flag'?C.red:C.gold}66`}}>
+                                {speedPowerGuardrail.is48hDriven?`${speedPowerGuardrail.rolling48hContacts} in 48h`:`${speedPowerGuardrail.totalContacts} contacts`} — {speedPowerGuardrail.status}
                               </span>
                             )}
                           </div>
@@ -775,12 +763,6 @@ export default function PitcherDashboard(){
         {tab==='log'&&(
           <div>
             <div style={{fontSize:18,fontWeight:700,color:C.white,marginBottom:16}}>Log Session</div>
-            {profile?.rtt_phase&&(
-              <div style={{background:`${RTT_PHASE_COLORS[profile.rtt_phase]}1A`,border:`1px solid ${RTT_PHASE_COLORS[profile.rtt_phase]}66`,borderRadius:8,padding:'10px 14px',marginBottom:14}}>
-                <div style={{fontSize:10,color:RTT_PHASE_COLORS[profile.rtt_phase],fontWeight:700,textTransform:'uppercase' as const,letterSpacing:'0.5px',marginBottom:2}}>Return-to-Throw</div>
-                <div style={{fontSize:14,fontWeight:600,color:C.white}}>{RTT_PHASE_LABELS[profile.rtt_phase]} Phase</div>
-              </div>
-            )}
             <div style={card}>
               <label style={lbl}>Date</label>
               <input type="date" style={inp} value={logForm.date} onChange={e=>setLogForm(f=>({...f,date:e.target.value}))}/>
@@ -838,40 +820,6 @@ export default function PitcherDashboard(){
         )}
 
         {/* MESSAGES TAB */}
-        {tab==='messages'&&(
-          <div>
-            <div style={{fontSize:18,fontWeight:700,color:C.white,marginBottom:16}}>Messages</div>
-            <div style={card}>
-              <div style={{display:'flex',flexDirection:'column' as const,gap:10,minHeight:200,marginBottom:16}}>
-                {messages.length===0&&<div style={{color:C.textDim,fontSize:13}}>No messages yet.</div>}
-                {messages.map((m:any)=>(
-                  <div key={m.id} style={{display:'flex',flexDirection:'column' as const,alignItems:m.sender_role==='pitcher'?'flex-end':'flex-start'}}>
-                    <div style={{fontSize:10,color:C.textDim,marginBottom:3}}>{m.sender_role==='coach'?'Coach Salzman':'You'} · {new Date(m.created_at).toLocaleString()}</div>
-                    <div style={{background:m.sender_role==='pitcher'?C.goldBg:C.bg3,color:m.sender_role==='pitcher'?C.gold:C.text,border:`1px solid ${m.sender_role==='pitcher'?C.goldDim:C.border}`,borderRadius:10,padding:'10px 14px',fontSize:14,maxWidth:'85%'}}>{m.content}</div>
-                  </div>
-                ))}
-              </div>
-              <div style={{display:'flex',gap:8}}>
-                <input style={{...inp,flex:1,marginBottom:0}} placeholder="Message Coach Salzman..." value={msgText} onChange={e=>setMsgText(e.target.value)} onKeyDown={e=>e.key==='Enter'&&sendMessage()}/>
-                <button onClick={sendMessage} style={{background:C.gold,color:C.bg,border:'none',borderRadius:8,padding:'0 16px',fontSize:14,fontWeight:700,cursor:'pointer',flexShrink:0}}>Send</button>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* NOTES TAB */}
-        {tab==='notes'&&(
-          <div>
-            <div style={{fontSize:18,fontWeight:700,color:C.white,marginBottom:16}}>Coach Notes</div>
-            {notes.length===0&&<div style={{...card,color:C.textMuted,textAlign:'center',padding:'32px 16px'}}>No notes yet.</div>}
-            {notes.map((n:any)=>(
-              <div key={n.id} style={card}>
-                <div style={{fontSize:10,color:C.textMuted,marginBottom:8,textTransform:'uppercase' as const,letterSpacing:'0.5px',fontWeight:600}}>Coach Salzman · {new Date(n.created_at).toLocaleDateString()}</div>
-                <div style={{fontSize:14,lineHeight:1.7,color:C.text}}>{n.content}</div>
-              </div>
-            ))}
-          </div>
-        )}
         {tab==='iq'&&<PitchingIQTab/>}
 
       </div>

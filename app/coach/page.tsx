@@ -125,9 +125,8 @@ const READINESS_OPTIONS = [
   {value:'guarding',label:'Guarding'},
 ]
 const READINESS_COLORS:Record<string,string> = {trusts_it:'#39d353',hesitant:'#e8b84b',guarding:'#f85149'}
-const RTT_PHASES = ['protective','retraining','integration','performance']
-const RTT_PHASE_LABELS:Record<string,string> = {protective:'Protective',retraining:'Retraining',integration:'Integration',performance:'Performance'}
-const RTT_PHASE_COLORS:Record<string,string> = {protective:'#f85149',retraining:'#e8b84b',integration:'#58a6ff',performance:'#39d353'}
+// RTT-phase UI removed for a rework (the phase/tier model wasn't landing well) — the
+// profiles.rtt_phase column and its data are untouched, so this can come back cleanly later.
 
 function scoreColor(score:number){
   if (score>=80) return '#39d353'
@@ -257,11 +256,12 @@ function TierBadge({tier}:{tier:string}){
 // Shared by every assessment that closes the loop into an exercise suggestion (CMJ Neuro
 // Classification, Mobility Screen fails, Arm Care flags) — one rendering, one place to fix
 // styling/behavior instead of three copies drifting apart.
-function RecommendedExercisesBlock({exercises, accentColor, parsedPrinciples}:{exercises:any[], accentColor:string, parsedPrinciples:Record<string,{sets:string,reps:string,load:string}>}){
+function RecommendedExercisesBlock({exercises, notes, accentColor, parsedPrinciples}:{exercises:any[], notes?:string|null, accentColor:string, parsedPrinciples:Record<string,{sets:string,reps:string,load:string}>}){
   if (!exercises.length) return null
   return (
     <div>
       <div style={{fontSize:10,color:accentColor,fontWeight:700,textTransform:'uppercase' as const,letterSpacing:'1px',marginBottom:8}}>Recommended Exercises</div>
+      {notes&&<div style={{fontSize:11,color:C.textMuted,padding:'8px 10px',background:'rgba(0,0,0,0.2)',borderRadius:6,marginBottom:8,lineHeight:1.5}}>{notes}</div>}
       <div style={{display:'flex',flexDirection:'column' as const,gap:6}}>
         {exercises.map((ex:any)=>{
           const catCol=CAT_MAP[ex.category]
@@ -309,10 +309,6 @@ export default function CoachDashboard(){
   const [loading,setLoading]=useState(true)
   const [program,setProgram]=useState<any>(null)
   const [structuredDays,setStructuredDays]=useState<any>({})
-  const [noteText,setNoteText]=useState('')
-  const [notes,setNotes]=useState<any[]>([])
-  const [messages,setMessages]=useState<any[]>([])
-  const [msgText,setMsgText]=useState('')
   const [logs,setLogs]=useState<any[]>([])
   const [cmjResults,setCmjResults]=useState<any[]>([])
   const [cmjModal,setCmjModal]=useState(false)
@@ -408,10 +404,8 @@ export default function CoachDashboard(){
   const selectPitcher=async(p:any)=>{
     setSelected(p);setTab('overview');setView('roster')
     const sevenDaysAgo=new Date(Date.now()-7*24*60*60*1000).toISOString().split('T')[0]
-    const [logsRes,notesRes,msgsRes,cmjRes,progRes,foodRes,fuelRes,weekFuelRes,throwRes,armCareRes]=await Promise.all([
+    const [logsRes,cmjRes,progRes,foodRes,fuelRes,weekFuelRes,throwRes,armCareRes]=await Promise.all([
       supabase.from('session_logs').select('*').eq('pitcher_id',p.id).order('log_date',{ascending:false}),
-      supabase.from('coach_notes').select('*').eq('pitcher_id',p.id).order('created_at',{ascending:false}),
-      supabase.from('messages').select('*').eq('pitcher_id',p.id).order('created_at'),
       supabase.from('cmj_results').select('*').eq('pitcher_id',p.id).order('test_date',{ascending:false}),
       supabase.from('programs').select('*').eq('pitcher_id',p.id).order('week_of',{ascending:false}).limit(1),
       supabase.from('food_logs').select('*').eq('pitcher_id',p.id).eq('log_date',today).order('created_at'),
@@ -421,8 +415,6 @@ export default function CoachDashboard(){
       supabase.from('arm_care_tests').select('*').eq('pitcher_id',p.id).order('created_at',{ascending:false}),
     ])
     setLogs(logsRes.data||[])
-    setNotes(notesRes.data||[])
-    setMessages(msgsRes.data||[])
     setCmjResults(cmjRes.data||[])
     const prog=progRes.data?.[0]||null
     setProgram(prog);setStructuredDays(prog?.structured_days||{});setCellNotes(prog?.days||{})
@@ -488,13 +480,6 @@ export default function CoachDashboard(){
     await refetchThrowEntries()
   }
 
-  const updateRTTPhase=async(phase:string)=>{
-    if (!selected)return
-    const value=phase||null
-    await supabase.from('profiles').update({rtt_phase:value}).eq('id',selected.id)
-    setSelected((p:any)=>({...p,rtt_phase:value}))
-    setPitchers((ps:any[])=>ps.map(p=>p.id===selected.id?{...p,rtt_phase:value}:p))
-  }
 
   const calcCoachCMJ=()=>{
     setCmjErr('')
@@ -558,17 +543,6 @@ export default function CoachDashboard(){
 
   const signOut=async()=>{await supabase.auth.signOut();router.push('/auth/login')}
 
-  const addNote=async()=>{
-    if (!noteText.trim()||!selected)return
-    const {data}=await supabase.from('coach_notes').insert({pitcher_id:selected.id,content:noteText.trim()}).select().single()
-    if (data){setNotes([data,...notes]);setNoteText('')}
-  }
-
-  const sendMessage=async()=>{
-    if (!msgText.trim()||!selected)return
-    const {data}=await supabase.from('messages').insert({pitcher_id:selected.id,sender_id:user.id,sender_role:'coach',content:msgText.trim()}).select().single()
-    if (data){setMessages([...messages,data]);setMsgText('')}
-  }
 
   const savePrinciples=async()=>{
     const {data:pr}=await supabase.from('principles').select('id').single()
@@ -826,12 +800,16 @@ Write next week's program by day and category (Pre-Throwing, Throwing, Post-Thro
     }
   }
 
-  const getRecommendedExercises=(classification:string)=>{
+  // Returns both the exercise shortlist AND the rule's own explanation of why that work
+  // helps this specific test/flag — every recommendation surface in the app (CMJ, Mobility,
+  // Arm Care, Benchmarks, Power Tests) shows both, not just the exercise list on its own.
+  const getRecommendation=(classification:string):{exercises:any[],notes:string|null}=>{
     const rule=recommendationRules.find(r=>r.classification===classification)
-    if (!rule) return []
+    if (!rule) return {exercises:[],notes:null}
     const preferredCats:string[]=rule.preferred_categories||[]
     const preferredPatterns:string[]=rule.preferred_patterns||[]
-    return EXERCISE_DB.filter(ex=>preferredCats.includes(ex.category)||preferredPatterns.includes(ex.pattern)).slice(0,6)
+    const exercises=EXERCISE_DB.filter(ex=>preferredCats.includes(ex.category)||preferredPatterns.includes(ex.pattern)).slice(0,6)
+    return {exercises, notes:rule.notes||null}
   }
 
   const filteredExercises=useMemo(()=>EXERCISE_DB.filter(ex=>{
@@ -909,7 +887,7 @@ Write next week's program by day and category (Pre-Throwing, Throwing, Post-Thro
             const {classification,jumpTier,ppTier,rsiTier}=classifyCMJ(latestCMJ)
             const classCol=CLASS_COLORS[classification]||CLASS_COLORS['No Data']
             const rule=recommendationRules.find(r=>r.classification===classification)
-            const recommendedExercises=getRecommendedExercises(classification)
+            const cmjRecommendation=getRecommendation(classification)
             const todayScore=todayFuelScore?.total_score||0
             // Shared by the Program tab's Speed/Power guardrail — same recoveryModifier the
             // Arm Care card's foot-lb target already uses, so a pitcher who hasn't bounced
@@ -926,14 +904,6 @@ Write next week's program by day and category (Pre-Throwing, Throwing, Post-Thro
                   <div style={{fontSize:20,fontWeight:700,color:C.white}}>{selected.full_name?.toUpperCase()}</div>
                   <div style={{display:'flex',alignItems:'center',gap:8,marginTop:2}}>
                     <div style={{fontSize:11,color:C.textMuted,textTransform:'uppercase' as const,letterSpacing:'1px'}}>Pitcher · Salzman Baseball</div>
-                    <select
-                      value={selected.rtt_phase||''}
-                      onChange={e=>updateRTTPhase(e.target.value)}
-                      style={{background:selected.rtt_phase?`${RTT_PHASE_COLORS[selected.rtt_phase]}1A`:'transparent',color:selected.rtt_phase?RTT_PHASE_COLORS[selected.rtt_phase]:C.textDim,border:`1px solid ${selected.rtt_phase?RTT_PHASE_COLORS[selected.rtt_phase]+'66':C.border}`,borderRadius:12,padding:'2px 8px',fontSize:10,fontWeight:600,cursor:'pointer'}}
-                    >
-                      <option value="">Not in RTT</option>
-                      {RTT_PHASES.map(p=><option key={p} value={p}>{RTT_PHASE_LABELS[p]} Phase</option>)}
-                    </select>
                   </div>
                 </div>
                 <div style={{display:'flex',gap:8,alignItems:'center'}}>
@@ -998,7 +968,7 @@ Write next week's program by day and category (Pre-Throwing, Throwing, Post-Thro
               <ProgressOverview pitcherId={selected.id} mode="coach"/>
 
               <div style={{display:'flex',gap:6,marginBottom:16,flexWrap:'wrap' as const}}>
-                {['overview','logs','program','notes','messages','iq','benchmarks','mechanics'].map(t=>(
+                {['overview','logs','program','iq','benchmarks','mechanics'].map(t=>(
                   <button key={t} style={S.tab(tab===t)} onClick={()=>setTab(t)}>{t}</button>
                 ))}
               </div>
@@ -1114,12 +1084,15 @@ Write next week's program by day and category (Pre-Throwing, Throwing, Post-Thro
                         )}
                         {armCareRecommendations.length>0&&(
                           <div style={{marginTop:12,paddingTop:12,borderTop:`1px solid ${C.border}`,display:'flex',flexDirection:'column' as const,gap:14}}>
-                            {armCareRecommendations.map(r=>(
-                              <div key={r.key}>
-                                <div style={{fontSize:11,color:C.red,fontWeight:600,marginBottom:6}}>{r.label}</div>
-                                <RecommendedExercisesBlock exercises={getRecommendedExercises(r.key)} accentColor={C.red} parsedPrinciples={parsedPrinciples}/>
-                              </div>
-                            ))}
+                            {armCareRecommendations.map(r=>{
+                              const rec=getRecommendation(r.key)
+                              return(
+                                <div key={r.key}>
+                                  <div style={{fontSize:11,color:C.red,fontWeight:600,marginBottom:6}}>{r.label}</div>
+                                  <RecommendedExercisesBlock exercises={rec.exercises} notes={rec.notes} accentColor={C.red} parsedPrinciples={parsedPrinciples}/>
+                                </div>
+                              )
+                            })}
                           </div>
                         )}
                         {showArmCareHistory&&armCareTests.length>0&&(
@@ -1233,8 +1206,7 @@ Write next week's program by day and category (Pre-Throwing, Throwing, Post-Thro
                           </div>
                         ))}
                       </div>
-                      {rule?.notes&&<div style={{fontSize:11,color:C.textMuted,padding:'8px 10px',background:'rgba(0,0,0,0.2)',borderRadius:6,marginBottom:12}}>{rule.notes}</div>}
-                      <RecommendedExercisesBlock exercises={recommendedExercises} accentColor={classCol.text} parsedPrinciples={parsedPrinciples}/>
+                      <RecommendedExercisesBlock exercises={cmjRecommendation.exercises} notes={cmjRecommendation.notes} accentColor={classCol.text} parsedPrinciples={parsedPrinciples}/>
                     </div>
                   ):(
                     <div style={{...S.card,border:'1px solid rgba(163,113,247,0.2)',background:'rgba(163,113,247,0.04)',marginBottom:12}}>
@@ -1399,20 +1371,24 @@ Write next week's program by day and category (Pre-Throwing, Throwing, Post-Thro
                             <div style={{width:3,height:28,borderRadius:2,background:cat.color,flexShrink:0}}/>
                             <span style={{fontSize:10,fontWeight:700,color:cat.color,textTransform:'uppercase' as const,letterSpacing:'0.5px',lineHeight:1.2}}>{cat.key}</span>
                           </div>
-                          {DAYS.map(day=>{
+                          {DAYS.map((day,dayIdx)=>{
                             const key=`${day}___${cat.key}`
                             const exercises=structuredDays[key]||[]
                             const note=cellNotes[key]||''
                             const isExpanded=expandedCell===key
+                            const toContactExercise=(ex:any)=>({id:ex.id,sets:ex.sets,reps:ex.reps,ground_contacts_per_rep:EXERCISE_DB.find((e:any)=>e.id===ex.id)?.ground_contacts_per_rep})
+                            const priorDay=DAYS[(dayIdx-1+DAYS.length)%DAYS.length]
+                            const priorDayExercises=structuredDays[`${priorDay}___${cat.key}`]||[]
                             const speedPowerGuardrail=cat.key==='Speed/Power'&&exercises.length>0?computeSpeedPowerGuardrail(
-                              exercises.map((ex:any)=>({id:ex.id,sets:ex.sets,reps:ex.reps,ground_contacts_per_rep:EXERCISE_DB.find((e:any)=>e.id===ex.id)?.ground_contacts_per_rep})),
+                              exercises.map(toContactExercise),
                               speedPowerRecoveryModifier,speedPowerArmCareStatuses,
+                              priorDayExercises.map(toContactExercise),
                             ):null
                             return(
                               <div key={day} style={{background:C.bg2,border:`1px solid ${C.border}`,borderRadius:6,padding:6,minHeight:60}}>
                                 {speedPowerGuardrail&&speedPowerGuardrail.status!=='OK'&&(
-                                  <div title={`${speedPowerGuardrail.totalContacts} ground contacts (Caution at ${speedPowerGuardrail.cautionCeiling}, Flag at ${speedPowerGuardrail.flagCeiling})${speedPowerGuardrail.reasons.length?' — '+speedPowerGuardrail.reasons.join(', '):''}`} style={{fontSize:9,fontWeight:700,padding:'2px 5px',borderRadius:4,marginBottom:3,background:speedPowerGuardrail.status==='Flag'?'rgba(248,81,73,0.15)':'rgba(232,184,75,0.15)',color:speedPowerGuardrail.status==='Flag'?C.red:C.gold,border:`1px solid ${speedPowerGuardrail.status==='Flag'?C.red:C.gold}66`}}>
-                                    {speedPowerGuardrail.totalContacts} contacts — {speedPowerGuardrail.status}
+                                  <div title={`${speedPowerGuardrail.totalContacts} ground contacts today, ${speedPowerGuardrail.rolling48hContacts} within the last 48h (Caution at ${speedPowerGuardrail.cautionCeiling}, Flag at ${speedPowerGuardrail.flagCeiling})${speedPowerGuardrail.reasons.length?' — '+speedPowerGuardrail.reasons.join(', '):''}`} style={{fontSize:9,fontWeight:700,padding:'2px 5px',borderRadius:4,marginBottom:3,background:speedPowerGuardrail.status==='Flag'?'rgba(248,81,73,0.15)':'rgba(232,184,75,0.15)',color:speedPowerGuardrail.status==='Flag'?C.red:C.gold,border:`1px solid ${speedPowerGuardrail.status==='Flag'?C.red:C.gold}66`}}>
+                                    {speedPowerGuardrail.is48hDriven?`${speedPowerGuardrail.rolling48hContacts} in 48h`:`${speedPowerGuardrail.totalContacts} contacts`} — {speedPowerGuardrail.status}
                                   </div>
                                 )}
                                 {exercises.map((ex:any,i:number)=>(
@@ -1447,45 +1423,12 @@ Write next week's program by day and category (Pre-Throwing, Throwing, Post-Thro
                 </div>
               )}
 
-              {tab==='notes'&&(
-                <div>
-                  <div style={S.card}>
-                    <textarea style={{...S.input,minHeight:80,resize:'vertical' as const}} placeholder="Write a note..." value={noteText} onChange={e=>setNoteText(e.target.value)}/>
-                    <button style={{...S.btn('gold'),marginTop:10}} onClick={addNote}>Save Note</button>
-                  </div>
-                  {notes.map((n:any)=>(
-                    <div key={n.id} style={S.card}>
-                      <div style={{fontSize:10,color:C.textMuted,marginBottom:6,textTransform:'uppercase' as const}}>{new Date(n.created_at).toLocaleDateString()}</div>
-                      <div style={{fontSize:14,lineHeight:1.7,color:C.text}}>{n.content}</div>
-                    </div>
-                  ))}
-                </div>
-              )}
-
-              {tab==='messages'&&(
-                <div style={S.card}>
-                  <div style={{fontSize:11,color:C.textMuted,fontWeight:700,textTransform:'uppercase' as const,letterSpacing:'1px',marginBottom:14}}>Messages · {selected.full_name}</div>
-                  <div style={{display:'flex',flexDirection:'column' as const,gap:10,minHeight:200,marginBottom:16}}>
-                    {messages.length===0&&<div style={{color:C.textDim,fontSize:13}}>No messages yet.</div>}
-                    {messages.map((m:any)=>(
-                      <div key={m.id} style={{display:'flex',flexDirection:'column' as const,alignItems:m.sender_role==='coach'?'flex-end':'flex-start'}}>
-                        <div style={{fontSize:10,color:C.textDim,marginBottom:3}}>{m.sender_role==='coach'?'Coach Salzman':selected.full_name} · {new Date(m.created_at).toLocaleString()}</div>
-                        <div style={{background:m.sender_role==='coach'?C.goldBg:C.bg3,color:m.sender_role==='coach'?C.gold:C.text,border:`1px solid ${m.sender_role==='coach'?C.goldDim:C.border}`,borderRadius:10,padding:'8px 12px',fontSize:13,maxWidth:'80%'}}>{m.content}</div>
-                      </div>
-                    ))}
-                  </div>
-                  <div style={{display:'flex',gap:8}}>
-                    <input style={{...S.input,flex:1}} placeholder="Message..." value={msgText} onChange={e=>setMsgText(e.target.value)} onKeyDown={e=>e.key==='Enter'&&sendMessage()}/>
-                    <button style={S.btn('gold')} onClick={sendMessage}>Send</button>
-                  </div>
-                </div>
-              )}
               {tab==='iq'&&(
                 <div style={{padding:4}}><PitchingIQTab/></div>
               )}
 
               {tab==='benchmarks'&&(
-                <div style={{padding:4}}><AthleticBenchmarks pitcherId={selected.id} getRecommendedExercises={getRecommendedExercises}/></div>
+                <div style={{padding:4}}><AthleticBenchmarks pitcherId={selected.id} getRecommendation={getRecommendation}/></div>
               )}
 
               {tab==='mechanics'&&(

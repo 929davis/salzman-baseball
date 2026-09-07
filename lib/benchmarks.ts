@@ -61,24 +61,24 @@ export function scalePct(def: BenchmarkDef, value: number): number {
 }
 
 // ---------------------------------------------------------------------------
-// Power Tests — additive, separate tier model (Tour/Good/Marginal/Deficit),
+// Power Tests — additive, separate tier model (Excellent/Good/Marginal/Deficit),
 // not part of the TopVelocity Tier 1/2/3 percentile system above.
 //
 // Sourcing: only a single top-tier "excellent"/"standard" anchor value was
 // findable per test (TPI-adjacent, via web search — no full norms table with
-// Good/Marginal/Deficit breakpoints is publicly available). Tour = that
+// Good/Marginal/Deficit breakpoints is publicly available). Excellent = that
 // anchor; Good/Marginal are constructed as 90%/75% bands below it, confirmed
 // with the coach rather than sourced. Not a claim these are official numbers.
 // ---------------------------------------------------------------------------
 
-export type PowerTestTier = 'Tour' | 'Good' | 'Marginal' | 'Deficit'
+export type PowerTestTier = 'Excellent' | 'Good' | 'Marginal' | 'Deficit'
 
 export type PowerTestDef = {
   key: string
   label: string
   unit: string
   description: string
-  tourMin: number
+  tourMin: number // top-tier ("Excellent") threshold — field name kept for now, not user-visible
   goodMin: number
   marginalMin: number
   // Vertical Jump reuses the existing Tier 2 benchmark's stored value instead of
@@ -95,14 +95,14 @@ export const POWER_TESTS: PowerTestDef[] = [
 
 export function powerTestTier(def: PowerTestDef, value: number | null | undefined): PowerTestTier | null {
   if (value==null || isNaN(value)) return null
-  if (value>=def.tourMin) return 'Tour'
+  if (value>=def.tourMin) return 'Excellent'
   if (value>=def.goodMin) return 'Good'
   if (value>=def.marginalMin) return 'Marginal'
   return 'Deficit'
 }
 
 export const POWER_TIER_COLORS: Record<PowerTestTier,string> = {
-  Tour:'#39d353', Good:'#58a6ff', Marginal:'#e8b84b', Deficit:'#f85149',
+  Excellent:'#39d353', Good:'#58a6ff', Marginal:'#e8b84b', Deficit:'#f85149',
 }
 
 // ---------------------------------------------------------------------------

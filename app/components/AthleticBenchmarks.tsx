@@ -112,8 +112,38 @@ function BenchmarkBar({def,value,history,videos,onSaveVideo}:{def:BenchmarkDef,v
 }
 
 type RecommendedExercise = { id:string, name:string, category:string, description:string }
+type Recommendation = { exercises:RecommendedExercise[], notes:string|null }
 
-export default function AthleticBenchmarks({pitcherId, getRecommendedExercises}:{pitcherId:string, getRecommendedExercises?:(key:string)=>RecommendedExercise[]}){
+// Shared by Mobility Screens, Benchmarks, and Power Tests below — one "why this helps, and
+// what to do about it" rendering, not three near-copies drifting apart.
+function RecommendedWorkList({items, getRecommendation}:{items:{key:string,label:string,statusLabel:string}[], getRecommendation:(key:string)=>Recommendation}){
+  const rendered = items.map(item=>{
+    const rec = getRecommendation(item.key)
+    if (!rec.exercises.length) return null
+    return (
+      <div key={item.key}>
+        <div style={{fontSize:12,fontWeight:600,color:C.text,marginBottom:6}}>{item.label} — {item.statusLabel}</div>
+        {rec.notes&&<div style={{fontSize:11,color:C.textMuted,marginBottom:6,lineHeight:1.5}}>{rec.notes}</div>}
+        <div style={{display:'flex',flexDirection:'column' as const,gap:4}}>
+          {rec.exercises.map(ex=>(
+            <div key={ex.id} style={{background:C.bg3,borderRadius:6,padding:'6px 10px',fontSize:11,color:C.textMuted}}>
+              <span style={{color:C.white,fontWeight:600}}>{ex.name}</span> — {ex.description}
+            </div>
+          ))}
+        </div>
+      </div>
+    )
+  }).filter((x):x is NonNullable<typeof x>=>x!=null)
+  if (!rendered.length) return null
+  return (
+    <div style={{marginTop:14,paddingTop:14,borderTop:`1px solid ${C.border}`,display:'flex',flexDirection:'column' as const,gap:12}}>
+      <div style={{fontSize:11,fontWeight:700,color:C.red,textTransform:'uppercase' as const,letterSpacing:'0.5px'}}>Recommended Corrective Work</div>
+      {rendered}
+    </div>
+  )
+}
+
+export default function AthleticBenchmarks({pitcherId, getRecommendation}:{pitcherId:string, getRecommendation?:(key:string)=>Recommendation}){
   const supabase=createClient()
   const {videos,saveVideo}=useTestVideos()
   const [benchHistory,setBenchHistory]=useState<any[]>([])
@@ -297,9 +327,18 @@ export default function AthleticBenchmarks({pitcherId, getRecommendedExercises}:
         </div>
       ))}
 
+      {getRecommendation && (
+        <div style={{marginBottom:12}}>
+          <RecommendedWorkList
+            items={BENCHMARKS.filter(def=>benchmarkStatus(def,latest?.[def.key])?.label==='Below average').map(def=>({key:`benchmark_${def.key}`,label:def.label,statusLabel:'Below average'}))}
+            getRecommendation={getRecommendation}
+          />
+        </div>
+      )}
+
       <div style={{background:C.bg2,border:`1px solid ${C.border}`,borderRadius:8,padding:16,marginBottom:12}}>
         <div style={{fontSize:11,fontWeight:700,color:C.gold,textTransform:'uppercase' as const,letterSpacing:'0.5px',marginBottom:2}}>Power Tests</div>
-        <div style={{fontSize:11,color:C.textDim,marginBottom:14}}>Tour / Good / Marginal / Deficit tiers. Click a card for the test description, demo video, and to log a result.</div>
+        <div style={{fontSize:11,color:C.textDim,marginBottom:14}}>Excellent / Good / Marginal / Deficit tiers. Click a card for the test description, demo video, and to log a result.</div>
         <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(200px,1fr))',gap:10}}>
           {POWER_TESTS.map(def=>{
             const value=def.reuseKey?latest?.[def.reuseKey]:latest?.[def.key]
@@ -309,6 +348,14 @@ export default function AthleticBenchmarks({pitcherId, getRecommendedExercises}:
               hasVideo={!!videos[def.key]} onOpen={()=>setDetailModal({type:'power',def})}/>
           })}
         </div>
+        {getRecommendation && (()=>{
+          const items=POWER_TESTS.map(def=>{
+            const value=def.reuseKey?latest?.[def.reuseKey]:latest?.[def.key]
+            return {def, tier:powerTestTier(def,value)}
+          }).filter(x=>x.tier==='Marginal'||x.tier==='Deficit')
+            .map(x=>({key:x.def.reuseKey?`benchmark_${x.def.reuseKey}`:`powertest_${x.def.key}`, label:x.def.label, statusLabel:x.tier as string}))
+          return <RecommendedWorkList items={items} getRecommendation={getRecommendation}/>
+        })()}
       </div>
 
       <div style={{background:C.bg2,border:`1px solid ${C.border}`,borderRadius:8,padding:16,marginBottom:12}}>
@@ -322,34 +369,15 @@ export default function AthleticBenchmarks({pitcherId, getRecommendedExercises}:
           ))}
         </div>
 
-        {getRecommendedExercises && (()=>{
-          const failing = MOBILITY_SCREENS.filter(s => {
-            const status = screenLatest?.[s.key]
-            return status==='Limited' || status==='Fail'
-          })
-          if (!failing.length) return null
-          return (
-            <div style={{marginTop:14,paddingTop:14,borderTop:`1px solid ${C.border}`,display:'flex',flexDirection:'column' as const,gap:12}}>
-              <div style={{fontSize:11,fontWeight:700,color:C.red,textTransform:'uppercase' as const,letterSpacing:'0.5px'}}>Recommended Corrective Work</div>
-              {failing.map(s=>{
-                const exercises = getRecommendedExercises(`mobility_${s.key}`)
-                if (!exercises.length) return null
-                return (
-                  <div key={s.key}>
-                    <div style={{fontSize:12,fontWeight:600,color:C.text,marginBottom:6}}>{s.label} — {screenLatest?.[s.key]}</div>
-                    <div style={{display:'flex',flexDirection:'column' as const,gap:4}}>
-                      {exercises.map(ex=>(
-                        <div key={ex.id} style={{background:C.bg3,borderRadius:6,padding:'6px 10px',fontSize:11,color:C.textMuted}}>
-                          <span style={{color:C.white,fontWeight:600}}>{ex.name}</span> — {ex.description}
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )
-              })}
-            </div>
-          )
-        })()}
+        {getRecommendation && (
+          <RecommendedWorkList
+            items={MOBILITY_SCREENS.filter(s=>{
+              const status=screenLatest?.[s.key]
+              return status==='Limited'||status==='Fail'
+            }).map(s=>({key:`mobility_${s.key}`,label:s.label,statusLabel:screenLatest?.[s.key]||''}))}
+            getRecommendation={getRecommendation}
+          />
+        )}
       </div>
 
       {detailModal?.type==='power' && (()=>{
