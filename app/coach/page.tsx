@@ -13,7 +13,7 @@ import { useTestVideos } from '@/lib/testVideos'
 import { angleAt } from '@/lib/angles'
 import {
   calcStrengthVelocityRatio, calcBodyweightPct, bodyweightPctStatus,
-  calcRomAsymmetry, computeArmCareTrends, THREE_TIER_COLORS,
+  calcRomAsymmetry, computeArmCareTrends, computeWorkloadArmHealthCallout, THREE_TIER_COLORS,
   calcArmCare, getEffectiveThrowCount, getRecoveryModifier,
 } from '@/lib/armCare'
 import { parseTime, calcCMJFn } from '@/lib/cmj'
@@ -256,6 +256,38 @@ function CNSDot({cns}:{cns:string}){
 function TierBadge({tier}:{tier:string}){
   const col = TIER_COLORS[tier]||TIER_COLORS['No Data']
   return <span style={{background:col.bg,border:`1px solid ${col.border}`,color:col.text,fontSize:9,fontWeight:700,padding:'2px 7px',borderRadius:4,textTransform:'uppercase' as const,letterSpacing:'0.5px'}}>{tier}</span>
+}
+
+// Shared by every assessment that closes the loop into an exercise suggestion (CMJ Neuro
+// Classification, Mobility Screen fails, Arm Care flags) — one rendering, one place to fix
+// styling/behavior instead of three copies drifting apart.
+function RecommendedExercisesBlock({exercises, accentColor, parsedPrinciples}:{exercises:any[], accentColor:string, parsedPrinciples:Record<string,{sets:string,reps:string,load:string}>}){
+  if (!exercises.length) return null
+  return (
+    <div>
+      <div style={{fontSize:10,color:accentColor,fontWeight:700,textTransform:'uppercase' as const,letterSpacing:'1px',marginBottom:8}}>Recommended Exercises</div>
+      <div style={{display:'flex',flexDirection:'column' as const,gap:6}}>
+        {exercises.map((ex:any)=>{
+          const catCol=CAT_MAP[ex.category]
+          const cnsCol=CNS_COLORS[ex.cns]||CNS_COLORS['Low']
+          const prescription=lookupPrescription(ex.name,parsedPrinciples)
+          return(
+            <div key={ex.id} style={{background:'rgba(0,0,0,0.2)',borderRadius:6,padding:'8px 12px',display:'flex',alignItems:'center',gap:10}}>
+              <div style={{width:3,height:24,borderRadius:2,background:catCol?.color||C.textMuted,flexShrink:0}}/>
+              <div style={{flex:1}}>
+                <div style={{fontSize:12,fontWeight:600,color:C.white}}>{ex.name}</div>
+                <div style={{display:'flex',gap:6,marginTop:2,alignItems:'center'}}>
+                  <span style={{fontSize:10,color:cnsCol.text}}>{ex.cns} CNS</span>
+                  <span style={{fontSize:10,color:catCol?.color||C.textMuted}}>{ex.category}</span>
+                  {prescription&&<span style={{fontSize:10,color:C.gold,fontWeight:600}}>{prescription.sets}x{prescription.reps}{prescription.load?` @ ${prescription.load}%`:''}</span>}
+                </div>
+              </div>
+            </div>
+          )
+        })}
+      </div>
+    </div>
+  )
 }
 
 const BLANK_CUSTOM = {name:'',pattern:'',category:'Main Exercises',cns:'Moderate',description:''}
@@ -986,6 +1018,18 @@ Write next week's program by day and category (Pre-Throwing, Throwing, Post-Thro
                     const irPct=latestTest?calcBodyweightPct(latestTest.ir_load_lbs,latestTest.bodyweight_lbs):null
                     const romAsym=latestTest?calcRomAsymmetry(latestTest.er_rom_deg,latestTest.ir_rom_deg):null
                     const armCareTrends=computeArmCareTrends(armCareTests,getEffectiveVelocity(selected,cmjResults)||null)
+                    const workloadHist=[...logs].reverse()
+                    const workloadCallout=computeWorkloadArmHealthCallout([
+                      {label:'Pitch Count', hist:workloadHist.map(r=>({date:r.log_date,value:r.pitch_count})).filter(h=>h.value!=null)},
+                      {label:'High-Effort Throws', hist:workloadHist.map(r=>({date:r.log_date,value:r.high_effort_throws})).filter(h=>h.value!=null)},
+                    ], armCareTrends)
+                    const erStatus=bodyweightPctStatus(erPct,'ER'), irStatus=bodyweightPctStatus(irPct,'IR')
+                    const armCareRecommendations=[
+                      svr?.flagged&&{key:'arm_care_svr_flag',label:'Strength-Velocity Ratio flagged'},
+                      (erStatus==='Caution'||erStatus==='Flag')&&{key:'arm_care_er_low',label:'ER % Bodyweight low'},
+                      (irStatus==='Caution'||irStatus==='Flag')&&{key:'arm_care_ir_low',label:'IR % Bodyweight low'},
+                      (romAsym?.status==='Caution'||romAsym?.status==='Flag')&&{key:'arm_care_rom_asym',label:'ROM Asymmetry flagged'},
+                    ].filter((r):r is {key:string,label:string}=>!!r)
                     return (
                       <div style={{...S.card,marginBottom:12}}>
                         <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:12}}>
@@ -1054,6 +1098,22 @@ Write next week's program by day and category (Pre-Throwing, Throwing, Post-Thro
                                 </div>
                               ))}
                             </div>
+                          </div>
+                        )}
+                        {workloadCallout&&(
+                          <div style={{marginTop:12,padding:'10px 12px',borderRadius:8,background:workloadCallout.severity==='Flag'?C.redBg:C.goldBg,border:`1px solid ${workloadCallout.severity==='Flag'?C.red:C.goldDim}66`}}>
+                            <div style={{fontSize:10,fontWeight:700,color:workloadCallout.severity==='Flag'?C.red:C.gold,textTransform:'uppercase' as const,letterSpacing:'0.5px',marginBottom:4}}>Workload vs. Arm Health</div>
+                            <div style={{fontSize:12,color:C.text,lineHeight:1.5}}>{workloadCallout.workloadLabel} is up {workloadCallout.workloadChangePct}% since the first log on file, while {workloadCallout.armMetricLabel} has {workloadCallout.armMetricChangePct>=0?'risen':'dropped'} {Math.abs(workloadCallout.armMetricChangePct)}% over the same span — worth checking whether the rise in throwing load is driving that change.</div>
+                          </div>
+                        )}
+                        {armCareRecommendations.length>0&&(
+                          <div style={{marginTop:12,paddingTop:12,borderTop:`1px solid ${C.border}`,display:'flex',flexDirection:'column' as const,gap:14}}>
+                            {armCareRecommendations.map(r=>(
+                              <div key={r.key}>
+                                <div style={{fontSize:11,color:C.red,fontWeight:600,marginBottom:6}}>{r.label}</div>
+                                <RecommendedExercisesBlock exercises={getRecommendedExercises(r.key)} accentColor={C.red} parsedPrinciples={parsedPrinciples}/>
+                              </div>
+                            ))}
                           </div>
                         )}
                         {showArmCareHistory&&armCareTests.length>0&&(
@@ -1168,31 +1228,7 @@ Write next week's program by day and category (Pre-Throwing, Throwing, Post-Thro
                         ))}
                       </div>
                       {rule?.notes&&<div style={{fontSize:11,color:C.textMuted,padding:'8px 10px',background:'rgba(0,0,0,0.2)',borderRadius:6,marginBottom:12}}>{rule.notes}</div>}
-                      {recommendedExercises.length>0&&(
-                        <div>
-                          <div style={{fontSize:10,color:classCol.text,fontWeight:700,textTransform:'uppercase' as const,letterSpacing:'1px',marginBottom:8}}>Recommended Exercises</div>
-                          <div style={{display:'flex',flexDirection:'column' as const,gap:6}}>
-                            {recommendedExercises.map((ex:any)=>{
-                              const catCol=CAT_MAP[ex.category]
-                              const cnsCol=CNS_COLORS[ex.cns]||CNS_COLORS['Low']
-                              const prescription=lookupPrescription(ex.name,parsedPrinciples)
-                              return(
-                                <div key={ex.id} style={{background:'rgba(0,0,0,0.2)',borderRadius:6,padding:'8px 12px',display:'flex',alignItems:'center',gap:10}}>
-                                  <div style={{width:3,height:24,borderRadius:2,background:catCol?.color||C.textMuted,flexShrink:0}}/>
-                                  <div style={{flex:1}}>
-                                    <div style={{fontSize:12,fontWeight:600,color:C.white}}>{ex.name}</div>
-                                    <div style={{display:'flex',gap:6,marginTop:2,alignItems:'center'}}>
-                                      <span style={{fontSize:10,color:cnsCol.text}}>{ex.cns} CNS</span>
-                                      <span style={{fontSize:10,color:catCol?.color||C.textMuted}}>{ex.category}</span>
-                                      {prescription&&<span style={{fontSize:10,color:C.gold,fontWeight:600}}>{prescription.sets}x{prescription.reps}{prescription.load?` @ ${prescription.load}%`:''}</span>}
-                                    </div>
-                                  </div>
-                                </div>
-                              )
-                            })}
-                          </div>
-                        </div>
-                      )}
+                      <RecommendedExercisesBlock exercises={recommendedExercises} accentColor={classCol.text} parsedPrinciples={parsedPrinciples}/>
                     </div>
                   ):(
                     <div style={{...S.card,border:'1px solid rgba(163,113,247,0.2)',background:'rgba(163,113,247,0.04)',marginBottom:12}}>
@@ -1434,7 +1470,7 @@ Write next week's program by day and category (Pre-Throwing, Throwing, Post-Thro
               )}
 
               {tab==='benchmarks'&&(
-                <div style={{padding:4}}><AthleticBenchmarks pitcherId={selected.id}/></div>
+                <div style={{padding:4}}><AthleticBenchmarks pitcherId={selected.id} getRecommendedExercises={getRecommendedExercises}/></div>
               )}
 
               {tab==='mechanics'&&(

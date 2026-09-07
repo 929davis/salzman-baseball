@@ -111,7 +111,9 @@ function BenchmarkBar({def,value,history,videos,onSaveVideo}:{def:BenchmarkDef,v
   )
 }
 
-export default function AthleticBenchmarks({pitcherId}:{pitcherId:string}){
+type RecommendedExercise = { id:string, name:string, category:string, description:string }
+
+export default function AthleticBenchmarks({pitcherId, getRecommendedExercises}:{pitcherId:string, getRecommendedExercises?:(key:string)=>RecommendedExercise[]}){
   const supabase=createClient()
   const {videos,saveVideo}=useTestVideos()
   const [benchHistory,setBenchHistory]=useState<any[]>([])
@@ -319,6 +321,35 @@ export default function AthleticBenchmarks({pitcherId}:{pitcherId:string}){
               hasVideo={!!videos[`screen_${s.key}`]} onOpen={()=>setDetailModal({type:'screen',def:s})}/>
           ))}
         </div>
+
+        {getRecommendedExercises && (()=>{
+          const failing = MOBILITY_SCREENS.filter(s => {
+            const status = screenLatest?.[s.key]
+            return status==='Limited' || status==='Fail'
+          })
+          if (!failing.length) return null
+          return (
+            <div style={{marginTop:14,paddingTop:14,borderTop:`1px solid ${C.border}`,display:'flex',flexDirection:'column' as const,gap:12}}>
+              <div style={{fontSize:11,fontWeight:700,color:C.red,textTransform:'uppercase' as const,letterSpacing:'0.5px'}}>Recommended Corrective Work</div>
+              {failing.map(s=>{
+                const exercises = getRecommendedExercises(`mobility_${s.key}`)
+                if (!exercises.length) return null
+                return (
+                  <div key={s.key}>
+                    <div style={{fontSize:12,fontWeight:600,color:C.text,marginBottom:6}}>{s.label} — {screenLatest?.[s.key]}</div>
+                    <div style={{display:'flex',flexDirection:'column' as const,gap:4}}>
+                      {exercises.map(ex=>(
+                        <div key={ex.id} style={{background:C.bg3,borderRadius:6,padding:'6px 10px',fontSize:11,color:C.textMuted}}>
+                          <span style={{color:C.white,fontWeight:600}}>{ex.name}</span> — {ex.description}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+          )
+        })()}
       </div>
 
       {detailModal?.type==='power' && (()=>{

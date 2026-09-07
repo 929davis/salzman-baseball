@@ -111,6 +111,71 @@ export function computeArmCareTrends(armCareTests: any[], effectiveVelocity: num
 }
 
 // ---------------------------------------------------------------------------
+// Workload vs. Arm Health cross-reference — the actual point of charting both trends is
+// spotting when they move in a concerning combination, not just eyeballing two separate
+// sparklines and hoping the coach notices. First-point-vs-last-point comparison, not a full
+// regression — deliberately simple and explainable given how few points most pitchers have
+// on file; a real slope-fit would overstate precision on n=2-3.
+// ---------------------------------------------------------------------------
+export type WorkloadArmHealthCallout = {
+  workloadLabel: string, workloadChangePct: number,
+  armMetricLabel: string, armMetricChangePct: number,
+  severity: ThreeTierStatus,
+}
+
+function pctChange(first: number, last: number): number | null {
+  if (first === 0) return null
+  return ((last - first) / Math.abs(first)) * 100
+}
+
+// "Bad direction" per arm-care metric: SVR/ER%/IR% dropping is bad (less relative strength),
+// ROM asymmetry rising is bad (growing imbalance) — so the sign flips for that one.
+const ARM_METRIC_BAD_DIRECTION: Record<'svr' | 'erPct' | 'irPct' | 'romAsym', -1 | 1> = {
+  svr: -1, erPct: -1, irPct: -1, romAsym: 1,
+}
+const ARM_METRIC_LABELS: Record<'svr' | 'erPct' | 'irPct' | 'romAsym', string> = {
+  svr: 'Strength-Velocity Ratio', erPct: 'ER % Bodyweight', irPct: 'IR % Bodyweight', romAsym: 'ROM Asymmetry',
+}
+
+// Requires >=2 points in both series (a first-vs-last comparison needs at least that many)
+// and a >=10% workload rise before even checking arm health — a flat or declining workload
+// isn't the scenario this is meant to catch.
+export function computeWorkloadArmHealthCallout(
+  workload: { label: string, hist: TrendPoint[] }[],
+  armTrends: ArmCareTrends,
+): WorkloadArmHealthCallout | null {
+  const bestWorkload = workload.filter(w => w.hist.length >= 2)
+    .map(w => ({ ...w, changePct: pctChange(w.hist[0].value, w.hist[w.hist.length - 1].value) }))
+    .filter((w): w is { label: string, hist: TrendPoint[], changePct: number } => w.changePct != null)
+    .sort((a, b) => b.changePct - a.changePct)[0]
+  if (!bestWorkload || bestWorkload.changePct < 10) return null
+
+  const armEntries = (Object.keys(ARM_METRIC_LABELS) as (keyof typeof ARM_METRIC_LABELS)[])
+    .map(key => {
+      const hist = armTrends[key]
+      if (hist.length < 2) return null
+      const changePct = pctChange(hist[0].value, hist[hist.length - 1].value)
+      if (changePct == null) return null
+      // Positive "badness" = moved the wrong way, scaled by how far.
+      const badness = changePct * ARM_METRIC_BAD_DIRECTION[key]
+      return { key, changePct, badness }
+    })
+    .filter((e): e is { key: keyof typeof ARM_METRIC_LABELS, changePct: number, badness: number } => e != null)
+    .sort((a, b) => b.badness - a.badness)
+  const worst = armEntries[0]
+  if (!worst || worst.badness <= 0) return null
+
+  const severity: ThreeTierStatus = worst.badness >= 20 ? 'Flag' : worst.badness >= 10 ? 'Caution' : 'OK'
+  if (severity === 'OK') return null
+
+  return {
+    workloadLabel: bestWorkload.label, workloadChangePct: Math.round(bestWorkload.changePct),
+    armMetricLabel: ARM_METRIC_LABELS[worst.key], armMetricChangePct: Math.round(worst.changePct),
+    severity,
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Strength-depletion-based arm care model.
 // strengthDepletionLbs: throw volume converted to an estimated strength-depletion figure.
 // footPoundsTarget: 500 is a starting coefficient, not a validated constant — tune over time
