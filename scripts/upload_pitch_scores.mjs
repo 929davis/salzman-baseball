@@ -39,14 +39,16 @@ async function main() {
   console.log(`Read ${rows.length} rows from ${CSV_PATH}`)
 
   const cleaned = rows.map(r => ({
-    game_pk: r.game_pk, game_date: r.game_date, at_bat_index: r.at_bat_index, pitch_num_in_pa: r.pitch_num_in_pa,
+    game_pk: r.game_pk, game_date: r.game_date, away_team: r.away_team, home_team: r.home_team,
+    inning: r.inning, half_inning: r.half_inning,
+    at_bat_index: r.at_bat_index, pitch_num_in_pa: r.pitch_num_in_pa,
     pitcher_id: r.pitcher_id, pitcher_name: r.pitcher_name, batter_id: r.batter_id, batter_name: r.batter_name,
     batter_side: r.batter_side, pitch_type: r.pitch_type, pitch_type_desc: r.pitch_type_desc,
     start_speed: r.start_speed, balls_before: r.balls_before, strikes_before: r.strikes_before,
     call_description: r.call_description, is_swing: !!r.is_swing, is_whiff: !!r.is_whiff,
     stage1_swing_prob: r.stage1_swing_prob, stage1_whiff_prob: r.stage1_whiff_prob,
     stage2_swing_prob: r.stage2_swing_prob ?? null, stage2_whiff_prob: r.stage2_whiff_prob ?? null,
-    swing_lift: r.swing_lift ?? null, whiff_lift: r.whiff_lift ?? null,
+    swing_lift: r.swing_lift ?? null, whiff_lift: r.whiff_lift ?? null, primary_metric: r.primary_metric,
     top_shap_feature: r.top_shap_feature, insight_text: r.insight_text,
     post_decision_break: r.post_decision_break,
     decision_point_zone_mismatch: !!r.decision_point_zone_mismatch,

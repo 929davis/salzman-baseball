@@ -2,6 +2,10 @@ create table if not exists pitch_sequence_scores (
   id bigserial primary key,
   game_pk bigint not null,
   game_date date,
+  away_team text,
+  home_team text,
+  inning int,
+  half_inning text,
   at_bat_index int not null,
   pitch_num_in_pa int not null,
   pitcher_id bigint,
@@ -23,6 +27,7 @@ create table if not exists pitch_sequence_scores (
   stage2_whiff_prob numeric,
   swing_lift numeric,
   whiff_lift numeric,
+  primary_metric text,
   top_shap_feature text,
   insight_text text,
   post_decision_break numeric,
@@ -40,3 +45,11 @@ create index if not exists idx_pitch_sequence_scores_game on pitch_sequence_scor
 
 alter table pitch_sequence_scores enable row level security;
 create policy "public read" on pitch_sequence_scores for select using (true);
+
+-- Migration for an already-existing table (adds game/inning context + which probability
+-- Stage 1/2 represent on each row, for the "By Game" drill-down view and clearer labeling).
+alter table pitch_sequence_scores add column if not exists away_team text;
+alter table pitch_sequence_scores add column if not exists home_team text;
+alter table pitch_sequence_scores add column if not exists inning int;
+alter table pitch_sequence_scores add column if not exists half_inning text;
+alter table pitch_sequence_scores add column if not exists primary_metric text;

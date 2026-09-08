@@ -59,6 +59,8 @@ export async function extractGamePitches(gamePk, batterProfiles) {
   const data = await res.json()
   const plays = data.liveData?.plays?.allPlays || []
   const gameDate = data.gameData?.datetime?.officialDate ?? null
+  const awayTeam = data.gameData?.teams?.away?.name ?? null
+  const homeTeam = data.gameData?.teams?.home?.name ?? null
 
   const rows = []
   for (const play of plays) {
@@ -76,7 +78,7 @@ export async function extractGamePitches(gamePk, batterProfiles) {
 
       const pitchNumInPa = i + 1
       const seq = computeSequenceFeatures(ev, c, pitchNumInPa, typesSeenSoFar, lastPitchByType, priorPitch, locSumX, locSumZ, locCount)
-      const row = computePitchRow(gamePk, gameDate, play, ev, c, pitchNumInPa, priorBalls, priorStrikes, seq, priorPitch, batterProfiles)
+      const row = computePitchRow(gamePk, gameDate, awayTeam, homeTeam, play, ev, c, pitchNumInPa, priorBalls, priorStrikes, seq, priorPitch, batterProfiles)
       rows.push(row)
 
       // Update running PA state AFTER computing this pitch's features (so a pitch's own
@@ -129,7 +131,7 @@ function computeSequenceFeatures(ev, c, pitchNumInPa, typesSeenSoFar, lastPitchB
   }
 }
 
-function computePitchRow(gamePk, gameDate, play, ev, c, pitchNumInPa, priorBalls, priorStrikes, seq, priorPitch, batterProfiles) {
+function computePitchRow(gamePk, gameDate, awayTeam, homeTeam, play, ev, c, pitchNumInPa, priorBalls, priorStrikes, seq, priorPitch, batterProfiles) {
   const { x0, y0, z0, vX0, vY0, vZ0, aX, aY, aZ, pX, pZ } = c
   const T = ev.pitchData.plateTime // MLB-computed total release-to-plate flight time (sec)
   const tD = DECISION_POINT_FRACTION * T
@@ -169,6 +171,10 @@ function computePitchRow(gamePk, gameDate, play, ev, c, pitchNumInPa, priorBalls
   return {
     game_pk: gamePk,
     game_date: gameDate,
+    away_team: awayTeam,
+    home_team: homeTeam,
+    inning: play.about.inning,
+    half_inning: play.about.halfInning, // 'top' | 'bottom'
     at_bat_index: play.about.atBatIndex,
     pitch_num_in_pa: pitchNumInPa,
     pitcher_id: play.matchup.pitcher.id,

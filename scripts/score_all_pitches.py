@@ -195,14 +195,19 @@ def main():
         f"Most influential factor: {FEATURE_EXPLANATIONS.get(f, f)} ({d} than typical for this matchup)."
         for f, d in zip(top_feat, directions)
     ]
+    # Which probability Stage 1/Stage 2 actually represent on this row -- takes get graded on
+    # swing likelihood, swings get graded on whiff likelihood (see module docstring). Surfaced
+    # explicitly so the UI can label it instead of leaving it ambiguous which number is shown.
+    df['primary_metric'] = np.where(df['is_swing'] == 1, 'whiff', 'swing')
 
     out_cols = [
-        'game_pk', 'game_date', 'at_bat_index', 'pitch_num_in_pa',
+        'game_pk', 'game_date', 'away_team', 'home_team', 'inning', 'half_inning',
+        'at_bat_index', 'pitch_num_in_pa',
         'pitcher_id', 'pitcher_name', 'batter_id', 'batter_name', 'batter_side',
         'pitch_type', 'pitch_type_desc', 'start_speed', 'balls_before', 'strikes_before',
         'call_description', 'is_swing', 'is_whiff',
         'stage1_swing_prob', 'stage1_whiff_prob', 'stage2_swing_prob', 'stage2_whiff_prob',
-        'swing_lift', 'whiff_lift', 'top_shap_feature', 'insight_text',
+        'swing_lift', 'whiff_lift', 'primary_metric', 'top_shap_feature', 'insight_text',
         'post_decision_break', 'decision_point_zone_mismatch', 'within_pa_expectation_deviation',
         'release_deviation_from_own_baseline_ft', 'batter_intercept_point_range',
     ]

@@ -11,12 +11,15 @@ const C = {
 }
 
 type ScoreRow = {
-  game_pk: number, game_date: string, at_bat_index: number, pitch_num_in_pa: number,
+  game_pk: number, game_date: string, away_team: string, home_team: string,
+  inning: number, half_inning: 'top' | 'bottom',
+  at_bat_index: number, pitch_num_in_pa: number,
   pitcher_id: number, pitcher_name: string, batter_id: number, batter_name: string, batter_side: string,
   pitch_type: string, pitch_type_desc: string, start_speed: number, balls_before: number, strikes_before: number,
   call_description: string, is_swing: boolean, is_whiff: boolean,
   stage1_swing_prob: number, stage1_whiff_prob: number, stage2_swing_prob: number | null, stage2_whiff_prob: number | null,
-  swing_lift: number | null, whiff_lift: number | null, top_shap_feature: string, insight_text: string,
+  swing_lift: number | null, whiff_lift: number | null, primary_metric: 'swing' | 'whiff',
+  top_shap_feature: string, insight_text: string,
   post_decision_break: number, decision_point_zone_mismatch: boolean, within_pa_expectation_deviation: number | null,
   release_deviation_from_own_baseline_ft: number | null, batter_intercept_point_range: number | null,
 }
@@ -30,8 +33,11 @@ const VALIDATION = [
 ]
 
 function pct(p: number | null) { return p == null ? '—' : `${(p * 100).toFixed(0)}%` }
-function lift(v: number | null) {
-  if (v == null) return null
+function liftFor(r: ScoreRow) { return r.primary_metric === 'whiff' ? r.whiff_lift : r.swing_lift }
+function stage1For(r: ScoreRow) { return r.primary_metric === 'whiff' ? r.stage1_whiff_prob : r.stage1_swing_prob }
+function stage2For(r: ScoreRow) { return r.primary_metric === 'whiff' ? r.stage2_whiff_prob : r.stage2_swing_prob }
+function liftLabel(v: number | null) {
+  if (v == null) return '—'
   const sign = v >= 0 ? '+' : ''
   return `${sign}${(v * 100).toFixed(0)}pp`
 }
@@ -39,13 +45,100 @@ function liftColor(v: number | null) {
   if (v == null) return C.textDim
   return Math.abs(v) >= 0.15 ? C.gold : C.textMuted
 }
+const ORDINALS: Record<number, string> = { 1: '1st', 2: '2nd', 3: '3rd' }
+function ordinal(n: number) { return ORDINALS[n] || `${n}th` }
+function halfInningLabel(r: ScoreRow) { return `${r.half_inning === 'top' ? 'Top' : 'Bottom'} ${ordinal(r.inning)}` }
+
+function Th({ children }: { children: React.ReactNode }) {
+  return <th style={{ textAlign: 'left' as const, padding: '8px 10px', fontSize: 10, color: C.textMuted, textTransform: 'uppercase' as const, letterSpacing: '0.5px', whiteSpace: 'nowrap' as const }}>{children}</th>
+}
+
+// One pitch's row -- shared between the flat "All Pitchers" table and the "By Game" grouped view.
+function PitchRow({ r, showDate }: { r: ScoreRow, showDate: boolean }) {
+  const s1 = stage1For(r), s2 = stage2For(r), l = liftFor(r)
+  const link = buildSavantLink({
+    dateGt: r.game_date, dateLt: r.game_date,
+    batterStands: r.batter_side as 'R' | 'L',
+    countBucket: `${r.balls_before}-${r.strikes_before}`,
+    pitchType: r.pitch_type,
+  })
+  return (
+    <tr style={{ borderBottom: `1px solid ${C.border}` }}>
+      {showDate && <td style={{ padding: '8px 10px', fontSize: 11, color: C.textMuted, whiteSpace: 'nowrap' as const }}>{r.game_date}</td>}
+      <td style={{ padding: '8px 10px', fontSize: 11, color: C.text }}>{r.pitcher_name} → {r.batter_name}</td>
+      <td style={{ padding: '8px 10px', fontSize: 11, color: C.text, whiteSpace: 'nowrap' as const }}>{r.pitch_type} {r.start_speed?.toFixed(1)}mph</td>
+      <td style={{ padding: '8px 10px', fontSize: 11, color: C.textMuted }}>{r.balls_before}-{r.strikes_before}</td>
+      <td style={{ padding: '8px 10px', fontSize: 11, color: C.textMuted }}>{r.call_description}</td>
+      <td style={{ padding: '8px 10px' }}>
+        <span style={{ fontSize: 9, fontWeight: 700, textTransform: 'uppercase' as const, letterSpacing: '0.5px', color: r.primary_metric === 'whiff' ? C.purple : C.blue, border: `1px solid ${r.primary_metric === 'whiff' ? C.purple : C.blue}`, borderRadius: 5, padding: '2px 6px' }}>
+          {r.primary_metric === 'whiff' ? 'Whiff %' : 'Swing %'}
+        </span>
+      </td>
+      <td style={{ padding: '8px 10px', fontSize: 12, fontFamily: 'monospace', color: C.textMuted }}>{pct(s1)}</td>
+      <td style={{ padding: '8px 10px', fontSize: 12, fontFamily: 'monospace', color: C.text, fontWeight: 700 }}>{pct(s2)}</td>
+      <td style={{ padding: '8px 10px', fontSize: 12, fontFamily: 'monospace', color: liftColor(l) }}>{liftLabel(l)}</td>
+      <td style={{ padding: '8px 10px', fontSize: 10, color: C.textDim, maxWidth: 260 }}>{r.insight_text}</td>
+      <td style={{ padding: '8px 10px' }}>
+        <a href={link} target="_blank" rel="noopener noreferrer" style={{ fontSize: 10, color: C.blue, whiteSpace: 'nowrap' as const }}>Savant ↗</a>
+      </td>
+    </tr>
+  )
+}
+
+const ROW_HEADERS = ['Matchup', 'Pitch', 'Count', 'Result', 'Reading', 'Stage 1', 'Stage 2', 'Lift', 'Why', '']
+
+function HowToRead() {
+  const [open, setOpen] = useState(true)
+  return (
+    <div style={{ background: C.bg2, border: `1px solid ${C.gold}`, borderRadius: 10, padding: 16, marginBottom: 20 }}>
+      <div onClick={() => setOpen(!open)} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', cursor: 'pointer' }}>
+        <div style={{ fontSize: 13, fontWeight: 700, color: C.gold }}>How to Read Timing IQ</div>
+        <div style={{ fontSize: 11, color: C.textMuted }}>{open ? 'Hide ▲' : 'Show ▼'}</div>
+      </div>
+      {open && (
+        <div style={{ marginTop: 12, display: 'flex', flexDirection: 'column' as const, gap: 10, fontSize: 12, color: C.text, lineHeight: 1.6 }}>
+          <div>
+            <b style={{ color: C.blue }}>Stage 1</b> is what the pitch's own shape says, alone — its velocity, where it crossed the zone, and how much it kept moving after the point research says a hitter has already committed to swinging or not (roughly the midpoint of ball flight). It has no idea what count it is, what's been thrown earlier in the at-bat, or who's hitting.
+          </div>
+          <div>
+            <b style={{ color: C.gold }}>Stage 2</b> adds three things Stage 1 can't see: what the hitter has already been shown earlier in this at-bat, whether this pitcher's release point matches his own normal spot for this pitch type (or looks off — a tip, fatigue, mechanics drifting), and this specific hitter's own measured tendency to time fastballs differently than breaking balls.
+          </div>
+          <div>
+            Both numbers are a percent chance of <i>one</i> outcome — but which outcome depends on what actually happened, and that's what the <b>Reading</b> badge on each row tells you:
+            <div style={{ display: 'flex', gap: 16, marginTop: 6, marginLeft: 4 }}>
+              <div><span style={{ fontSize: 9, fontWeight: 700, color: C.blue, border: `1px solid ${C.blue}`, borderRadius: 5, padding: '2px 6px' }}>Swing %</span> — he took the pitch; this is his estimated chance of swinging at it.</div>
+              <div><span style={{ fontSize: 9, fontWeight: 700, color: C.purple, border: `1px solid ${C.purple}`, borderRadius: 5, padding: '2px 6px' }}>Whiff %</span> — he swung; this is his estimated chance of missing entirely.</div>
+            </div>
+          </div>
+          <div>
+            <b>Lift</b> is just Stage 2 minus Stage 1. A big lift (either direction) means context — not the pitch's own shape — is what moved the number. A lift near zero means the pitch's shape alone already told most of the story.
+          </div>
+          <div>
+            <b>Why</b> is the single biggest factor behind that specific pitch's number, in plain language — not everything the model weighed, just the top one.
+          </div>
+          <div>
+            <b>Blank Stage 2</b> means this was the first pitch of the at-bat — there's nothing earlier in the PA yet for Stage 2 to use, so only Stage 1 applies.
+          </div>
+          <div style={{ borderTop: `1px solid ${C.border}`, paddingTop: 10 }}>
+            <b>Model Validation</b> (below) isn't about any one pitch — it's whether Stage 2 actually beats Stage 1 across thousands of pitches the model never trained on. AUC runs 0.50 (coin flip) to 1.00 (perfect); both stages score clearly above a coin flip, and Stage 2 scores higher than Stage 1 on both targets. That gap is the actual evidence sequencing adds something — not a claim about any single pitch below.
+          </div>
+          <div style={{ color: C.textDim, fontSize: 11 }}>
+            <b>What this isn't:</b> a certainty about any one pitch. It's a pattern learned across thousands of pitches and hundreds of pitchers and hitters — good for flagging which specific pitches are worth a second look on video, not a guarantee about what should have happened on that pitch.
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
 
 export default function TimingIQTool() {
   const supabase = createClient()
   const [rows, setRows] = useState<ScoreRow[]>([])
   const [loading, setLoading] = useState(true)
+  const [scope, setScope] = useState<'all' | 'game'>('all')
   const [pitcherId, setPitcherId] = useState<string>('')
   const [sortMode, setSortMode] = useState<'lift' | 'recent'>('lift')
+  const [gamePk, setGamePk] = useState<string>('')
 
   useEffect(() => {
     let cancelled = false
@@ -68,29 +161,58 @@ export default function TimingIQTool() {
     return [...byId.values()].sort((a, b) => b.n - a.n)
   }, [rows])
 
+  const games = useMemo(() => {
+    const byGame = new Map<string, { id: string, label: string, date: string }>()
+    for (const r of rows) {
+      const id = String(r.game_pk)
+      if (!byGame.has(id)) byGame.set(id, { id, label: `${r.game_date} — ${r.away_team} @ ${r.home_team}`, date: r.game_date })
+    }
+    return [...byGame.values()].sort((a, b) => (b.date > a.date ? 1 : -1) || Number(b.id) - Number(a.id))
+  }, [rows])
+
   const filtered = useMemo(() => {
     let list = pitcherId ? rows.filter(r => String(r.pitcher_id) === pitcherId) : rows
     list = [...list]
     if (sortMode === 'recent') {
       list.sort((a, b) => (b.game_date > a.game_date ? 1 : -1) || b.at_bat_index - a.at_bat_index)
     } else {
-      const mag = (r: ScoreRow) => Math.max(Math.abs(r.swing_lift ?? 0), Math.abs(r.whiff_lift ?? 0))
+      const mag = (r: ScoreRow) => Math.abs(liftFor(r) ?? 0)
       list.sort((a, b) => mag(b) - mag(a))
     }
     return list.slice(0, 40)
   }, [rows, pitcherId, sortMode])
 
+  const gameGroups = useMemo(() => {
+    if (!gamePk) return []
+    const gameRows = rows.filter(r => String(r.game_pk) === gamePk)
+    // Group into half-innings (in game order), then into plate appearances (in order), each
+    // PA's own pitches already come back from Supabase in no guaranteed order, so sort fully.
+    const sorted = [...gameRows].sort((a, b) =>
+      (a.inning - b.inning) || (a.half_inning === b.half_inning ? 0 : a.half_inning === 'top' ? -1 : 1) ||
+      (a.at_bat_index - b.at_bat_index) || (a.pitch_num_in_pa - b.pitch_num_in_pa)
+    )
+    const halfInnings: { key: string, label: string, pas: { key: string, header: string, rows: ScoreRow[] }[] }[] = []
+    for (const r of sorted) {
+      const hiKey = `${r.inning}-${r.half_inning}`
+      let hi = halfInnings.find(h => h.key === hiKey)
+      if (!hi) { hi = { key: hiKey, label: halfInningLabel(r), pas: [] }; halfInnings.push(hi) }
+      const paKey = String(r.at_bat_index)
+      let pa = hi.pas.find(p => p.key === paKey)
+      if (!pa) {
+        const lastRow = sorted.filter(x => x.at_bat_index === r.at_bat_index).slice(-1)[0]
+        pa = { key: paKey, header: `${r.pitcher_name} → ${r.batter_name} (${lastRow.call_description})`, rows: [] }
+        hi.pas.push(pa)
+      }
+      pa.rows.push(r)
+    }
+    return halfInnings
+  }, [rows, gamePk])
+
   const summary = useMemo(() => {
     const scoped = pitcherId ? rows.filter(r => String(r.pitcher_id) === pitcherId) : rows
-    const swingLifts = scoped.map(r => r.swing_lift).filter((v): v is number => v != null)
-    const whiffLifts = scoped.map(r => r.whiff_lift).filter((v): v is number => v != null)
-    const avg = (a: number[]) => a.length ? a.reduce((s, v) => s + v, 0) / a.length : null
+    const lifts = scoped.map(liftFor).filter((v): v is number => v != null)
     const avgAbs = (a: number[]) => a.length ? a.reduce((s, v) => s + Math.abs(v), 0) / a.length : null
-    return {
-      n: scoped.length,
-      avgSwingLiftAbs: avgAbs(swingLifts),
-      avgWhiffLiftAbs: avgAbs(whiffLifts),
-    }
+    return { n: scoped.length, avgLiftAbs: avgAbs(lifts) }
   }, [rows, pitcherId])
 
   if (loading) return <div style={{ textAlign: 'center' as const, padding: 30, color: C.textMuted, fontSize: 13 }}>Loading...</div>
@@ -105,6 +227,8 @@ export default function TimingIQTool() {
         This independently tests the same underlying claim Perry Husband's Effective Velocity theory rests on — that what's already happened in an at-bat changes how the next pitch is read — using our own MLB Stats API pitch data and Baseball Savant bat-tracking exports, not Husband's own (patented) zone values.
       </div>
 
+      <HowToRead />
+
       <div style={{ fontSize: 12, fontWeight: 700, color: C.text, marginBottom: 8 }}>Model Validation — Does Sequencing Actually Add Anything?</div>
       <div style={{ fontSize: 10, color: C.textDim, marginBottom: 8, lineHeight: 1.5 }}>
         Two models per target: physics-only (pitch's own velocity/angle/movement, Stage 1) vs. physics + what the hitter had already seen this at-bat + this pitcher's own release-point norms + this hitter's own timing-adjustment profile (Stage 2). Measured on held-out games the models never trained on.
@@ -113,7 +237,7 @@ export default function TimingIQTool() {
         <table style={{ width: '100%', borderCollapse: 'collapse' as const, minWidth: 420 }}>
           <thead>
             <tr style={{ borderBottom: `1px solid ${C.border}` }}>
-              <th style={{ textAlign: 'left' as const, padding: '8px 10px', fontSize: 10, color: C.textMuted, textTransform: 'uppercase' as const, letterSpacing: '0.5px' }}>Target</th>
+              <Th>Target</Th>
               <th style={{ textAlign: 'right' as const, padding: '8px 10px', fontSize: 10, color: C.textMuted, textTransform: 'uppercase' as const, letterSpacing: '0.5px' }}>Stage 1 AUC</th>
               <th style={{ textAlign: 'right' as const, padding: '8px 10px', fontSize: 10, color: C.textMuted, textTransform: 'uppercase' as const, letterSpacing: '0.5px' }}>Stage 2 AUC</th>
               <th style={{ textAlign: 'right' as const, padding: '8px 10px', fontSize: 10, color: C.textMuted, textTransform: 'uppercase' as const, letterSpacing: '0.5px' }}>Lift</th>
@@ -132,78 +256,97 @@ export default function TimingIQTool() {
         </table>
       </div>
 
-      <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' as const, marginBottom: 16, alignItems: 'center' }}>
-        <select value={pitcherId} onChange={e => setPitcherId(e.target.value)} style={{ background: C.bg2, color: C.text, border: `1px solid ${C.border}`, borderRadius: 8, padding: '8px 10px', fontSize: 12 }}>
-          <option value="">All pitchers ({rows.length} pitches)</option>
-          {pitchers.map(p => <option key={p.id} value={p.id}>{p.name} ({p.n})</option>)}
-        </select>
-        {(['lift', 'recent'] as const).map(m => (
-          <button key={m} onClick={() => setSortMode(m)} style={{ background: sortMode === m ? C.gold : C.bg3, color: sortMode === m ? C.bg : C.textMuted, border: `1px solid ${sortMode === m ? C.gold : C.border}`, borderRadius: 8, padding: '8px 14px', fontSize: 12, fontWeight: sortMode === m ? 700 : 400, cursor: 'pointer' }}>
-            {m === 'lift' ? 'Most Sequence-Driven' : 'Most Recent'}
+      <div style={{ display: 'flex', gap: 6, marginBottom: 16 }}>
+        {(['all', 'game'] as const).map(s => (
+          <button key={s} onClick={() => setScope(s)} style={{ background: scope === s ? C.gold : C.bg3, color: scope === s ? C.bg : C.textMuted, border: `1px solid ${scope === s ? C.gold : C.border}`, borderRadius: 8, padding: '8px 14px', fontSize: 12, fontWeight: scope === s ? 700 : 400, cursor: 'pointer' }}>
+            {s === 'all' ? 'All Pitchers' : 'By Game'}
           </button>
         ))}
       </div>
 
-      <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' as const, marginBottom: 20 }}>
-        <div style={{ background: C.bg2, border: `1px solid ${C.border}`, borderRadius: 10, padding: 14, flex: 1, minWidth: 160 }}>
-          <div style={{ fontSize: 10, color: C.textMuted, marginBottom: 6 }}>Pitches scored</div>
-          <div style={{ fontSize: 18, fontWeight: 700, color: C.text }}>{summary.n.toLocaleString()}</div>
-        </div>
-        <div style={{ background: C.bg2, border: `1px solid ${C.border}`, borderRadius: 10, padding: 14, flex: 1, minWidth: 160 }}>
-          <div style={{ fontSize: 10, color: C.textMuted, marginBottom: 6 }}>Avg |sequence swing-lift|</div>
-          <div style={{ fontSize: 18, fontWeight: 700, color: C.gold }}>{summary.avgSwingLiftAbs != null ? `${(summary.avgSwingLiftAbs * 100).toFixed(1)}pp` : '—'}</div>
-        </div>
-        <div style={{ background: C.bg2, border: `1px solid ${C.border}`, borderRadius: 10, padding: 14, flex: 1, minWidth: 160 }}>
-          <div style={{ fontSize: 10, color: C.textMuted, marginBottom: 6 }}>Avg |sequence whiff-lift|</div>
-          <div style={{ fontSize: 18, fontWeight: 700, color: C.gold }}>{summary.avgWhiffLiftAbs != null ? `${(summary.avgWhiffLiftAbs * 100).toFixed(1)}pp` : '—'}</div>
-        </div>
-      </div>
+      {scope === 'all' ? (
+        <>
+          <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' as const, marginBottom: 16, alignItems: 'center' }}>
+            <select value={pitcherId} onChange={e => setPitcherId(e.target.value)} style={{ background: C.bg2, color: C.text, border: `1px solid ${C.border}`, borderRadius: 8, padding: '8px 10px', fontSize: 12 }}>
+              <option value="">All pitchers ({rows.length} pitches)</option>
+              {pitchers.map(p => <option key={p.id} value={p.id}>{p.name} ({p.n})</option>)}
+            </select>
+            {(['lift', 'recent'] as const).map(m => (
+              <button key={m} onClick={() => setSortMode(m)} style={{ background: sortMode === m ? C.gold : C.bg3, color: sortMode === m ? C.bg : C.textMuted, border: `1px solid ${sortMode === m ? C.gold : C.border}`, borderRadius: 8, padding: '8px 14px', fontSize: 12, fontWeight: sortMode === m ? 700 : 400, cursor: 'pointer' }}>
+                {m === 'lift' ? 'Most Sequence-Driven' : 'Most Recent'}
+              </button>
+            ))}
+          </div>
 
-      <div style={{ fontSize: 12, fontWeight: 700, color: C.text, marginBottom: 4 }}>{pitcherId ? pitchers.find(p => p.id === pitcherId)?.name : 'All Pitchers'} — Pitch-Level Scores</div>
-      <div style={{ fontSize: 10, color: C.textDim, marginBottom: 8, lineHeight: 1.5 }}>
-        Showing up to 40, sorted by {sortMode === 'lift' ? 'how much sequence context changed the read vs. raw physics alone' : 'most recent'}. Stage 2 is blank for a PA's first pitch — no sequence exists yet to use.
-      </div>
-      <div style={{ overflowX: 'auto' as const }}>
-        <table style={{ width: '100%', borderCollapse: 'collapse' as const, minWidth: 900 }}>
-          <thead>
-            <tr style={{ borderBottom: `1px solid ${C.border}` }}>
-              {['Date', 'Matchup', 'Pitch', 'Count', 'Result', 'Stage 1', 'Stage 2', 'Lift', 'Why', ''].map(h => (
-                <th key={h} style={{ textAlign: 'left' as const, padding: '8px 10px', fontSize: 10, color: C.textMuted, textTransform: 'uppercase' as const, letterSpacing: '0.5px' }}>{h}</th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {filtered.map(r => {
-              const target = r.is_swing ? 'whiff' : 'swing'
-              const s1 = target === 'whiff' ? r.stage1_whiff_prob : r.stage1_swing_prob
-              const s2 = target === 'whiff' ? r.stage2_whiff_prob : r.stage2_swing_prob
-              const l = target === 'whiff' ? r.whiff_lift : r.swing_lift
-              const link = buildSavantLink({
-                dateGt: r.game_date, dateLt: r.game_date,
-                batterStands: r.batter_side as 'R' | 'L',
-                countBucket: `${r.balls_before}-${r.strikes_before}`,
-                pitchType: r.pitch_type,
-              })
-              return (
-                <tr key={`${r.game_pk}-${r.at_bat_index}-${r.pitch_num_in_pa}`} style={{ borderBottom: `1px solid ${C.border}` }}>
-                  <td style={{ padding: '8px 10px', fontSize: 11, color: C.textMuted, whiteSpace: 'nowrap' as const }}>{r.game_date}</td>
-                  <td style={{ padding: '8px 10px', fontSize: 11, color: C.text }}>{r.pitcher_name} → {r.batter_name}</td>
-                  <td style={{ padding: '8px 10px', fontSize: 11, color: C.text, whiteSpace: 'nowrap' as const }}>{r.pitch_type} {r.start_speed?.toFixed(1)}mph</td>
-                  <td style={{ padding: '8px 10px', fontSize: 11, color: C.textMuted }}>{r.balls_before}-{r.strikes_before}</td>
-                  <td style={{ padding: '8px 10px', fontSize: 11, color: C.textMuted }}>{r.call_description}</td>
-                  <td style={{ padding: '8px 10px', fontSize: 12, fontFamily: 'monospace', color: C.textMuted }}>{pct(s1)}</td>
-                  <td style={{ padding: '8px 10px', fontSize: 12, fontFamily: 'monospace', color: C.text, fontWeight: 700 }}>{pct(s2)}</td>
-                  <td style={{ padding: '8px 10px', fontSize: 12, fontFamily: 'monospace', color: liftColor(l) }}>{lift(l) ?? '—'}</td>
-                  <td style={{ padding: '8px 10px', fontSize: 10, color: C.textDim, maxWidth: 260 }}>{r.insight_text}</td>
-                  <td style={{ padding: '8px 10px' }}>
-                    <a href={link} target="_blank" rel="noopener noreferrer" style={{ fontSize: 10, color: C.blue, whiteSpace: 'nowrap' as const }}>Savant ↗</a>
-                  </td>
+          <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' as const, marginBottom: 20 }}>
+            <div style={{ background: C.bg2, border: `1px solid ${C.border}`, borderRadius: 10, padding: 14, flex: 1, minWidth: 160 }}>
+              <div style={{ fontSize: 10, color: C.textMuted, marginBottom: 6 }}>Pitches scored</div>
+              <div style={{ fontSize: 18, fontWeight: 700, color: C.text }}>{summary.n.toLocaleString()}</div>
+            </div>
+            <div style={{ background: C.bg2, border: `1px solid ${C.border}`, borderRadius: 10, padding: 14, flex: 1, minWidth: 160 }}>
+              <div style={{ fontSize: 10, color: C.textMuted, marginBottom: 6 }}>Avg |sequence lift|</div>
+              <div style={{ fontSize: 18, fontWeight: 700, color: C.gold }}>{summary.avgLiftAbs != null ? `${(summary.avgLiftAbs * 100).toFixed(1)}pp` : '—'}</div>
+            </div>
+          </div>
+
+          <div style={{ fontSize: 12, fontWeight: 700, color: C.text, marginBottom: 4 }}>{pitcherId ? pitchers.find(p => p.id === pitcherId)?.name : 'All Pitchers'} — Pitch-Level Scores</div>
+          <div style={{ fontSize: 10, color: C.textDim, marginBottom: 8, lineHeight: 1.5 }}>
+            Showing up to 40, sorted by {sortMode === 'lift' ? 'how much sequence context changed the read vs. raw physics alone' : 'most recent'}.
+          </div>
+          <div style={{ overflowX: 'auto' as const }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse' as const, minWidth: 950 }}>
+              <thead>
+                <tr style={{ borderBottom: `1px solid ${C.border}` }}>
+                  <Th>Date</Th>
+                  {ROW_HEADERS.map(h => <Th key={h}>{h}</Th>)}
                 </tr>
-              )
-            })}
-          </tbody>
-        </table>
-      </div>
+              </thead>
+              <tbody>
+                {filtered.map(r => <PitchRow key={`${r.game_pk}-${r.at_bat_index}-${r.pitch_num_in_pa}`} r={r} showDate />)}
+              </tbody>
+            </table>
+          </div>
+        </>
+      ) : (
+        <>
+          <div style={{ marginBottom: 16 }}>
+            <select value={gamePk} onChange={e => setGamePk(e.target.value)} style={{ background: C.bg2, color: C.text, border: `1px solid ${C.border}`, borderRadius: 8, padding: '8px 10px', fontSize: 12, minWidth: 320 }}>
+              <option value="">Select a game...</option>
+              {games.map(g => <option key={g.id} value={g.id}>{g.label}</option>)}
+            </select>
+          </div>
+          {!gamePk ? (
+            <div style={{ color: C.textMuted, fontSize: 12, padding: 20, textAlign: 'center' as const }}>Pick a game to see every at-bat, inning by inning, in the order it actually happened.</div>
+          ) : (
+            <div>
+              {gameGroups.map(hi => (
+                <div key={hi.key} style={{ marginBottom: 22 }}>
+                  <div style={{ fontSize: 13, fontWeight: 700, color: C.gold, marginBottom: 8, borderBottom: `1px solid ${C.border}`, paddingBottom: 4 }}>{hi.label}</div>
+                  {hi.pas.map(pa => (
+                    <div key={pa.key} style={{ marginBottom: 14 }}>
+                      <div style={{ fontSize: 11, fontWeight: 700, color: C.text, marginBottom: 4 }}>{pa.header}</div>
+                      <div style={{ overflowX: 'auto' as const }}>
+                        <table style={{ width: '100%', borderCollapse: 'collapse' as const, minWidth: 900 }}>
+                          <thead>
+                            <tr style={{ borderBottom: `1px solid ${C.border}` }}>
+                              {ROW_HEADERS.map(h => <Th key={h}>{h}</Th>)}
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {pa.rows.sort((a, b) => a.pitch_num_in_pa - b.pitch_num_in_pa).map(r => (
+                              <PitchRow key={`${r.game_pk}-${r.at_bat_index}-${r.pitch_num_in_pa}`} r={r} showDate={false} />
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ))}
+            </div>
+          )}
+        </>
+      )}
 
       <div style={{ fontSize: 10, color: C.textDim, lineHeight: 1.6, borderTop: `1px solid ${C.border}`, paddingTop: 12, marginTop: 16 }}>
         Data: MLB Stats API live-feed pitch tracking (pitch-level physics + sequence) and Baseball Savant's Swing Path/Attack Angle leaderboard (batter timing-adjustment profiles), scored by a two-stage XGBoost model (see scripts/train_stage1_model.py, train_stage2_model.py, score_all_pitches.py). Recomputed as a batch job after new games are pulled, not live per request.
