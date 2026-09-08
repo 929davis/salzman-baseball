@@ -29,8 +29,14 @@ type ScoreRow = {
 // of pulled games) -- not recomputed live, since there's no server-side Python inference in
 // this app. Re-run that script and update these by hand if the model is retrained.
 const VALIDATION = [
-  { target: 'Swing vs. take', base: 0.693, full: 0.735 },
-  { target: 'Whiff vs. contact (given a swing)', base: 0.656, full: 0.679 },
+  {
+    target: 'Swing vs. take', base: 0.693, full: 0.735,
+    why: "Predicts whether the hitter swings at all — flags which pitches actually get a hitter to chase or take a strike, not just which pitches look nasty on paper.",
+  },
+  {
+    target: 'Whiff vs. contact (given a swing)', base: 0.656, full: 0.679,
+    why: "Given he swings, predicts whether he misses entirely — isolates which pitches actually miss bats, separate from whether they get swung at in the first place.",
+  },
 ]
 
 function pct(p: number | null) { return p == null ? '—' : `${(p * 100).toFixed(0)}%` }
@@ -86,7 +92,7 @@ function PitchRow({ r, showDate }: { r: ScoreRow, showDate: boolean }) {
   )
 }
 
-const ROW_HEADERS = ['Matchup', 'Pitch', 'Count', 'Result', 'Reading', 'Stage 1', 'Stage 2', 'Lift', 'Why', '']
+const ROW_HEADERS = ['Matchup', 'Pitch', 'Count', 'Result', 'Reading', 'Stage 1', 'Stage 2', 'Lift (pp)', 'Why', '']
 
 function HowToRead() {
   return (
@@ -105,7 +111,7 @@ function HowToRead() {
         </div>
       </div>
       <div>
-        <b>Lift</b> is just Stage 2 minus Stage 1. A big lift (either direction) means context — not the pitch's own shape — is what moved the number. A lift near zero means the pitch's shape alone already told most of the story.
+        <b>Lift (pp)</b> is just Stage 2 minus Stage 1, in <b>percentage points</b> (pp) — e.g. +20pp means the probability read 20 points higher (like 30%→50%), not "20% higher." A big lift (either direction) means context — not the pitch's own shape — is what moved the number. A lift near zero means the pitch's shape alone already told most of the story.
       </div>
       <div>
         <b>Why</b> is the single biggest factor behind that specific pitch's number, in plain language — not everything the model weighed, just the top one.
@@ -114,7 +120,7 @@ function HowToRead() {
         <b>Blank Stage 2</b> means this was the first pitch of the at-bat — there's nothing earlier in the PA yet for Stage 2 to use, so only Stage 1 applies.
       </div>
       <div style={{ borderTop: `1px solid ${C.border}`, paddingTop: 10 }}>
-        <b>Model Validation</b> (below) isn't about any one pitch — it's whether Stage 2 actually beats Stage 1 across thousands of pitches the model never trained on. AUC runs 0.50 (coin flip) to 1.00 (perfect); both stages score clearly above a coin flip, and Stage 2 scores higher than Stage 1 on both targets. That gap is the actual evidence sequencing adds something — not a claim about any single pitch below.
+        <b>Model Validation</b> (below) is a completely different pair of numbers from the per-pitch table above — it isn't about any one pitch, it's whether Stage 2 actually beats Stage 1 across thousands of pitches the model never trained on. Its <b>Score</b> is a stat called AUC: 0.50 (coin flip) to 1.00 (perfect). Both stages score clearly above a coin flip, and Stage 2 scores higher than Stage 1 on both targets — that <b>Gain</b> is the real evidence sequencing adds something, not a claim about any single pitch below. Each target row also says in plain language why that specific prediction is worth having, not just that the model scores well on it.
       </div>
       <div style={{ color: C.textDim, fontSize: 11 }}>
         <b>What this isn't:</b> a certainty about any one pitch. It's a pattern learned across thousands of pitches and hundreds of pitchers and hitters — good for flagging which specific pitches are worth a second look on video, not a guarantee about what should have happened on that pitch.
@@ -225,23 +231,29 @@ export default function TimingIQTool() {
       <div style={{ fontSize: 10, color: C.textDim, marginBottom: 8, lineHeight: 1.5 }}>
         Two models per target: physics-only (pitch's own velocity/angle/movement, Stage 1) vs. physics + what the hitter had already seen this at-bat + this pitcher's own release-point norms + this hitter's own timing-adjustment profile (Stage 2). Measured on held-out games the models never trained on.
       </div>
+      <div style={{ fontSize: 10, color: C.textDim, marginBottom: 8, lineHeight: 1.5, background: C.bg3, border: `1px solid ${C.border}`, borderRadius: 8, padding: 10 }}>
+        <b style={{ color: C.text }}>Score</b> = ranking accuracy, a stat called <b>AUC</b>: 0.50 means no better than a coin flip, 1.00 means perfect. Higher is always better. <b style={{ color: C.text }}>Gain</b> = Stage 2's score minus Stage 1's — a positive gain here is the actual proof sequencing helps, measured once across thousands of held-out pitches (not something recalculated per pitch below).
+      </div>
       <div style={{ overflowX: 'auto' as const, marginBottom: 20 }}>
         <table style={{ width: '100%', borderCollapse: 'collapse' as const, minWidth: 420 }}>
           <thead>
             <tr style={{ borderBottom: `1px solid ${C.border}` }}>
-              <Th>Target</Th>
-              <th style={{ textAlign: 'right' as const, padding: '8px 10px', fontSize: 10, color: C.textMuted, textTransform: 'uppercase' as const, letterSpacing: '0.5px' }}>Stage 1 AUC</th>
-              <th style={{ textAlign: 'right' as const, padding: '8px 10px', fontSize: 10, color: C.textMuted, textTransform: 'uppercase' as const, letterSpacing: '0.5px' }}>Stage 2 AUC</th>
-              <th style={{ textAlign: 'right' as const, padding: '8px 10px', fontSize: 10, color: C.textMuted, textTransform: 'uppercase' as const, letterSpacing: '0.5px' }}>Lift</th>
+              <Th>Target — Why It Matters</Th>
+              <th style={{ textAlign: 'right' as const, padding: '8px 10px', fontSize: 10, color: C.textMuted, textTransform: 'uppercase' as const, letterSpacing: '0.5px' }}>Stage 1 Score</th>
+              <th style={{ textAlign: 'right' as const, padding: '8px 10px', fontSize: 10, color: C.textMuted, textTransform: 'uppercase' as const, letterSpacing: '0.5px' }}>Stage 2 Score</th>
+              <th style={{ textAlign: 'right' as const, padding: '8px 10px', fontSize: 10, color: C.textMuted, textTransform: 'uppercase' as const, letterSpacing: '0.5px' }}>Gain</th>
             </tr>
           </thead>
           <tbody>
             {VALIDATION.map(v => (
               <tr key={v.target} style={{ borderBottom: `1px solid ${C.border}` }}>
-                <td style={{ padding: '8px 10px', fontSize: 12, color: C.text }}>{v.target}</td>
-                <td style={{ padding: '8px 10px', textAlign: 'right' as const, fontFamily: 'monospace', fontSize: 12, color: C.textMuted }}>{v.base.toFixed(3)}</td>
-                <td style={{ padding: '8px 10px', textAlign: 'right' as const, fontFamily: 'monospace', fontSize: 12, color: C.gold, fontWeight: 700 }}>{v.full.toFixed(3)}</td>
-                <td style={{ padding: '8px 10px', textAlign: 'right' as const, fontFamily: 'monospace', fontSize: 12, color: C.teal }}>+{(v.full - v.base).toFixed(3)}</td>
+                <td style={{ padding: '8px 10px' }}>
+                  <div style={{ fontSize: 12, fontWeight: 700, color: C.text }}>{v.target}</div>
+                  <div style={{ fontSize: 10, color: C.textDim, marginTop: 2, maxWidth: 380 }}>{v.why}</div>
+                </td>
+                <td style={{ padding: '8px 10px', textAlign: 'right' as const, fontFamily: 'monospace', fontSize: 12, color: C.textMuted, verticalAlign: 'top' as const }}>{v.base.toFixed(3)}</td>
+                <td style={{ padding: '8px 10px', textAlign: 'right' as const, fontFamily: 'monospace', fontSize: 12, color: C.gold, fontWeight: 700, verticalAlign: 'top' as const }}>{v.full.toFixed(3)}</td>
+                <td style={{ padding: '8px 10px', textAlign: 'right' as const, fontFamily: 'monospace', fontSize: 12, color: C.teal, verticalAlign: 'top' as const }}>+{(v.full - v.base).toFixed(3)}</td>
               </tr>
             ))}
           </tbody>
@@ -276,14 +288,14 @@ export default function TimingIQTool() {
               <div style={{ fontSize: 18, fontWeight: 700, color: C.text }}>{summary.n.toLocaleString()}</div>
             </div>
             <div style={{ background: C.bg2, border: `1px solid ${C.border}`, borderRadius: 10, padding: 14, flex: 1, minWidth: 160 }}>
-              <div style={{ fontSize: 10, color: C.textMuted, marginBottom: 6 }}>Avg |sequence lift|</div>
+              <div style={{ fontSize: 10, color: C.textMuted, marginBottom: 6 }}>Avg sequence lift (points)</div>
               <div style={{ fontSize: 18, fontWeight: 700, color: C.gold }}>{summary.avgLiftAbs != null ? `${(summary.avgLiftAbs * 100).toFixed(1)}pp` : '—'}</div>
             </div>
           </div>
 
           <div style={{ fontSize: 12, fontWeight: 700, color: C.text, marginBottom: 4 }}>{pitcherId ? pitchers.find(p => p.id === pitcherId)?.name : 'All Pitchers'} — Pitch-Level Scores</div>
           <div style={{ fontSize: 10, color: C.textDim, marginBottom: 8, lineHeight: 1.5 }}>
-            Showing up to 40, sorted by {sortMode === 'lift' ? 'how much sequence context changed the read vs. raw physics alone' : 'most recent'}.
+            Showing up to 40, sorted by {sortMode === 'lift' ? 'how much sequence context changed the read vs. raw physics alone' : 'most recent'}. <b>pp = percentage points</b> — a Lift of +20pp means Stage 2's probability read 20 points higher than Stage 1's (e.g. 30% → 50%), not "20% higher."
           </div>
           <div style={{ overflowX: 'auto' as const }}>
             <table style={{ width: '100%', borderCollapse: 'collapse' as const, minWidth: 950 }}>
