@@ -57,7 +57,33 @@ async function main() {
 
   const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_KEY)
   await upsert(supabase, 'pitch_sequence_scores', cleaned, 'game_pk,at_bat_index,pitch_num_in_pa')
+
+  await checkAnonReadable(cleaned.length)
   console.log('Done.')
+}
+
+// Guards against the exact bug this table hit once already: a table created via the SQL
+// editor with RLS on and no read policy uploads fine (the service key bypasses RLS) but the
+// deployed app -- which reads with the anon key, same as createClient() in lib/supabase/client.ts
+// -- silently sees zero rows, with no error anywhere. Catch that HERE, at upload time, instead
+// of relying on someone noticing an empty table in the live UI again.
+async function checkAnonReadable(expectedCount) {
+  if (!process.env.NEXT_PUBLIC_SUPABASE_URL || !process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY) {
+    console.warn('  [skip] NEXT_PUBLIC_SUPABASE_URL/ANON_KEY not set -- cannot verify anon-key readability (RLS) from this shell')
+    return
+  }
+  const anon = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL, process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY)
+  const { count, error } = await anon.from('pitch_sequence_scores').select('*', { count: 'exact', head: true })
+  if (error) throw new Error(`Anon-key readability check failed: ${error.message}`)
+  if (count !== expectedCount) {
+    throw new Error(
+      `RLS CHECK FAILED: anon key sees ${count} rows but ${expectedCount} were just uploaded. ` +
+      `The app reads this table with the anon key -- it will show empty/stale data even though the upload "succeeded". ` +
+      `Add a read policy, e.g.: alter table pitch_sequence_scores enable row level security; ` +
+      `create policy "public read" on pitch_sequence_scores for select using (true);`
+    )
+  }
+  console.log(`  verified: anon key sees all ${count} rows (RLS OK)`)
 }
 
 main().catch(err => { console.error(err); process.exit(1) })
