@@ -57,8 +57,11 @@ export default function PitchSequenceTool(){
   return (
     <div style={{color:C.text,fontSize:13}}>
       <div style={{fontSize:16,fontWeight:700,color:C.gold,marginBottom:4}}>Pitch Sequences</div>
-      <div style={{fontSize:11,color:C.textMuted,marginBottom:16,lineHeight:1.6}}>
+      <div style={{fontSize:11,color:C.textMuted,marginBottom:6,lineHeight:1.6}}>
         The most common last-2-pitch combinations (pitch type + location) leading to a chosen result — with Effective Velocity built in, so you can see whether a sequence's effect is an EV story or just a velocity one. 2026 season-to-date, league-wide.
+      </div>
+      <div style={{fontSize:10,color:C.textDim,marginBottom:16,lineHeight:1.6,background:C.bg2,border:`1px solid ${C.border}`,borderRadius:8,padding:'8px 10px'}}>
+        Quick definitions for the 4 numbers on each row below (full explanation on the <b>Effective Velocity</b> tab): <b>EV Diff</b> = how much the pitch's <i>perceived</i> speed changed from the one before it, once location is factored in. <b>Raw Velo Diff</b> = the same change using plain radar-gun speed, no location adjustment. <b>In Attention Zone</b> = how often that change was small (±6mph or less) — Husband's claim is hitters do the most damage here. <b>Run Value</b> = expected runs for the batter on this sequence (negative is good for the pitcher).
       </div>
 
       <div style={{display:'flex',gap:6,marginBottom:14}}>

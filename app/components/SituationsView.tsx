@@ -3,8 +3,9 @@ import { useState } from 'react'
 import BaseScenarioTool from '@/app/components/BaseScenarioTool'
 import CountLeverageTable from '@/app/components/CountLeverageTable'
 import PitchSequenceTool from '@/app/components/PitchSequenceTool'
-import { EXACT_CELL_THRESHOLD } from '@/lib/baseScenario'
+import { EXACT_CELL_THRESHOLD, MIN_RENDER_N } from '@/lib/baseScenario'
 import { SEQUENCE_MIN_N } from '@/lib/pitchSequences'
+import HowToReadPanel from '@/app/components/HowToReadPanel'
 
 const C = {
   bg2:'#161b22', bg3:'#1c2333', border:'#30363d', gold:'#e8b84b', textMuted:'#7d8590', textDim:'#484f58', text:'#e6edf3', bg:'#0d1117',
@@ -19,6 +20,31 @@ const LIMITATIONS = [
   <>Pitch Sequences uses a coarser 3-way location bucket (heart/edge/chase, not the full 13-zone grid). "At-Bat Outcomes" only looks at the pitch that ends the at-bat (a single/HR/strikeout can only happen once); "Any Pitch Reaction" looks at every consecutive pitch pair, but neither catches a setup pitch further back in a longer at-bat than the immediately preceding one. "Barrel" is computed from the two verified anchor points in MLB's official glossary (98mph→26-30°, 116mph→8-50°) with a straight line drawn between them — real barrel classification isn't perfectly linear mph-to-mph, so treat it as a close approximation. Sequences with fewer than {SEQUENCE_MIN_N} occurrences are dropped entirely rather than shown as noise. Effective Velocity stats per sequence use Husband's classic 2.75mph/6in coefficient — see the Effective Velocity tab for how that number tested against our own data.</>,
 ]
 
+function HowToRead(){
+  return (
+    <HowToReadPanel title="How to Read Base Scenario">
+      <div>
+        Everything on this whole tab — At-Bat Simulator, Count Leverage, and Pitch Sequences — is built from real 2026 pitches, grouped by situation. A few things show up in all three that are worth knowing up front:
+      </div>
+      <div>
+        <b>n</b> is just the number of real pitches a stat is based on — bigger n means more trustworthy. Anything under {MIN_RENDER_N} real pitches shows as <b>"insufficient sample"</b> instead of a rate, on purpose — a rate built from a handful of pitches isn't reliable enough to act on, so it's hidden rather than shown looking precise.
+      </div>
+      <div>
+        A <b>95% CI</b> (confidence interval), shown as <span style={{fontFamily:'monospace'}}>[low–high]</span>, is the range the real number probably falls in — not the number itself. A tight range means we're confident; a wide range means treat the headline number as a rough idea, not gospel.
+      </div>
+      <div>
+        <b>Run Value</b> is the expected number of runs that situation is worth for the <i>batting</i> team — positive favors the hitter, negative favors the pitcher. Most single-pitch/single-situation run values fall somewhere around -0.05 to +0.05 — if you see a much bigger number than that, it's a rare or extreme situation, not a typo.
+      </div>
+      <div>
+        <b>"Exact cell" / "Estimated" / "No data"</b> badges tell you how directly a number answers your exact filters. <b>Exact cell</b> = enough real pitches at this precise combination. <b>Estimated</b> = not enough at the exact combination, so it fell back to a broader group (e.g. any runner on, not this exact base) to get a trustworthy sample — still real data, just a wider question answered. <b>No data</b> = nothing on record yet for this combination.
+      </div>
+      <div style={{ color:'#484f58', fontSize:11 }}>
+        <b>What this isn't:</b> a park-adjusted or win-probability model — see the "Limitations" panel below for the full list of what these tools don't account for. Pitch Sequences' EV Diff / Attention Zone / Run Value columns come from the Effective Velocity tab's model — visit that tab for the full explanation of what those specifically mean.
+      </div>
+    </HowToReadPanel>
+  )
+}
+
 // Single entry point for the whole Base Scenario Tool, mounted identically in the coach
 // pitcher-detail tab bar and the athlete dashboard — no forked copies of this logic.
 // At-Bat Simulator and Count Leverage are one continuous view, not separate sub-tabs.
@@ -26,6 +52,8 @@ export default function SituationsView(){
   const [showLimitations,setShowLimitations] = useState(false)
   return (
     <div>
+      <HowToRead/>
+
       <div style={{display:'flex',justifyContent:'flex-end',marginBottom:14}}>
         <button onClick={()=>setShowLimitations(s=>!s)} style={{background:'transparent',color:C.textMuted,border:`1px solid ${C.border}`,borderRadius:8,padding:'8px 14px',fontSize:11,cursor:'pointer'}}>
           {showLimitations?'Hide':'ⓘ'} Limitations

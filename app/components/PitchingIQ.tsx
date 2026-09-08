@@ -293,7 +293,7 @@ export default function PitchingIQ() {
             <div style={{display:'flex',gap:4,flexWrap:'wrap' as const}}>{COUNT_BUCKETS.map(b=>pill(b==='all'?'All':b,countBucket===b,()=>setCountBucket(b)))}</div>
           </div>
           <div>
-            <div style={{fontSize:10,color:C.textMuted,textTransform:'uppercase' as const,letterSpacing:'0.5px',marginBottom:4}}>Swing path</div>
+            <div style={{fontSize:10,color:C.textMuted,textTransform:'uppercase' as const,letterSpacing:'0.5px',marginBottom:4}}>Swing path <span style={{textTransform:'none' as const,color:C.textDim,fontWeight:400}}>(see guide ↓ below)</span></div>
             <div style={{display:'flex',gap:4}}>
               {pill('All',swingPath==='all',()=>setSwingPath('all'))}
               {pill('Flat',swingPath==='flat',()=>setSwingPath('flat'))}
@@ -302,7 +302,7 @@ export default function PitchingIQ() {
             </div>
           </div>
           <div>
-            <div style={{fontSize:10,color:C.textMuted,textTransform:'uppercase' as const,letterSpacing:'0.5px',marginBottom:4}}>Attack direction</div>
+            <div style={{fontSize:10,color:C.textMuted,textTransform:'uppercase' as const,letterSpacing:'0.5px',marginBottom:4}}>Attack direction <span style={{textTransform:'none' as const,color:C.textDim,fontWeight:400}}>(see guide ↓ below)</span></div>
             <div style={{display:'flex',gap:4}}>
               {pill('All',attackDirection==='all',()=>setAttackDirection('all'))}
               {pill('Pull',attackDirection==='pull',()=>setAttackDirection('pull'))}
@@ -361,12 +361,20 @@ export default function PitchingIQ() {
                   </div>
                 ))}
               </div>
-              <div style={{textAlign:'center' as const,fontSize:10,color:C.textDim,marginTop:8}}>catcher's view · plate_x = left/right · plate_z = height · zones 1–9 in-zone · 11–14 shadow/chase</div>
+              <div style={{textAlign:'center' as const,fontSize:10,color:C.textDim,marginTop:8}}>catcher's view · plate_x = left/right · plate_z = height · zones 1–9 in-zone · 11–14 shadow/chase (zone 14 is ONE combined "off the plate" bucket — it's shown 4 times around the border for layout, not 4 different zones)</div>
               <div style={{display:'flex',alignItems:'center',gap:6,justifyContent:'center',marginTop:6}}>
                 <span style={{fontSize:10,color:C.textMuted}}>low</span>
                 <div style={{width:80,height:7,borderRadius:4,background:'linear-gradient(to right,#3b82f6,#f85149)'}}/>
                 <span style={{fontSize:10,color:C.textMuted}}>high</span>
               </div>
+              <div style={{textAlign:'center' as const,fontSize:9,color:C.textDim,marginTop:4}}>
+                Red isn't always bad — it just means a higher number for whichever metric is picked above. Higher Whiff%/Chase% is good for the pitcher; higher Hard-hit%/HR% is bad for the pitcher.
+              </div>
+              {metric==='xwoba' && (
+                <div style={{fontSize:9,color:C.textDim,marginTop:4,background:C.bg3,borderRadius:6,padding:'6px 8px',lineHeight:1.5}}>
+                  <b style={{color:C.textMuted}}>xwOBA</b> estimates a hitter's overall production from contact quality, on roughly the same scale as batting average (.300ish is average, .350+ is a real problem for the pitcher). Unlike every other metric here, <b style={{color:C.textMuted}}>lower is better</b> for the pitcher — the ranking list below sorts smallest-first for this one metric only.
+                </div>
+              )}
               <div style={{height:1,background:C.border,margin:'12px 0'}}/>
               <div style={{fontSize:11,fontWeight:700,color:C.textMuted,textTransform:'uppercase' as const,letterSpacing:'0.5px',marginBottom:8}}>Pitch ranking — {METRIC_LABELS[metric]}</div>
               {pitchRanks.slice(0,7).map((r,i)=>{
