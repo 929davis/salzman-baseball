@@ -7,6 +7,7 @@ import {
   evAttentionZoneSplit, evDirectionSplit, evDiffCurve, actualDiffCurve, fitCurve,
   ATTENTION_ZONE_MPH, type EvPairRow, type EvPrincipleStat, type WeightedFit,
 } from '@/lib/effectiveVelocity'
+import HowToReadPanel from '@/app/components/HowToReadPanel'
 
 const C = {
   bg:'#0d1117',bg2:'#161b22',bg3:'#1c2333',border:'#30363d',
@@ -40,6 +41,34 @@ function StatCard({ stat, highlight }: { stat: EvPrincipleStat, highlight?: bool
         ))}
       </div>
     </div>
+  )
+}
+
+function HowToRead() {
+  return (
+    <HowToReadPanel title="How to Read Effective Velocity">
+      <div>
+        <b style={{ color: C.gold }}>Effective Velocity (EV)</b> is a pitch's radar-gun speed adjusted for where it crossed the zone. Up-and-in pitches play <i>faster</i> than the gun says, down-and-away pitches play <i>slower</i> — same raw mph, different amount of time the hitter actually gets to react given the angle the ball comes in on. A 92mph pitch up-and-in and a 92mph pitch down-and-away are NOT the same pitch to a hitter's timing, even though the gun reads identically. Everything below is that adjusted number, not the raw radar speed.
+      </div>
+      <div>
+        <b>Sequencing Threshold</b> tests Husband's headline claim: hitters do the most damage when a pitch's EV is close (within {ATTENTION_ZONE_MPH} mph) to the <i>previous</i> pitch's EV — i.e., no real timing adjustment was required. The two cards split every pitch pair into "didn't need to adjust" vs. "did," so you can see whether that actually shows up in whiff/hard-hit/barrel/run-value rates in our own data, not just take the claim on faith.
+      </div>
+      <div>
+        <b>Direction of Change</b> asks a related but different question: does <i>reversing</i> direction (a pitch that played faster, then one that plays slower, or vice versa) suppress contact more than moving the same direction by a similar amount? Same-size change, different pattern.
+      </div>
+      <div>
+        On each card: <b>Whiff Rate</b> is share of all pitches in that group that got swung through. <b>Hard-Hit Rate</b> and <b>Barrel Rate</b> are of balls actually put in play only (BIP) — taken/foul pitches aren't in that denominator. <b>Mean Run Value</b> uses the same sign convention as the rest of this app: positive is good <i>for the hitter</i>, so a pitcher wants to see this number low or negative, not high. A card reading "insufficient sample" just means too few real pitches landed in that bucket to show a rate without it being misleadingly precise — not zero data, just not enough yet.
+      </div>
+      <div>
+        <b>The two charts</b> plot the same two outcomes (hard-hit rate, whiff rate) against two different x-axes side by side: the gold line is EV (perceived) speed change from the prior pitch, the blue line is plain raw radar speed change. If EV really is the better predictor, its line should show a cleaner/stronger relationship than raw velocity's — that's a visual version of the same test the table below does with numbers.
+      </div>
+      <div>
+        <b>The Weights table</b> — r is a correlation from -1 to +1; the sign says which direction, the size says how strong. Near 0 means the relationship isn't really there in our data regardless of what the line looked like. Strong/moderate/weak are just r ≥0.6 / ≥0.3 / below that, and each r is weighted so bigger, more reliable buckets count more than thin ones.
+      </div>
+      <div style={{ color: C.textDim, fontSize: 11 }}>
+        <b>What this isn't:</b> Husband's own patented zone chart or published numbers — this is an independent re-test of his underlying claim against our own real pitches, the same kind of check Driveline Baseball's league-wide re-analysis did (cited below). It's also a bivariate view only — no count or matchup control — so treat a real relationship here as a lead worth digging into, not a finished causal claim.
+      </div>
+    </HowToReadPanel>
   )
 }
 
@@ -114,6 +143,8 @@ export default function EffectiveVelocityTool(){
       <div style={{fontSize:10,color:C.textDim,marginBottom:16,lineHeight:1.6}}>
         This computes Husband's own formula faithfully (his published 2.75 mph/6in coefficient, verified plate_x sign convention) but doesn't assume his conclusions — every number below is measured fresh against our real 2026 first-half data, the same way an independent large-sample re-test (Driveline Baseball, 2.8M+ MLB pitches) did at the full-league level. Bivariate view only (no count/matchup control, unlike that re-test) — a documented scope limit, not a final word.
       </div>
+
+      <HowToRead/>
 
       <div style={{fontSize:12,fontWeight:700,color:C.text,marginBottom:8,marginTop:20}}>Sequencing Threshold — Husband's ±{ATTENTION_ZONE_MPH} EV mph "Danger Zone"</div>
       <div style={{display:'flex',gap:10,flexWrap:'wrap' as const,marginBottom:20}}>

@@ -3,6 +3,7 @@ import { useEffect, useState, useMemo } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { fetchAllRows } from '@/lib/baseScenario'
 import { buildSavantLink } from '@/lib/savantLink'
+import HowToReadPanel from '@/app/components/HowToReadPanel'
 
 const C = {
   bg:'#0d1117',bg2:'#161b22',bg3:'#1c2333',border:'#30363d',
@@ -88,46 +89,37 @@ function PitchRow({ r, showDate }: { r: ScoreRow, showDate: boolean }) {
 const ROW_HEADERS = ['Matchup', 'Pitch', 'Count', 'Result', 'Reading', 'Stage 1', 'Stage 2', 'Lift', 'Why', '']
 
 function HowToRead() {
-  const [open, setOpen] = useState(true)
   return (
-    <div style={{ background: C.bg2, border: `1px solid ${C.gold}`, borderRadius: 10, padding: 16, marginBottom: 20 }}>
-      <div onClick={() => setOpen(!open)} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', cursor: 'pointer' }}>
-        <div style={{ fontSize: 13, fontWeight: 700, color: C.gold }}>How to Read Timing IQ</div>
-        <div style={{ fontSize: 11, color: C.textMuted }}>{open ? 'Hide ▲' : 'Show ▼'}</div>
+    <HowToReadPanel title="How to Read Timing IQ">
+      <div>
+        <b style={{ color: C.blue }}>Stage 1</b> is what the pitch's own shape says, alone — its velocity, where it crossed the zone, and how much it kept moving after the point research says a hitter has already committed to swinging or not (roughly the midpoint of ball flight). It has no idea what count it is, what's been thrown earlier in the at-bat, or who's hitting.
       </div>
-      {open && (
-        <div style={{ marginTop: 12, display: 'flex', flexDirection: 'column' as const, gap: 10, fontSize: 12, color: C.text, lineHeight: 1.6 }}>
-          <div>
-            <b style={{ color: C.blue }}>Stage 1</b> is what the pitch's own shape says, alone — its velocity, where it crossed the zone, and how much it kept moving after the point research says a hitter has already committed to swinging or not (roughly the midpoint of ball flight). It has no idea what count it is, what's been thrown earlier in the at-bat, or who's hitting.
-          </div>
-          <div>
-            <b style={{ color: C.gold }}>Stage 2</b> adds three things Stage 1 can't see: what the hitter has already been shown earlier in this at-bat, whether this pitcher's release point matches his own normal spot for this pitch type (or looks off — a tip, fatigue, mechanics drifting), and this specific hitter's own measured tendency to time fastballs differently than breaking balls.
-          </div>
-          <div>
-            Both numbers are a percent chance of <i>one</i> outcome — but which outcome depends on what actually happened, and that's what the <b>Reading</b> badge on each row tells you:
-            <div style={{ display: 'flex', gap: 16, marginTop: 6, marginLeft: 4 }}>
-              <div><span style={{ fontSize: 9, fontWeight: 700, color: C.blue, border: `1px solid ${C.blue}`, borderRadius: 5, padding: '2px 6px' }}>Swing %</span> — he took the pitch; this is his estimated chance of swinging at it.</div>
-              <div><span style={{ fontSize: 9, fontWeight: 700, color: C.purple, border: `1px solid ${C.purple}`, borderRadius: 5, padding: '2px 6px' }}>Whiff %</span> — he swung; this is his estimated chance of missing entirely.</div>
-            </div>
-          </div>
-          <div>
-            <b>Lift</b> is just Stage 2 minus Stage 1. A big lift (either direction) means context — not the pitch's own shape — is what moved the number. A lift near zero means the pitch's shape alone already told most of the story.
-          </div>
-          <div>
-            <b>Why</b> is the single biggest factor behind that specific pitch's number, in plain language — not everything the model weighed, just the top one.
-          </div>
-          <div>
-            <b>Blank Stage 2</b> means this was the first pitch of the at-bat — there's nothing earlier in the PA yet for Stage 2 to use, so only Stage 1 applies.
-          </div>
-          <div style={{ borderTop: `1px solid ${C.border}`, paddingTop: 10 }}>
-            <b>Model Validation</b> (below) isn't about any one pitch — it's whether Stage 2 actually beats Stage 1 across thousands of pitches the model never trained on. AUC runs 0.50 (coin flip) to 1.00 (perfect); both stages score clearly above a coin flip, and Stage 2 scores higher than Stage 1 on both targets. That gap is the actual evidence sequencing adds something — not a claim about any single pitch below.
-          </div>
-          <div style={{ color: C.textDim, fontSize: 11 }}>
-            <b>What this isn't:</b> a certainty about any one pitch. It's a pattern learned across thousands of pitches and hundreds of pitchers and hitters — good for flagging which specific pitches are worth a second look on video, not a guarantee about what should have happened on that pitch.
-          </div>
+      <div>
+        <b style={{ color: C.gold }}>Stage 2</b> adds three things Stage 1 can't see: what the hitter has already been shown earlier in this at-bat, whether this pitcher's release point matches his own normal spot for this pitch type (or looks off — a tip, fatigue, mechanics drifting), and this specific hitter's own measured tendency to time fastballs differently than breaking balls.
+      </div>
+      <div>
+        Both numbers are a percent chance of <i>one</i> outcome — but which outcome depends on what actually happened, and that's what the <b>Reading</b> badge on each row tells you:
+        <div style={{ display: 'flex', gap: 16, marginTop: 6, marginLeft: 4 }}>
+          <div><span style={{ fontSize: 9, fontWeight: 700, color: C.blue, border: `1px solid ${C.blue}`, borderRadius: 5, padding: '2px 6px' }}>Swing %</span> — he took the pitch; this is his estimated chance of swinging at it.</div>
+          <div><span style={{ fontSize: 9, fontWeight: 700, color: C.purple, border: `1px solid ${C.purple}`, borderRadius: 5, padding: '2px 6px' }}>Whiff %</span> — he swung; this is his estimated chance of missing entirely.</div>
         </div>
-      )}
-    </div>
+      </div>
+      <div>
+        <b>Lift</b> is just Stage 2 minus Stage 1. A big lift (either direction) means context — not the pitch's own shape — is what moved the number. A lift near zero means the pitch's shape alone already told most of the story.
+      </div>
+      <div>
+        <b>Why</b> is the single biggest factor behind that specific pitch's number, in plain language — not everything the model weighed, just the top one.
+      </div>
+      <div>
+        <b>Blank Stage 2</b> means this was the first pitch of the at-bat — there's nothing earlier in the PA yet for Stage 2 to use, so only Stage 1 applies.
+      </div>
+      <div style={{ borderTop: `1px solid ${C.border}`, paddingTop: 10 }}>
+        <b>Model Validation</b> (below) isn't about any one pitch — it's whether Stage 2 actually beats Stage 1 across thousands of pitches the model never trained on. AUC runs 0.50 (coin flip) to 1.00 (perfect); both stages score clearly above a coin flip, and Stage 2 scores higher than Stage 1 on both targets. That gap is the actual evidence sequencing adds something — not a claim about any single pitch below.
+      </div>
+      <div style={{ color: C.textDim, fontSize: 11 }}>
+        <b>What this isn't:</b> a certainty about any one pitch. It's a pattern learned across thousands of pitches and hundreds of pitchers and hitters — good for flagging which specific pitches are worth a second look on video, not a guarantee about what should have happened on that pitch.
+      </div>
+    </HowToReadPanel>
   )
 }
 
