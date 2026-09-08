@@ -45,7 +45,7 @@ export default function CountLeverageTable(){
         How much is riding on the next pitch at each count — the run-value swing between it going as a ball vs. a strike. Higher swing = more worth fighting for. 2026 season-to-date, league-wide.
       </div>
       <div style={{fontSize:10,color:C.textDim,marginBottom:16,lineHeight:1.6}}>
-        "Ball value" combines plain balls with walks (a ball at 3-0 is a walk — same underlying event). "Strike value" combines called strikes, swinging strikes, and strikeouts, but not fouls (a foul doesn't end the at-bat or advance the count at 2 strikes, so it isn't a clean ball-vs-strike comparison). Positive = favors the batting team, negative = favors the pitcher. Shaded bands are 95% confidence intervals.
+        "Ball value" combines plain balls with walks (a ball at 3-0 is a walk — same underlying event). "Strike value" combines called strikes, swinging strikes, and strikeouts, but not fouls (a foul doesn't end the at-bat or advance the count at 2 strikes, so it isn't a clean ball-vs-strike comparison). <span style={{color:C.teal,fontWeight:700}}>Teal</span> = favors the batting team, <span style={{color:C.red,fontWeight:700}}>red</span> = favors the pitcher — that color meaning is the same in both columns, it tracks the actual sign of the number, not just which column it's in. The bracketed range is a 95% confidence interval (where the real number probably falls).
       </div>
 
       <div style={{overflowX:'auto' as const}}>
@@ -65,7 +65,7 @@ export default function CountLeverageTable(){
                 <td style={{padding:'10px',textAlign:'right' as const}}>
                   {c.ball && c.ball.n>=MIN_RENDER_N ? (
                     <div>
-                      <span style={{color:C.teal,fontWeight:600}}>{c.ball.mean>=0?'+':''}{c.ball.mean.toFixed(3)}</span>
+                      <span style={{color:c.ball.mean>=0?C.teal:C.red,fontWeight:600}}>{c.ball.mean>=0?'+':''}{c.ball.mean.toFixed(3)}</span>
                       <div style={{fontSize:9,color:C.textDim}}>[{c.ball.lower.toFixed(3)}, {c.ball.upper.toFixed(3)}] · n={c.ball.n.toLocaleString()}</div>
                     </div>
                   ) : <span style={{color:C.textDim,fontSize:11}}>insufficient sample{c.ball?` (n=${c.ball.n})`:''}</span>}
@@ -73,7 +73,7 @@ export default function CountLeverageTable(){
                 <td style={{padding:'10px',textAlign:'right' as const}}>
                   {c.strike && c.strike.n>=MIN_RENDER_N ? (
                     <div>
-                      <span style={{color:C.red,fontWeight:600}}>{c.strike.mean.toFixed(3)}</span>
+                      <span style={{color:c.strike.mean>=0?C.teal:C.red,fontWeight:600}}>{c.strike.mean>=0?'+':''}{c.strike.mean.toFixed(3)}</span>
                       <div style={{fontSize:9,color:C.textDim}}>[{c.strike.lower.toFixed(3)}, {c.strike.upper.toFixed(3)}] · n={c.strike.n.toLocaleString()}</div>
                     </div>
                   ) : <span style={{color:C.textDim,fontSize:11}}>insufficient sample{c.strike?` (n=${c.strike.n})`:''}</span>}
