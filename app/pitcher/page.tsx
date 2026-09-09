@@ -8,6 +8,7 @@ import AthleticBenchmarks from '@/app/components/AthleticBenchmarks'
 import ProgressOverview from '@/app/components/ProgressOverview'
 import MiniSparkline from '@/app/components/MiniSparkline'
 import ArmCareSummary from '@/app/components/ArmCareSummary'
+import ThrowingPrinciples from '@/app/components/ThrowingPrinciples'
 import TestVideoLink from '@/app/components/TestVideoLink'
 import { useTestVideos } from '@/lib/testVideos'
 import { parseTime, calcCMJFn } from '@/lib/cmj'
@@ -364,6 +365,7 @@ export default function PitcherDashboard(){
       <div style={{display:'flex',background:C.bg2,borderBottom:`1px solid ${C.border}`,padding:'0 2px',overflowX:'auto' as const}}>
         {[
           {id:'overview',icon:'📈',label:'Overview'},
+          {id:'principles',icon:'🧠',label:'Why'},
           {id:'program',icon:'📋',label:'Program'},
           {id:'food',icon:'🥗',label:'Food'},
           {id:'assess',icon:'🧪',label:'Assess'},
@@ -408,6 +410,9 @@ export default function PitcherDashboard(){
             })()}
           </div>
         )}
+
+        {/* PRINCIPLES TAB */}
+        {tab==='principles'&&<ThrowingPrinciples/>}
 
         {/* PROGRAM TAB */}
         {tab==='program'&&(
