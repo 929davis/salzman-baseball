@@ -170,6 +170,32 @@ export const ANATOMY_REGIONS: AnatomyRegion[] = [
     ],
   },
   {
+    id: 'biceps',
+    name: 'Biceps',
+    area: 'upper_body',
+    deliveryRole: "The biceps flexes the elbow and helps decelerate the arm's extension right after release, working eccentrically as the elbow whips open. It's a smaller contributor to velocity than the muscles around it, but the biceps tendon anchors into the front of the shoulder, so a healthy biceps matters for overall anterior shoulder stability, not just elbow bend.",
+    strengthening: ['Dumbbell hammer curl', '2-to-1 eccentric hammer curl', 'Standing barbell curl'],
+    mobilityStability: ['Bicep stretch (arm extended, palm up, gentle overpressure)', 'Foam roll along the front of the upper arm'],
+    sorenessRelief: ['Foam roll or light massage along the muscle belly', 'General post-throwing soreness here is common and usually not a concern on its own', 'Sharp pain at the front of the shoulder combined with biceps soreness is worth flagging to a coach — it can point to the biceps tendon, not just the muscle'],
+    hotspots: [
+      {view:'front',cx:72,cy:137,rx:16,ry:22},
+      {view:'front',cx:167,cy:137,rx:16,ry:22},
+    ],
+  },
+  {
+    id: 'triceps',
+    name: 'Triceps',
+    area: 'upper_body',
+    deliveryRole: 'The triceps extends the elbow and is one of the last muscles firing hard before release, then works eccentrically to help control the arm through deceleration and follow-through. A triceps that fatigues late in an outing is a common, normal reason velocity drops in the final innings of a start.',
+    strengthening: ['Close-grip bench press', 'Skull crushers / overhead triceps extension', 'Rope pushdown'],
+    mobilityStability: ['Overhead triceps stretch', 'Cross-body stretch / foam roll along the back of the upper arm'],
+    sorenessRelief: ['Foam roll along the back of the upper arm', 'Normal post-outing soreness, especially after a high-pitch-count start', 'Sharp pain right at the elbow itself, not the muscle belly, is a different issue — flag it rather than just resting through it'],
+    hotspots: [
+      {view:'back',cx:72,cy:137,rx:16,ry:22},
+      {view:'back',cx:167,cy:137,rx:16,ry:22},
+    ],
+  },
+  {
     id: 'calves_lower_leg',
     name: 'Calves / Lower Leg',
     area: 'lower_body',
