@@ -2,6 +2,7 @@
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { ANATOMY_REGIONS, type AnatomyRegion, type BodyView } from '@/lib/anatomy'
+import BodyTypeGuide from '@/app/components/BodyTypeGuide'
 
 const C = {
   bg:'#0d1117',bg2:'#161b22',bg3:'#1c2333',border:'#30363d',
@@ -113,6 +114,8 @@ export default function AnatomyPage(){
             )}
           </div>
         </div>
+
+        <BodyTypeGuide/>
       </div>
     </div>
   )
