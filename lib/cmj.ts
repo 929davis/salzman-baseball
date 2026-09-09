@@ -20,7 +20,8 @@ export const calcJumpHeight=(takeoff:number,landing:number)=>{
 // RSI-mod (rsi) were derived from a simulated flight-time pipeline rather than measured
 // directly, then regressed against that dataset's velocity using the Sayers equation for
 // power estimation. Cross-validated R²≈0.19, typical error ±5.3 mph — a rough estimate, not
-// a validated model, pending re-fitting against our own public_cmj_submissions data.
+// a validated model. (The public no-login CMJ demo that used to feed a re-fitting dataset
+// was removed -- re-fitting would need a new real data source if pursued later.)
 export const calcCMJFn=({startTime,takeoffTime,landingTime,massKg}:{startTime:number,takeoffTime:number,landingTime:number,massKg:number})=>{
   const ft=landingTime-takeoffTime
   const ttt=takeoffTime-startTime
