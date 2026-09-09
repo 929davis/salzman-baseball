@@ -94,6 +94,83 @@ function PitchRow({ r, showDate }: { r: ScoreRow, showDate: boolean }) {
 
 const ROW_HEADERS = ['Matchup', 'Pitch', 'Count', 'Result', 'Reading', 'Stage 1', 'Stage 2', 'Lift (pp)', 'Why', '']
 
+// The wide table (10 columns) works fine on the coach's desktop screen but this same
+// component also renders inside the pitcher dashboard's ~480px-wide mobile shell, where a
+// fixed-width table just runs columns off the right edge with no obvious way to know
+// Reading/Stage 1/Stage 2/Lift/Why/Savant are even there. Below this breakpoint, render the
+// same data as stacked cards instead of a table -- same information, no silent cutoff.
+const NARROW_BREAKPOINT = 700
+
+function useIsNarrow(breakpoint = NARROW_BREAKPOINT) {
+  const [narrow, setNarrow] = useState(false)
+  useEffect(() => {
+    const check = () => setNarrow(window.innerWidth < breakpoint)
+    check()
+    window.addEventListener('resize', check)
+    return () => window.removeEventListener('resize', check)
+  }, [breakpoint])
+  return narrow
+}
+
+// Same fields as PitchRow, stacked instead of column-by-column.
+function MobilePitchCard({ r, showDate }: { r: ScoreRow, showDate: boolean }) {
+  const s1 = stage1For(r), s2 = stage2For(r), l = liftFor(r)
+  const link = buildSavantLink({
+    dateGt: r.game_date, dateLt: r.game_date,
+    batterStands: r.batter_side as 'R' | 'L',
+    countBucket: `${r.balls_before}-${r.strikes_before}`,
+    pitchType: r.pitch_type,
+  })
+  return (
+    <div style={{ background: C.bg2, border: `1px solid ${C.border}`, borderRadius: 8, padding: '10px 12px', marginBottom: 8 }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: 8, marginBottom: 6 }}>
+        <div style={{ fontSize: 12, fontWeight: 700, color: C.text }}>{r.pitcher_name} → {r.batter_name}</div>
+        {showDate && <div style={{ fontSize: 10, color: C.textDim, whiteSpace: 'nowrap' as const }}>{r.game_date}</div>}
+      </div>
+      <div style={{ display: 'flex', flexWrap: 'wrap' as const, gap: 8, marginBottom: 8, fontSize: 11, color: C.textMuted }}>
+        <span>{r.pitch_type} {r.start_speed?.toFixed(1)}mph</span>
+        <span>{r.balls_before}-{r.strikes_before}</span>
+        <span>{r.call_description}</span>
+      </div>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8, flexWrap: 'wrap' as const }}>
+        <span style={{ fontSize: 9, fontWeight: 700, textTransform: 'uppercase' as const, letterSpacing: '0.5px', color: r.primary_metric === 'whiff' ? C.purple : C.blue, border: `1px solid ${r.primary_metric === 'whiff' ? C.purple : C.blue}`, borderRadius: 5, padding: '2px 6px' }}>
+          {r.primary_metric === 'whiff' ? 'Whiff %' : 'Swing %'}
+        </span>
+        <span style={{ fontSize: 12, fontFamily: 'monospace', color: C.textMuted }}>{pct(s1)}</span>
+        <span style={{ color: C.textDim, fontSize: 11 }}>→</span>
+        <span style={{ fontSize: 13, fontFamily: 'monospace', color: C.text, fontWeight: 700 }}>{pct(s2)}</span>
+        <span style={{ fontSize: 12, fontFamily: 'monospace', color: liftColor(l), marginLeft: 'auto' }}>{liftLabel(l)}</span>
+      </div>
+      <div style={{ fontSize: 10, color: C.textDim, lineHeight: 1.5, marginBottom: 8 }}>{r.insight_text}</div>
+      <a href={link} target="_blank" rel="noopener noreferrer" style={{ fontSize: 10, color: C.blue }}>Savant ↗</a>
+    </div>
+  )
+}
+
+// Shared by both the flat "All Pitchers" list and the "By Game" per-PA blocks -- picks
+// table vs. cards once, in one place, instead of duplicating the check at each call site.
+function PitchList({ rows, showDate }: { rows: ScoreRow[], showDate: boolean }) {
+  const narrow = useIsNarrow()
+  if (narrow) {
+    return <div>{rows.map(r => <MobilePitchCard key={`${r.game_pk}-${r.at_bat_index}-${r.pitch_num_in_pa}`} r={r} showDate={showDate} />)}</div>
+  }
+  return (
+    <div style={{ overflowX: 'auto' as const }}>
+      <table style={{ width: '100%', borderCollapse: 'collapse' as const, minWidth: showDate ? 950 : 900 }}>
+        <thead>
+          <tr style={{ borderBottom: `1px solid ${C.border}` }}>
+            {showDate && <Th>Date</Th>}
+            {ROW_HEADERS.map(h => <Th key={h}>{h}</Th>)}
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map(r => <PitchRow key={`${r.game_pk}-${r.at_bat_index}-${r.pitch_num_in_pa}`} r={r} showDate={showDate} />)}
+        </tbody>
+      </table>
+    </div>
+  )
+}
+
 function HowToRead() {
   return (
     <HowToReadPanel title="How to Read Timing IQ">
@@ -297,19 +374,7 @@ export default function TimingIQTool() {
           <div style={{ fontSize: 10, color: C.textDim, marginBottom: 8, lineHeight: 1.5 }}>
             Showing up to 40, sorted by {sortMode === 'lift' ? 'how much sequence context changed the read vs. raw physics alone' : 'most recent'}. <b>pp = percentage points</b> — a Lift of +20pp means Stage 2's probability read 20 points higher than Stage 1's (e.g. 30% → 50%), not "20% higher."
           </div>
-          <div style={{ overflowX: 'auto' as const }}>
-            <table style={{ width: '100%', borderCollapse: 'collapse' as const, minWidth: 950 }}>
-              <thead>
-                <tr style={{ borderBottom: `1px solid ${C.border}` }}>
-                  <Th>Date</Th>
-                  {ROW_HEADERS.map(h => <Th key={h}>{h}</Th>)}
-                </tr>
-              </thead>
-              <tbody>
-                {filtered.map(r => <PitchRow key={`${r.game_pk}-${r.at_bat_index}-${r.pitch_num_in_pa}`} r={r} showDate />)}
-              </tbody>
-            </table>
-          </div>
+          <PitchList rows={filtered} showDate />
         </>
       ) : (
         <>
@@ -329,20 +394,7 @@ export default function TimingIQTool() {
                   {hi.pas.map(pa => (
                     <div key={pa.key} style={{ marginBottom: 14 }}>
                       <div style={{ fontSize: 11, fontWeight: 700, color: C.text, marginBottom: 4 }}>{pa.header}</div>
-                      <div style={{ overflowX: 'auto' as const }}>
-                        <table style={{ width: '100%', borderCollapse: 'collapse' as const, minWidth: 900 }}>
-                          <thead>
-                            <tr style={{ borderBottom: `1px solid ${C.border}` }}>
-                              {ROW_HEADERS.map(h => <Th key={h}>{h}</Th>)}
-                            </tr>
-                          </thead>
-                          <tbody>
-                            {pa.rows.sort((a, b) => a.pitch_num_in_pa - b.pitch_num_in_pa).map(r => (
-                              <PitchRow key={`${r.game_pk}-${r.at_bat_index}-${r.pitch_num_in_pa}`} r={r} showDate={false} />
-                            ))}
-                          </tbody>
-                        </table>
-                      </div>
+                      <PitchList rows={[...pa.rows].sort((a, b) => a.pitch_num_in_pa - b.pitch_num_in_pa)} showDate={false} />
                     </div>
                   ))}
                 </div>
