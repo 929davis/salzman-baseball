@@ -10,12 +10,26 @@
 import { ImageResponse } from 'next/og'
 import { createClient } from '@supabase/supabase-js'
 import sharp from 'sharp'
+import fs from 'fs'
+import path from 'path'
 import { CardTemplate, CARD_SIZE, CARD_TEXT_MAX_LENGTH } from '@/lib/social/card-template'
 
 export const runtime = 'nodejs'
 
 function admin() {
   return createClient(process.env.SUPABASE_URL!, process.env.SUPABASE_SERVICE_KEY!)
+}
+
+// Read once per server instance rather than per-request -- the file never changes at runtime,
+// and next/og's Satori renderer needs an actual data URI, not a relative /public path (this
+// route doesn't run behind the same static file serving as a normal page).
+let avatarDataUri: string | null = null
+function getAvatarDataUri(): string {
+  if (avatarDataUri) return avatarDataUri
+  const filePath = path.join(process.cwd(), 'public', 'social', 'avatar.png')
+  const bytes = fs.readFileSync(filePath)
+  avatarDataUri = `data:image/png;base64,${bytes.toString('base64')}`
+  return avatarDataUri
 }
 
 export async function GET(_req: Request, { params }: { params: Promise<{ id: string }> }) {
@@ -45,10 +59,13 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
   }
 
   try {
-    const png = new ImageResponse(<CardTemplate text={text} />, {
-      width: CARD_SIZE,
-      height: CARD_SIZE,
-    })
+    const png = new ImageResponse(
+      <CardTemplate text={text} avatarDataUri={getAvatarDataUri()} />,
+      {
+        width: CARD_SIZE,
+        height: CARD_SIZE,
+      }
+    )
 
     // Instagram's Content Publishing API supports JPEG only (extended JPEG formats like MPO
     // and JPS are not supported, and PNG isn't accepted at all) -- ImageResponse only

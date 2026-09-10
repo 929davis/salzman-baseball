@@ -4,17 +4,29 @@
 // Design intent: a card that looks like it came from a coach who knows what he's talking
 // about, not from a content tool. Reuses this app's own established dark/gold identity
 // (same palette as the rest of the coaching site) rather than inventing a new one, so the
-// Instagram content and the coaching brand read as the same thing. Deliberately NOT a tweet
-// screenshot -- no X chrome, no @handle, no "reposted from" framing (Instagram reduces
-// recommendation reach for content carrying visible third-party platform branding).
+// Instagram content and the coaching brand read as the same thing.
+//
+// Revision: the header (avatar + name + @handle) is a deliberate, later addition -- the
+// original version of this card had no @handle at all, specifically to avoid reading as a
+// screenshot of another platform's post. The handle was added back in because the actual
+// goal turned out to be cross-promotion (driving IG followers to the coach's real X account),
+// not aesthetic mimicry -- so it's real and functional, not decorative platform chrome. It
+// still deliberately excludes a verified-checkmark badge, timestamp, or reply/chevron UI --
+// those would only fake platform authenticity rather than serve the cross-promo goal.
 //
 // Font note: this renders using next/og's built-in default font rather than an embedded
 // custom font file, since no font asset was in this build's file scope (see the build
-// report). Weight differentiation (600 body / 700 wordmark) may read as subtle without a
-// real embedded font -- if tighter typographic fidelity matters, bundling an actual
-// Inter/similar .ttf and passing it via ImageResponse's `fonts` option is the next step.
+// report). Weight differentiation may read as subtle without a real embedded font -- if
+// tighter typographic fidelity matters, bundling an actual Inter/similar .ttf and passing it
+// via ImageResponse's `fonts` option is the next step.
 
 export const CARD_SIZE = 1080
+
+// The account name/handle shown in the card header. Real values, not placeholders -- this is
+// a functional cross-promotion element (drives IG viewers to the real X account), not
+// decorative platform chrome.
+export const ACCOUNT_NAME = 'Davis Salzman'
+export const ACCOUNT_HANDLE = '@Salzmanbaseball'
 
 // Past this, even the smallest step on the size ramp below renders too small to read
 // cleanly on a 1080px square viewed at Instagram feed size. Return an error instead of
@@ -38,9 +50,15 @@ function sizeForLength(len: number): { fontSize: number; lineHeight: number } {
   return { fontSize: 30, lineHeight: 1.4 }
 }
 
-export function CardTemplate({ text }: { text: string }) {
+// avatarDataUri: a "data:image/...;base64,..." URI, read from disk and encoded by the route
+// handler (see app/api/social/card/[id]/route.tsx) -- this component stays a pure function of
+// its props, no filesystem access here. There is deliberately only one photo on the card (the
+// header avatar) -- an earlier revision also placed the full uncropped source photo as a
+// larger block next to the text; that was removed per feedback.
+export function CardTemplate({ text, avatarDataUri }: { text: string; avatarDataUri: string }) {
   const { fontSize, lineHeight } = sizeForLength(text.length)
   const margin = 96
+  const avatarSize = 88
 
   return (
     <div
@@ -49,17 +67,39 @@ export function CardTemplate({ text }: { text: string }) {
         height: '100%',
         display: 'flex',
         flexDirection: 'column',
-        justifyContent: 'space-between',
         backgroundColor: C.bg,
         padding: `${margin}px`,
         fontFamily: 'sans-serif',
       }}
     >
+      <div style={{ display: 'flex', alignItems: 'center', gap: 20 }}>
+        <img
+          src={avatarDataUri}
+          width={avatarSize}
+          height={avatarSize}
+          style={{
+            width: avatarSize,
+            height: avatarSize,
+            borderRadius: avatarSize / 2,
+            objectFit: 'cover',
+          }}
+        />
+        <div style={{ display: 'flex', flexDirection: 'column' }}>
+          <div style={{ display: 'flex', fontSize: 30, fontWeight: 700, color: C.text }}>
+            {ACCOUNT_NAME}
+          </div>
+          <div style={{ display: 'flex', fontSize: 24, fontWeight: 500, color: C.textMuted }}>
+            {ACCOUNT_HANDLE}
+          </div>
+        </div>
+      </div>
+
       <div
         style={{
           display: 'flex',
           flex: 1,
-          alignItems: 'center',
+          alignItems: 'flex-start',
+          marginTop: 56,
         }}
       >
         <div
@@ -74,28 +114,6 @@ export function CardTemplate({ text }: { text: string }) {
           }}
         >
           {text}
-        </div>
-      </div>
-
-      <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-        <div
-          style={{
-            display: 'flex',
-            width: 8,
-            height: 8,
-            borderRadius: 4,
-            backgroundColor: C.gold,
-          }}
-        />
-        <div
-          style={{
-            display: 'flex',
-            fontSize: 22,
-            fontWeight: 700,
-            color: C.textMuted,
-          }}
-        >
-          Salzman Baseball
         </div>
       </div>
     </div>
