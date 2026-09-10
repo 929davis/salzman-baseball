@@ -38,6 +38,30 @@ async function pollContainerStatus(containerId: string, accessToken: string): Pr
   return { ok: false, error: 'Container never reached FINISHED after 5 status checks -- Meta may still be processing it.' }
 }
 
+// Shared by both the single-image and carousel-item containers. URLSearchParams handles
+// encoding image_url and any text params (which may contain newlines, apostrophes, and a
+// literal `#` -- Meta's container call fails if `#` isn't percent-encoded, and
+// URLSearchParams does this correctly).
+async function createContainer(
+  igUserId: string,
+  accessToken: string,
+  params: Record<string, string>
+): Promise<{ ok: true; id: string } | { ok: false; error: string }> {
+  const body = new URLSearchParams({ ...params, access_token: accessToken })
+  let res: Response
+  try {
+    res = await fetch(`${GRAPH_BASE}/${igUserId}/media`, { method: 'POST', body })
+  } catch (err: any) {
+    return { ok: false, error: `Could not reach Meta Graph API creating a media container: ${err?.message || String(err)}` }
+  }
+  const data = await res.json()
+  if (!res.ok || data.error) {
+    return { ok: false, error: data?.error?.message || `Meta returned ${res.status} creating a media container.` }
+  }
+  if (!data.id) return { ok: false, error: 'Meta did not return a container id.' }
+  return { ok: true, id: data.id }
+}
+
 export async function POST(req: Request) {
   let body: { id?: string }
   try {
@@ -69,6 +93,12 @@ export async function POST(req: Request) {
     return Response.json({ error: 'This post has no caption yet.' }, { status: 400 })
   }
 
+  const isThread = row.post_type === 'thread'
+  const segments: string[] = isThread && Array.isArray(row.segments) ? row.segments : []
+  if (isThread && (segments.length < 2 || segments.length > 10)) {
+    return Response.json({ error: `This thread has ${segments.length} part(s) -- Instagram carousels need between 2 and 10.` }, { status: 400 })
+  }
+
   const IG_USER_ID = process.env.IG_USER_ID
   const IG_ACCESS_TOKEN = process.env.IG_ACCESS_TOKEN
   const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL
@@ -76,45 +106,51 @@ export async function POST(req: Request) {
     return Response.json({ error: 'IG_USER_ID, IG_ACCESS_TOKEN, or NEXT_PUBLIC_SITE_URL is not configured on the server.' }, { status: 500 })
   }
 
-  const imageUrl = `${SITE_URL}/api/social/card/${id}`
-
   async function fail(message: string) {
     await supabase.from('social_posts').update({ status: 'failed', error: message }).eq('id', id)
     return Response.json({ error: message }, { status: 502 })
   }
 
-  // Step 1: create the media container. URLSearchParams handles encoding image_url and the
-  // caption (which may contain newlines, apostrophes, and a literal `#` -- Meta's container
-  // call fails if `#` isn't percent-encoded, and URLSearchParams does this correctly).
-  const containerParams = new URLSearchParams({
-    image_url: imageUrl,
-    caption: row.caption,
-    access_token: IG_ACCESS_TOKEN,
-  })
+  let creationId: string
 
-  let containerRes: Response
-  try {
-    containerRes = await fetch(`${GRAPH_BASE}/${IG_USER_ID}/media`, {
-      method: 'POST',
-      body: containerParams,
+  if (isThread) {
+    // Carousel: one "item" container per slide (no caption on items -- caption goes on the
+    // parent only), then a parent container referencing all of them.
+    const itemIds: string[] = []
+    for (let i = 0; i < segments.length; i++) {
+      const imageUrl = `${SITE_URL}/api/social/card/${id}?slide=${i}`
+      const item = await createContainer(IG_USER_ID, IG_ACCESS_TOKEN, {
+        image_url: imageUrl,
+        is_carousel_item: 'true',
+      })
+      if (!item.ok) return fail(`Slide ${i + 1} of ${segments.length}: ${item.error}`)
+      itemIds.push(item.id)
+    }
+
+    const parent = await createContainer(IG_USER_ID, IG_ACCESS_TOKEN, {
+      media_type: 'CAROUSEL',
+      children: itemIds.join(','),
+      caption: row.caption,
     })
-  } catch (err: any) {
-    return fail(`Could not reach Meta Graph API creating the media container: ${err?.message || String(err)}`)
+    if (!parent.ok) return fail(parent.error)
+    creationId = parent.id
+  } else {
+    const imageUrl = `${SITE_URL}/api/social/card/${id}`
+    const single = await createContainer(IG_USER_ID, IG_ACCESS_TOKEN, {
+      image_url: imageUrl,
+      caption: row.caption,
+    })
+    if (!single.ok) return fail(single.error)
+    creationId = single.id
   }
-  const containerData = await containerRes.json()
-  if (!containerRes.ok || containerData.error) {
-    return fail(containerData?.error?.message || `Meta returned ${containerRes.status} creating the media container.`)
-  }
-  const containerId = containerData.id
-  if (!containerId) return fail('Meta did not return a container id.')
 
-  // Step 2: confirm the container finished processing before publishing it.
-  const status = await pollContainerStatus(containerId, IG_ACCESS_TOKEN)
+  // Confirm the container finished processing before publishing it.
+  const status = await pollContainerStatus(creationId, IG_ACCESS_TOKEN)
   if (!status.ok) return fail(status.error)
 
-  // Step 3: publish.
+  // Publish.
   const publishParams = new URLSearchParams({
-    creation_id: containerId,
+    creation_id: creationId,
     access_token: IG_ACCESS_TOKEN,
   })
   let publishRes: Response

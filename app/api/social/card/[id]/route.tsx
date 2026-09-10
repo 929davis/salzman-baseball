@@ -32,13 +32,14 @@ function getAvatarDataUri(): string {
   return avatarDataUri
 }
 
-export async function GET(_req: Request, { params }: { params: Promise<{ id: string }> }) {
+export async function GET(req: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
+  const slideParam = new URL(req.url).searchParams.get('slide')
 
   const supabase = admin()
   const { data: row, error } = await supabase
     .from('social_posts')
-    .select('source_text')
+    .select('source_text, post_type, segments')
     .eq('id', id)
     .maybeSingle()
 
@@ -50,7 +51,18 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
     return new Response('No post found for this id.', { status: 404 })
   }
 
-  const text = row.source_text || ''
+  let text: string
+  if (row.post_type === 'thread') {
+    const segments: string[] = Array.isArray(row.segments) ? row.segments : []
+    const slideIndex = slideParam ? parseInt(slideParam, 10) : 0
+    if (!Number.isInteger(slideIndex) || slideIndex < 0 || slideIndex >= segments.length) {
+      return new Response(`No slide ${slideParam ?? 0} for this post (it has ${segments.length} segment(s)).`, { status: 404 })
+    }
+    text = segments[slideIndex] || ''
+  } else {
+    text = row.source_text || ''
+  }
+
   if (text.length > CARD_TEXT_MAX_LENGTH) {
     return new Response(
       `This post is ${text.length} characters, over the ${CARD_TEXT_MAX_LENGTH}-character card limit. Shorten it and regenerate.`,

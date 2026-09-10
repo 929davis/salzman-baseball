@@ -2,7 +2,7 @@
 import { useEffect, useState, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
-import { CARD_TEXT_MAX_LENGTH } from '@/lib/social/card-template'
+import { CARD_TEXT_MAX_LENGTH, THREAD_SEGMENT_MAX_LENGTH, THREAD_MIN_SEGMENTS, THREAD_MAX_SEGMENTS } from '@/lib/social/card-template'
 
 const C = {
   bg: '#0d1117', bg2: '#161b22', bg3: '#1c2333', border: '#30363d',
@@ -12,11 +12,15 @@ const C = {
 
 const CAPTION_MAX = 2200
 
+type PostType = 'single' | 'thread'
+
 type Post = {
   id: string
   source_text: string
   caption: string | null
   status: 'draft' | 'published' | 'failed'
+  post_type: PostType
+  segments: string[] | null
   ig_media_id: string | null
   permalink: string | null
   error: string | null
@@ -27,7 +31,6 @@ type Post = {
 type ActionState =
   | { phase: 'idle' }
   | { phase: 'saving' }
-  | { phase: 'generating' }
   | { phase: 'publishing' }
   | { phase: 'error', message: string }
   | { phase: 'ok', message: string }
@@ -40,24 +43,36 @@ const btn = (variant: 'gold' | 'default' | 'danger' = 'default', disabled = fals
   borderRadius: 8, padding: '10px 16px', fontSize: 13, fontWeight: 700,
   cursor: disabled ? 'not-allowed' : 'pointer',
 })
+const smallBtn = (variant: 'default' | 'danger' = 'default', disabled = false) => ({
+  background: 'transparent',
+  color: disabled ? C.textDim : variant === 'danger' ? C.red : C.textMuted,
+  border: `1px solid ${disabled ? C.border : variant === 'danger' ? C.red : C.border}`,
+  borderRadius: 6, padding: '4px 10px', fontSize: 11, fontWeight: 700,
+  cursor: disabled ? 'not-allowed' : 'pointer',
+})
 const textarea = { width: '100%', minHeight: 120, background: C.bg3, border: `1px solid ${C.border}`, borderRadius: 8, padding: 12, fontSize: 14, color: C.text, resize: 'vertical' as const, fontFamily: 'inherit', boxSizing: 'border-box' as const }
+const segmentTextarea = { ...textarea, minHeight: 70 }
 
 function StatusBanner({ state }: { state: ActionState }) {
   if (state.phase === 'idle') return null
   const label: Record<string, string> = {
-    saving: 'Saving draft...', generating: 'Drafting caption with Claude...', publishing: 'Publishing to Instagram — do not close this tab...',
+    saving: 'Saving draft...', publishing: 'Publishing to Instagram — do not close this tab...',
   }
   if (state.phase === 'error') return <div style={{ background: 'rgba(248,81,73,0.1)', border: `1px solid ${C.red}`, borderRadius: 8, padding: '10px 14px', marginBottom: 16, color: C.red, fontSize: 13 }}>{state.message}</div>
   if (state.phase === 'ok') return <div style={{ background: 'rgba(57,211,83,0.1)', border: `1px solid ${C.teal}`, borderRadius: 8, padding: '10px 14px', marginBottom: 16, color: C.teal, fontSize: 13 }}>{state.message}</div>
   return <div style={{ background: 'rgba(232,184,75,0.08)', border: `1px solid ${C.gold}`, borderRadius: 8, padding: '10px 14px', marginBottom: 16, color: C.gold, fontSize: 13 }}>{label[state.phase]}</div>
 }
 
+const blankSegment = () => ''
+
 export default function SocialPage() {
   const supabase = createClient()
   const router = useRouter()
 
   const [authorized, setAuthorized] = useState<boolean | null>(null)
+  const [mode, setMode] = useState<PostType>('single')
   const [sourceText, setSourceText] = useState('')
+  const [segments, setSegments] = useState<string[]>([])
   const [postId, setPostId] = useState<string | null>(null)
   const [caption, setCaption] = useState('')
   const [postStatus, setPostStatus] = useState<Post['status']>('draft')
@@ -92,40 +107,77 @@ export default function SocialPage() {
 
   useEffect(() => { if (authorized) loadRecent() }, [authorized, loadRecent])
 
+  const resetComposer = () => {
+    setPostId(null)
+    setMode('single')
+    setSourceText('')
+    setSegments([])
+    setCaption('')
+    setPostStatus('draft')
+    setCardVersion(0)
+    setAction({ phase: 'idle' })
+  }
+
+  const loadIntoComposer = (p: Post) => {
+    setPostId(p.id)
+    setMode(p.post_type || 'single')
+    setSourceText(p.source_text || '')
+    setSegments(Array.isArray(p.segments) ? p.segments : [])
+    setCaption(p.caption || '')
+    setPostStatus(p.status)
+    setCardVersion(v => v + 1)
+    setAction({ phase: 'idle' })
+    window.scrollTo({ top: 0, behavior: 'smooth' })
+  }
+
+  const deletePost = async (p: Post) => {
+    const warning = p.status === 'published'
+      ? 'Delete this record? It has already been published to Instagram -- this only removes it from this tool, it does NOT delete the live Instagram post.'
+      : 'Delete this draft? This cannot be undone.'
+    if (!window.confirm(warning)) return
+    const { error } = await supabase.from('social_posts').delete().eq('id', p.id)
+    if (error) { setAction({ phase: 'error', message: `Failed to delete: ${error.message}` }); return }
+    if (postId === p.id) resetComposer()
+    loadRecent()
+  }
+
   const overLength = sourceText.length > CARD_TEXT_MAX_LENGTH
 
   const saveDraft = async () => {
     if (!sourceText.trim()) return
     setAction({ phase: 'saving' })
     if (postId) {
-      const { error } = await supabase.from('social_posts').update({ source_text: sourceText }).eq('id', postId)
+      const { error } = await supabase.from('social_posts').update({ source_text: sourceText, post_type: mode }).eq('id', postId)
       if (error) { setAction({ phase: 'error', message: `Failed to save: ${error.message}` }); return }
     } else {
       const { data, error } = await supabase
-        .from('social_posts').insert({ source_text: sourceText }).select().maybeSingle()
+        .from('social_posts').insert({ source_text: sourceText, post_type: mode }).select().maybeSingle()
       if (error || !data) { setAction({ phase: 'error', message: `Failed to save: ${error?.message || 'no row returned'}` }); return }
       setPostId(data.id)
       setPostStatus(data.status)
     }
     setCardVersion(v => v + 1)
-    setAction({ phase: 'ok', message: 'Draft saved.' })
+    setAction({ phase: 'ok', message: mode === 'thread' ? 'Topic saved -- draft the thread below.' : 'Draft saved.' })
     loadRecent()
   }
 
-  const draftCaption = async () => {
+  const saveSegments = async () => {
     if (!postId) return
-    setAction({ phase: 'generating' })
-    try {
-      const res = await fetch('/api/social/caption', {
-        method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ id: postId }),
-      })
-      const data = await res.json()
-      if (!res.ok) { setAction({ phase: 'error', message: data.error || `Caption generation failed (${res.status}).` }); return }
-      setCaption(data.caption || '')
-      setAction({ phase: data.error ? 'error' : 'ok', message: data.error || 'Caption drafted — edit it before publishing.' })
-    } catch (err: any) {
-      setAction({ phase: 'error', message: `Could not reach the caption API: ${err?.message || String(err)}` })
-    }
+    setAction({ phase: 'saving' })
+    const { error } = await supabase.from('social_posts').update({ segments, post_type: 'thread' }).eq('id', postId)
+    if (error) { setAction({ phase: 'error', message: `Failed to save thread parts: ${error.message}` }); return }
+    setCardVersion(v => v + 1)
+    setAction({ phase: 'ok', message: 'Thread parts saved.' })
+  }
+
+  const updateSegment = (i: number, value: string) => {
+    setSegments(segs => segs.map((s, idx) => idx === i ? value : s))
+  }
+  const removeSegment = (i: number) => {
+    setSegments(segs => segs.filter((_, idx) => idx !== i))
+  }
+  const addSegment = () => {
+    setSegments(segs => segs.length >= THREAD_MAX_SEGMENTS ? segs : [...segs, blankSegment()])
   }
 
   const saveCaptionEdit = async (value: string) => {
@@ -135,7 +187,10 @@ export default function SocialPage() {
 
   const publish = async () => {
     if (!postId || !caption.trim()) return
-    if (!window.confirm('Publish this to Instagram now? This is irreversible.')) return
+    const confirmMsg = mode === 'thread'
+      ? `Publish this ${segments.length}-slide carousel to Instagram now? This is irreversible.`
+      : 'Publish this to Instagram now? This is irreversible.'
+    if (!window.confirm(confirmMsg)) return
     setAction({ phase: 'publishing' })
     try {
       const res = await fetch('/api/social/publish', {
@@ -153,58 +208,135 @@ export default function SocialPage() {
 
   if (authorized === null) return <div style={{ minHeight: '100vh', background: C.bg, color: C.textMuted, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>Loading...</div>
 
+  const threadValid = segments.length >= THREAD_MIN_SEGMENTS && segments.length <= THREAD_MAX_SEGMENTS
+    && segments.every(s => s.trim() && s.length <= THREAD_SEGMENT_MAX_LENGTH)
+
   return (
     <div style={{ minHeight: '100vh', background: C.bg, color: C.text, fontFamily: 'system-ui,-apple-system,sans-serif', padding: '32px 20px' }}>
       <div style={{ maxWidth: 640, margin: '0 auto' }}>
-        <button onClick={() => router.push('/coach')} style={{ background: 'transparent', border: 'none', color: C.textMuted, fontSize: 12, cursor: 'pointer', padding: 0, marginBottom: 12 }}>← Back to Coach Dashboard</button>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+          <button onClick={() => router.push('/coach')} style={{ background: 'transparent', border: 'none', color: C.textMuted, fontSize: 12, cursor: 'pointer', padding: 0 }}>← Back to Coach Dashboard</button>
+          <button onClick={resetComposer} style={smallBtn()}>+ New Post</button>
+        </div>
         <div style={{ fontSize: 22, fontWeight: 700, color: C.gold, marginBottom: 4 }}>X → Instagram</div>
-        <div style={{ fontSize: 13, color: C.textMuted, marginBottom: 20 }}>Paste something you posted on X, get a card and a drafted caption, edit, publish. Nothing posts without you clicking Publish.</div>
+        <div style={{ fontSize: 13, color: C.textMuted, marginBottom: 20 }}>Paste something you posted on X, get a matching card, write your caption, and publish. Or write out a thread and publish it as a carousel. Nothing posts without you clicking Publish.</div>
 
         <StatusBanner state={action} />
 
+        <div style={{ display: 'flex', gap: 8, marginBottom: 16 }}>
+          <button
+            style={{ ...btn(mode === 'single' ? 'gold' : 'default'), flex: 1 }}
+            onClick={() => setMode('single')}
+          >
+            Single Post
+          </button>
+          <button
+            style={{ ...btn(mode === 'thread' ? 'gold' : 'default'), flex: 1 }}
+            onClick={() => setMode('thread')}
+          >
+            Thread → Carousel
+          </button>
+        </div>
+
         <div style={card}>
-          <div style={{ fontSize: 11, color: C.textMuted, fontWeight: 700, textTransform: 'uppercase' as const, letterSpacing: '0.5px', marginBottom: 8 }}>1. Source text (from X)</div>
-          <textarea style={textarea} value={sourceText} onChange={e => setSourceText(e.target.value)} placeholder="Paste the text of your X post here..." />
+          <div style={{ fontSize: 11, color: C.textMuted, fontWeight: 700, textTransform: 'uppercase' as const, letterSpacing: '0.5px', marginBottom: 8 }}>
+            1. {mode === 'thread' ? 'Thread label (for your own reference)' : 'Source text (from X)'}
+          </div>
+          <textarea
+            style={textarea}
+            value={sourceText}
+            onChange={e => setSourceText(e.target.value)}
+            placeholder={mode === 'thread' ? "A short description of what this thread is about -- shown in the Recent Posts list below so you can find it later. Doesn't get posted anywhere itself." : 'Paste the text of your X post here...'}
+          />
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 6 }}>
-            <span style={{ fontSize: 11, color: overLength ? C.red : C.textDim }}>
-              {sourceText.length} / {CARD_TEXT_MAX_LENGTH} characters{overLength ? ' — too long for a legible card, shorten it' : ''}
+            <span style={{ fontSize: 11, color: mode === 'single' && overLength ? C.red : C.textDim }}>
+              {mode === 'single'
+                ? `${sourceText.length} / ${CARD_TEXT_MAX_LENGTH} characters${overLength ? ' — too long for a legible card, shorten it' : ''}`
+                : `${sourceText.length} characters`}
             </span>
-            <button style={btn('gold', !sourceText.trim() || overLength)} disabled={!sourceText.trim() || overLength} onClick={saveDraft}>
-              {postId ? 'Save & Regenerate Card' : 'Save Draft'}
+            <button style={btn('gold', !sourceText.trim() || (mode === 'single' && overLength))} disabled={!sourceText.trim() || (mode === 'single' && overLength)} onClick={saveDraft}>
+              {postId ? 'Save' : 'Save Draft'}
             </button>
           </div>
         </div>
 
-        {postId && (
+        {postId && mode === 'thread' && (
           <div style={card}>
-            <div style={{ fontSize: 11, color: C.textMuted, fontWeight: 700, textTransform: 'uppercase' as const, letterSpacing: '0.5px', marginBottom: 8 }}>2. Card preview</div>
-            <img
-              key={cardVersion}
-              src={`/api/social/card/${postId}?v=${cardVersion}`}
-              alt="Instagram card preview"
-              style={{ width: '100%', maxWidth: 400, borderRadius: 8, border: `1px solid ${C.border}`, display: 'block' }}
-            />
+            <div style={{ fontSize: 11, color: C.textMuted, fontWeight: 700, textTransform: 'uppercase' as const, letterSpacing: '0.5px', marginBottom: 10 }}>2. Thread parts</div>
+
+            {segments.length === 0 ? (
+              <div style={{ fontSize: 12, color: C.textDim }}>No parts yet — add each part of the thread below (one per carousel slide).</div>
+            ) : (
+              segments.map((seg, i) => (
+                <div key={i} style={{ marginBottom: 10 }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 4 }}>
+                    <span style={{ fontSize: 11, color: C.textMuted, fontWeight: 700 }}>Slide {i + 1}</span>
+                    <button style={smallBtn('danger')} onClick={() => removeSegment(i)}>Remove</button>
+                  </div>
+                  <textarea style={segmentTextarea} value={seg} onChange={e => updateSegment(i, e.target.value)} />
+                  <div style={{ fontSize: 11, color: seg.length > THREAD_SEGMENT_MAX_LENGTH ? C.red : C.textDim, marginTop: 2 }}>
+                    {seg.length} / {THREAD_SEGMENT_MAX_LENGTH} characters
+                  </div>
+                </div>
+              ))
+            )}
+
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 8 }}>
+              <button style={smallBtn('default', segments.length >= THREAD_MAX_SEGMENTS)} disabled={segments.length >= THREAD_MAX_SEGMENTS} onClick={addSegment}>+ Add Part</button>
+              <button style={btn('gold', !threadValid)} disabled={!threadValid} onClick={saveSegments}>Save Thread Parts</button>
+            </div>
+            {!threadValid && segments.length > 0 && (
+              <div style={{ fontSize: 11, color: C.textDim, marginTop: 6 }}>
+                Needs {THREAD_MIN_SEGMENTS}–{THREAD_MAX_SEGMENTS} non-empty parts, each under {THREAD_SEGMENT_MAX_LENGTH} characters, before saving.
+              </div>
+            )}
           </div>
         )}
 
-        {postId && (
+        {postId && (mode === 'single' || threadValid) && (
           <div style={card}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
-              <div style={{ fontSize: 11, color: C.textMuted, fontWeight: 700, textTransform: 'uppercase' as const, letterSpacing: '0.5px' }}>3. Caption</div>
-              <button style={btn('default', action.phase === 'generating')} disabled={action.phase === 'generating'} onClick={draftCaption}>
-                {caption ? 'Redraft with Claude' : 'Draft Caption'}
-              </button>
+            <div style={{ fontSize: 11, color: C.textMuted, fontWeight: 700, textTransform: 'uppercase' as const, letterSpacing: '0.5px', marginBottom: 8 }}>
+              {mode === 'thread' ? '3. Carousel preview' : '2. Card preview'}
             </div>
-            <textarea style={textarea} value={caption} onChange={e => saveCaptionEdit(e.target.value)} placeholder="Draft with the button above, or write your own — this is what gets published." />
+            {mode === 'thread' ? (
+              <div style={{ display: 'flex', gap: 8, overflowX: 'auto', paddingBottom: 4 }}>
+                {segments.map((_, i) => (
+                  <img
+                    key={`${cardVersion}-${i}`}
+                    src={`/api/social/card/${postId}?slide=${i}&v=${cardVersion}`}
+                    alt={`Slide ${i + 1}`}
+                    style={{ width: 140, height: 140, objectFit: 'cover', borderRadius: 8, border: `1px solid ${C.border}`, flexShrink: 0 }}
+                  />
+                ))}
+              </div>
+            ) : (
+              <img
+                key={cardVersion}
+                src={`/api/social/card/${postId}?v=${cardVersion}`}
+                alt="Instagram card preview"
+                style={{ width: '100%', maxWidth: 400, borderRadius: 8, border: `1px solid ${C.border}`, display: 'block' }}
+              />
+            )}
+          </div>
+        )}
+
+        {postId && (mode === 'single' || threadValid) && (
+          <div style={card}>
+            <div style={{ fontSize: 11, color: C.textMuted, fontWeight: 700, textTransform: 'uppercase' as const, letterSpacing: '0.5px', marginBottom: 8 }}>
+              {mode === 'thread' ? '4. Caption (whole carousel)' : '3. Caption'}
+            </div>
+            <textarea style={textarea} value={caption} onChange={e => saveCaptionEdit(e.target.value)} placeholder="Write the caption that gets published with this post." />
             <div style={{ fontSize: 11, color: caption.length > CAPTION_MAX ? C.red : C.textDim, marginTop: 6 }}>
               {caption.length} / {CAPTION_MAX} characters
             </div>
           </div>
         )}
 
-        {postId && (
+        {postId && (mode === 'single' || threadValid) && (
           <div style={card}>
-            <div style={{ fontSize: 11, color: C.textMuted, fontWeight: 700, textTransform: 'uppercase' as const, letterSpacing: '0.5px', marginBottom: 10 }}>4. Publish</div>
+            <div style={{ fontSize: 11, color: C.textMuted, fontWeight: 700, textTransform: 'uppercase' as const, letterSpacing: '0.5px', marginBottom: 10 }}>
+              {mode === 'thread' ? '5. Publish' : '4. Publish'}
+            </div>
             {postStatus === 'published' ? (
               <div style={{ color: C.teal, fontSize: 13 }}>✓ Already published from this draft.</div>
             ) : (
@@ -213,7 +345,7 @@ export default function SocialPage() {
                 disabled={!caption.trim() || caption.length > CAPTION_MAX || action.phase === 'publishing'}
                 onClick={publish}
               >
-                Publish to Instagram
+                {mode === 'thread' ? 'Publish Carousel to Instagram' : 'Publish to Instagram'}
               </button>
             )}
           </div>
@@ -228,17 +360,28 @@ export default function SocialPage() {
           recent.map(p => (
             <div key={p.id} style={{ ...card, marginBottom: 8, padding: 12 }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 6 }}>
-                <span style={{
-                  fontSize: 10, fontWeight: 700, textTransform: 'uppercase' as const, padding: '2px 8px', borderRadius: 10,
-                  background: p.status === 'published' ? 'rgba(57,211,83,0.15)' : p.status === 'failed' ? 'rgba(248,81,73,0.15)' : 'rgba(125,133,144,0.15)',
-                  color: p.status === 'published' ? C.teal : p.status === 'failed' ? C.red : C.textMuted,
-                }}>{p.status}</span>
+                <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                  <span style={{
+                    fontSize: 10, fontWeight: 700, textTransform: 'uppercase' as const, padding: '2px 8px', borderRadius: 10,
+                    background: p.status === 'published' ? 'rgba(57,211,83,0.15)' : p.status === 'failed' ? 'rgba(248,81,73,0.15)' : 'rgba(125,133,144,0.15)',
+                    color: p.status === 'published' ? C.teal : p.status === 'failed' ? C.red : C.textMuted,
+                  }}>{p.status}</span>
+                  {p.post_type === 'thread' && (
+                    <span style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase' as const, padding: '2px 8px', borderRadius: 10, background: 'rgba(232,184,75,0.12)', color: C.gold }}>
+                      thread · {Array.isArray(p.segments) ? p.segments.length : 0} slides
+                    </span>
+                  )}
+                </div>
                 <span style={{ fontSize: 11, color: C.textDim }}>{new Date(p.created_at).toLocaleDateString()}</span>
               </div>
               <div style={{ fontSize: 12, color: C.text, marginBottom: p.caption || p.error ? 6 : 0, lineHeight: 1.5 }}>{p.source_text.slice(0, 140)}{p.source_text.length > 140 ? '...' : ''}</div>
               {p.caption && <div style={{ fontSize: 11, color: C.textMuted, fontStyle: 'italic', marginBottom: 6 }}>{p.caption.slice(0, 140)}{p.caption.length > 140 ? '...' : ''}</div>}
               {p.error && <div style={{ fontSize: 11, color: C.red, marginBottom: 6 }}>{p.error}</div>}
-              {p.permalink && <a href={p.permalink} target="_blank" rel="noopener noreferrer" style={{ fontSize: 11, color: C.blue }}>View on Instagram ↗</a>}
+              {p.permalink && <a href={p.permalink} target="_blank" rel="noopener noreferrer" style={{ fontSize: 11, color: C.blue, display: 'block', marginBottom: 6 }}>View on Instagram ↗</a>}
+              <div style={{ display: 'flex', gap: 8, marginTop: 4 }}>
+                <button style={smallBtn()} onClick={() => loadIntoComposer(p)}>Edit</button>
+                <button style={smallBtn('danger')} onClick={() => deletePost(p)}>Delete</button>
+              </div>
             </div>
           ))
         )}

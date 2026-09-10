@@ -33,6 +33,13 @@ export const ACCOUNT_HANDLE = '@Salzmanbaseball'
 // unreadable output.
 export const CARD_TEXT_MAX_LENGTH = 480
 
+// Thread mode: each part is tweet-sized (posted to X manually) and becomes one carousel
+// slide. Kept well under X's 280-char limit as a safety margin. Shared between
+// app/api/social/thread/route.ts (drafting) and app/social/page.tsx (the editor/char counter).
+export const THREAD_SEGMENT_MAX_LENGTH = 260
+export const THREAD_MIN_SEGMENTS = 2 // Instagram carousel minimum
+export const THREAD_MAX_SEGMENTS = 10 // Instagram carousel maximum
+
 const C = {
   bg: '#0d1117',
   text: '#e6edf3',
