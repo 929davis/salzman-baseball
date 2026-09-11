@@ -12,7 +12,7 @@ const C = {
 
 const CAPTION_MAX = 2200
 
-type PostType = 'single' | 'thread'
+type PostType = 'single' | 'thread' | 'photo'
 
 type Post = {
   id: string
@@ -21,12 +21,16 @@ type Post = {
   status: 'draft' | 'published' | 'failed'
   post_type: PostType
   segments: string[] | null
+  photo_urls: string[] | null
   ig_media_id: string | null
   permalink: string | null
   error: string | null
   created_at: string
   published_at: string | null
 }
+
+const PHOTOS_BUCKET = 'social-photos'
+const MAX_PHOTOS = 10
 
 type ActionState =
   | { phase: 'idle' }
@@ -73,6 +77,8 @@ export default function SocialPage() {
   const [mode, setMode] = useState<PostType>('single')
   const [sourceText, setSourceText] = useState('')
   const [segments, setSegments] = useState<string[]>([])
+  const [photoUrls, setPhotoUrls] = useState<string[]>([])
+  const [uploading, setUploading] = useState(false)
   const [postId, setPostId] = useState<string | null>(null)
   const [caption, setCaption] = useState('')
   const [postStatus, setPostStatus] = useState<Post['status']>('draft')
@@ -112,6 +118,7 @@ export default function SocialPage() {
     setMode('single')
     setSourceText('')
     setSegments([])
+    setPhotoUrls([])
     setCaption('')
     setPostStatus('draft')
     setCardVersion(0)
@@ -123,6 +130,7 @@ export default function SocialPage() {
     setMode(p.post_type || 'single')
     setSourceText(p.source_text || '')
     setSegments(Array.isArray(p.segments) ? p.segments : [])
+    setPhotoUrls(Array.isArray(p.photo_urls) ? p.photo_urls : [])
     setCaption(p.caption || '')
     setPostStatus(p.status)
     setCardVersion(v => v + 1)
@@ -157,7 +165,12 @@ export default function SocialPage() {
       setPostStatus(data.status)
     }
     setCardVersion(v => v + 1)
-    setAction({ phase: 'ok', message: mode === 'thread' ? 'Topic saved -- draft the thread below.' : 'Draft saved.' })
+    setAction({
+      phase: 'ok',
+      message: mode === 'thread' ? 'Label saved -- add the thread parts below.'
+        : mode === 'photo' ? 'Label saved -- upload photos below.'
+        : 'Draft saved.',
+    })
     loadRecent()
   }
 
@@ -180,6 +193,50 @@ export default function SocialPage() {
     setSegments(segs => segs.length >= THREAD_MAX_SEGMENTS ? segs : [...segs, blankSegment()])
   }
 
+  // Uploads go straight to Supabase Storage (public bucket -- Meta's crawler needs a real
+  // public URL, same requirement as the generated card images) and persist immediately, no
+  // separate "Save" click needed -- unlike thread parts, the upload itself is already the
+  // explicit action.
+  const uploadPhotos = async (files: FileList) => {
+    if (!postId || files.length === 0) return
+    if (photoUrls.length + files.length > MAX_PHOTOS) {
+      setAction({ phase: 'error', message: `That would be ${photoUrls.length + files.length} photos -- Instagram carousels max out at ${MAX_PHOTOS}.` })
+      return
+    }
+    setUploading(true)
+    setAction({ phase: 'saving' })
+    const newUrls: string[] = []
+    for (const file of Array.from(files)) {
+      const path = `${postId}/${crypto.randomUUID()}-${file.name}`
+      const { error: uploadError } = await supabase.storage.from(PHOTOS_BUCKET).upload(path, file)
+      if (uploadError) {
+        setUploading(false)
+        setAction({ phase: 'error', message: `Failed to upload ${file.name}: ${uploadError.message}` })
+        return
+      }
+      const { data } = supabase.storage.from(PHOTOS_BUCKET).getPublicUrl(path)
+      newUrls.push(data.publicUrl)
+    }
+    const updated = [...photoUrls, ...newUrls]
+    const { error } = await supabase.from('social_posts').update({ photo_urls: updated, post_type: 'photo' }).eq('id', postId)
+    setUploading(false)
+    if (error) { setAction({ phase: 'error', message: `Uploaded but failed to save: ${error.message}` }); return }
+    setPhotoUrls(updated)
+    setAction({ phase: 'ok', message: `${newUrls.length} photo${newUrls.length === 1 ? '' : 's'} uploaded.` })
+  }
+
+  // Only detaches the photo from this post -- doesn't delete the underlying file from
+  // storage, in case it's still referenced elsewhere or the coach wants it back. Leftover
+  // storage files are harmless clutter, not a correctness problem.
+  const removePhoto = async (i: number) => {
+    const updated = photoUrls.filter((_, idx) => idx !== i)
+    setPhotoUrls(updated)
+    if (postId) {
+      const { error } = await supabase.from('social_posts').update({ photo_urls: updated }).eq('id', postId)
+      if (error) setAction({ phase: 'error', message: `Failed to save removal: ${error.message}` })
+    }
+  }
+
   const saveCaptionEdit = async (value: string) => {
     setCaption(value)
     if (postId) await supabase.from('social_posts').update({ caption: value }).eq('id', postId)
@@ -189,6 +246,8 @@ export default function SocialPage() {
     if (!postId || !caption.trim()) return
     const confirmMsg = mode === 'thread'
       ? `Publish this ${segments.length}-slide carousel to Instagram now? This is irreversible.`
+      : mode === 'photo' && photoUrls.length > 1
+      ? `Publish this ${photoUrls.length}-photo carousel to Instagram now? This is irreversible.`
       : 'Publish this to Instagram now? This is irreversible.'
     if (!window.confirm(confirmMsg)) return
     setAction({ phase: 'publishing' })
@@ -210,6 +269,8 @@ export default function SocialPage() {
 
   const threadValid = segments.length >= THREAD_MIN_SEGMENTS && segments.length <= THREAD_MAX_SEGMENTS
     && segments.every(s => s.trim() && s.length <= THREAD_SEGMENT_MAX_LENGTH)
+  const photoValid = photoUrls.length >= 1 && photoUrls.length <= MAX_PHOTOS
+  const readyForCaption = mode === 'single' || (mode === 'thread' && threadValid) || (mode === 'photo' && photoValid)
 
   return (
     <div style={{ minHeight: '100vh', background: C.bg, color: C.text, fontFamily: 'system-ui,-apple-system,sans-serif', padding: '32px 20px' }}>
@@ -236,17 +297,27 @@ export default function SocialPage() {
           >
             Thread → Carousel
           </button>
+          <button
+            style={{ ...btn(mode === 'photo' ? 'gold' : 'default'), flex: 1 }}
+            onClick={() => setMode('photo')}
+          >
+            Photo Post
+          </button>
         </div>
 
         <div style={card}>
           <div style={{ fontSize: 11, color: C.textMuted, fontWeight: 700, textTransform: 'uppercase' as const, letterSpacing: '0.5px', marginBottom: 8 }}>
-            1. {mode === 'thread' ? 'Thread label (for your own reference)' : 'Source text (from X)'}
+            1. {mode === 'thread' ? 'Thread label (for your own reference)' : mode === 'photo' ? 'Photo post label (for your own reference)' : 'Source text (from X)'}
           </div>
           <textarea
             style={textarea}
             value={sourceText}
             onChange={e => setSourceText(e.target.value)}
-            placeholder={mode === 'thread' ? "A short description of what this thread is about -- shown in the Recent Posts list below so you can find it later. Doesn't get posted anywhere itself." : 'Paste the text of your X post here...'}
+            placeholder={
+              mode === 'thread' ? "A short description of what this thread is about -- shown in the Recent Posts list below so you can find it later. Doesn't get posted anywhere itself."
+              : mode === 'photo' ? "A short description of this post -- shown in the Recent Posts list below so you can find it later. Doesn't get posted anywhere itself."
+              : 'Paste the text of your X post here...'
+            }
           />
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 6 }}>
             <span style={{ fontSize: 11, color: mode === 'single' && overLength ? C.red : C.textDim }}>
@@ -293,7 +364,41 @@ export default function SocialPage() {
           </div>
         )}
 
-        {postId && (mode === 'single' || threadValid) && (
+        {postId && mode === 'photo' && (
+          <div style={card}>
+            <div style={{ fontSize: 11, color: C.textMuted, fontWeight: 700, textTransform: 'uppercase' as const, letterSpacing: '0.5px', marginBottom: 10 }}>2. Photo(s)</div>
+
+            {photoUrls.length > 0 && (
+              <div style={{ display: 'flex', gap: 8, overflowX: 'auto', paddingBottom: 4, marginBottom: 10 }}>
+                {photoUrls.map((url, i) => (
+                  <div key={url} style={{ position: 'relative', flexShrink: 0 }}>
+                    <img src={url} alt={`Photo ${i + 1}`} style={{ width: 140, height: 140, objectFit: 'cover', borderRadius: 8, border: `1px solid ${C.border}`, display: 'block' }} />
+                    <button
+                      onClick={() => removePhoto(i)}
+                      style={{ position: 'absolute', top: 4, right: 4, background: C.bg, border: `1px solid ${C.border}`, color: C.red, borderRadius: 6, fontSize: 11, fontWeight: 700, padding: '2px 6px', cursor: 'pointer' }}
+                    >
+                      Remove
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            <input
+              type="file"
+              accept="image/*"
+              multiple
+              disabled={uploading || photoUrls.length >= MAX_PHOTOS}
+              onChange={e => { if (e.target.files) uploadPhotos(e.target.files); e.target.value = '' }}
+              style={{ fontSize: 12, color: C.textMuted }}
+            />
+            <div style={{ fontSize: 11, color: C.textDim, marginTop: 6 }}>
+              {photoUrls.length} / {MAX_PHOTOS} photos. 1 photo posts as a single image; 2+ post as a carousel.
+            </div>
+          </div>
+        )}
+
+        {postId && mode !== 'photo' && (mode === 'single' || threadValid) && (
           <div style={card}>
             <div style={{ fontSize: 11, color: C.textMuted, fontWeight: 700, textTransform: 'uppercase' as const, letterSpacing: '0.5px', marginBottom: 8 }}>
               {mode === 'thread' ? '3. Carousel preview' : '2. Card preview'}
@@ -320,7 +425,7 @@ export default function SocialPage() {
           </div>
         )}
 
-        {postId && (mode === 'single' || threadValid) && (
+        {postId && readyForCaption && (
           <div style={card}>
             <div style={{ fontSize: 11, color: C.textMuted, fontWeight: 700, textTransform: 'uppercase' as const, letterSpacing: '0.5px', marginBottom: 8 }}>
               {mode === 'thread' ? '4. Caption (whole carousel)' : '3. Caption'}
@@ -332,7 +437,7 @@ export default function SocialPage() {
           </div>
         )}
 
-        {postId && (mode === 'single' || threadValid) && (
+        {postId && readyForCaption && (
           <div style={card}>
             <div style={{ fontSize: 11, color: C.textMuted, fontWeight: 700, textTransform: 'uppercase' as const, letterSpacing: '0.5px', marginBottom: 10 }}>
               {mode === 'thread' ? '5. Publish' : '4. Publish'}
@@ -345,7 +450,7 @@ export default function SocialPage() {
                 disabled={!caption.trim() || caption.length > CAPTION_MAX || action.phase === 'publishing'}
                 onClick={publish}
               >
-                {mode === 'thread' ? 'Publish Carousel to Instagram' : 'Publish to Instagram'}
+                {mode === 'thread' || (mode === 'photo' && photoUrls.length > 1) ? 'Publish Carousel to Instagram' : 'Publish to Instagram'}
               </button>
             )}
           </div>
@@ -369,6 +474,11 @@ export default function SocialPage() {
                   {p.post_type === 'thread' && (
                     <span style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase' as const, padding: '2px 8px', borderRadius: 10, background: 'rgba(232,184,75,0.12)', color: C.gold }}>
                       thread · {Array.isArray(p.segments) ? p.segments.length : 0} slides
+                    </span>
+                  )}
+                  {p.post_type === 'photo' && (
+                    <span style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase' as const, padding: '2px 8px', borderRadius: 10, background: 'rgba(88,166,255,0.12)', color: C.blue }}>
+                      photo · {Array.isArray(p.photo_urls) ? p.photo_urls.length : 0}
                     </span>
                   )}
                 </div>

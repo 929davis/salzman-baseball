@@ -93,17 +93,31 @@ export async function POST(req: Request) {
     return Response.json({ error: 'This post has no caption yet.' }, { status: 400 })
   }
 
-  const isThread = row.post_type === 'thread'
-  const segments: string[] = isThread && Array.isArray(row.segments) ? row.segments : []
-  if (isThread && (segments.length < 2 || segments.length > 10)) {
-    return Response.json({ error: `This thread has ${segments.length} part(s) -- Instagram carousels need between 2 and 10.` }, { status: 400 })
-  }
-
   const IG_USER_ID = process.env.IG_USER_ID
   const IG_ACCESS_TOKEN = process.env.IG_ACCESS_TOKEN
   const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL
   if (!IG_USER_ID || !IG_ACCESS_TOKEN || !SITE_URL) {
     return Response.json({ error: 'IG_USER_ID, IG_ACCESS_TOKEN, or NEXT_PUBLIC_SITE_URL is not configured on the server.' }, { status: 500 })
+  }
+
+  // Resolve the list of image URLs for this post, whatever type it is. A single URL publishes
+  // as a plain image; 2+ publish as a carousel. This is the one place that decision is made,
+  // so "photo" posts with exactly one photo behave exactly like "single" posts.
+  let imageUrls: string[]
+  if (row.post_type === 'thread') {
+    const segments: string[] = Array.isArray(row.segments) ? row.segments : []
+    if (segments.length < 2 || segments.length > 10) {
+      return Response.json({ error: `This thread has ${segments.length} part(s) -- Instagram carousels need between 2 and 10.` }, { status: 400 })
+    }
+    imageUrls = segments.map((_, i) => `${SITE_URL}/api/social/card/${id}?slide=${i}`)
+  } else if (row.post_type === 'photo') {
+    const photoUrls: string[] = Array.isArray(row.photo_urls) ? row.photo_urls : []
+    if (photoUrls.length < 1 || photoUrls.length > 10) {
+      return Response.json({ error: `This post has ${photoUrls.length} photo(s) -- needs between 1 and 10.` }, { status: 400 })
+    }
+    imageUrls = photoUrls
+  } else {
+    imageUrls = [`${SITE_URL}/api/social/card/${id}`]
   }
 
   async function fail(message: string) {
@@ -113,17 +127,23 @@ export async function POST(req: Request) {
 
   let creationId: string
 
-  if (isThread) {
-    // Carousel: one "item" container per slide (no caption on items -- caption goes on the
+  if (imageUrls.length === 1) {
+    const single = await createContainer(IG_USER_ID, IG_ACCESS_TOKEN, {
+      image_url: imageUrls[0],
+      caption: row.caption,
+    })
+    if (!single.ok) return fail(single.error)
+    creationId = single.id
+  } else {
+    // Carousel: one "item" container per image (no caption on items -- caption goes on the
     // parent only), then a parent container referencing all of them.
     const itemIds: string[] = []
-    for (let i = 0; i < segments.length; i++) {
-      const imageUrl = `${SITE_URL}/api/social/card/${id}?slide=${i}`
+    for (let i = 0; i < imageUrls.length; i++) {
       const item = await createContainer(IG_USER_ID, IG_ACCESS_TOKEN, {
-        image_url: imageUrl,
+        image_url: imageUrls[i],
         is_carousel_item: 'true',
       })
-      if (!item.ok) return fail(`Slide ${i + 1} of ${segments.length}: ${item.error}`)
+      if (!item.ok) return fail(`Slide ${i + 1} of ${imageUrls.length}: ${item.error}`)
       itemIds.push(item.id)
     }
 
@@ -134,14 +154,6 @@ export async function POST(req: Request) {
     })
     if (!parent.ok) return fail(parent.error)
     creationId = parent.id
-  } else {
-    const imageUrl = `${SITE_URL}/api/social/card/${id}`
-    const single = await createContainer(IG_USER_ID, IG_ACCESS_TOKEN, {
-      image_url: imageUrl,
-      caption: row.caption,
-    })
-    if (!single.ok) return fail(single.error)
-    creationId = single.id
   }
 
   // Confirm the container finished processing before publishing it.
