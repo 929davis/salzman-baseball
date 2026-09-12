@@ -291,6 +291,7 @@ const BLANK_CUSTOM = {name:'',pattern:'',category:'Main Exercises',cns:'Moderate
 export default function CoachDashboard(){
   const [user,setUser]=useState<any>(null)
   const [pitchers,setPitchers]=useState<any[]>([])
+  const [lastLogDates,setLastLogDates]=useState<Record<string,string|null>>({})
   const [selected,setSelected]=useState<any>(null)
   const [throwEntries, setThrowEntries] = useState<any[]>([])
   const [showThrowEntries,setShowThrowEntries]=useState(false)
@@ -386,6 +387,16 @@ export default function CoachDashboard(){
       if (profile?.role!=='coach'){router.push('/pitcher');return}
       const {data:ps}=await supabase.from('profiles').select('*').eq('role','pitcher').order('full_name')
       setPitchers(ps||[])
+      // For the Adherence view -- one lightweight query for the whole roster's log dates,
+      // reduced to each pitcher's most recent log_date client-side (no Postgres aggregate
+      // query needed at this data volume). Ordering by log_date ascending means later rows
+      // overwrite earlier ones in the reduce, so what's left is the max per pitcher.
+      const {data:allLogs}=await supabase.from('session_logs').select('pitcher_id,log_date').order('log_date',{ascending:true})
+      if (allLogs){
+        const lastLog:Record<string,string|null>={}
+        allLogs.forEach((l:any)=>{lastLog[l.pitcher_id]=l.log_date})
+        setLastLogDates(lastLog)
+      }
       const {data:pr}=await supabase.from('principles').select('*').single()
       if (pr){setPrinciples(pr.content);setPrincText(pr.content)}
       const {data:vids}=await supabase.from('exercise_videos').select('*')
@@ -850,7 +861,7 @@ Write next week's program by day and category (Pre-Throwing, Throwing, Post-Thro
           </div>
         </div>
         <div style={{display:'flex',gap:8,alignItems:'center'}}>
-          {['roster','library','principles'].map(v=>(
+          {['roster','adherence','library','principles'].map(v=>(
             <button key={v} onClick={()=>{setView(v);setSelected(null)}} style={{...S.btn(),background:view===v?C.goldBg:'transparent',color:view===v?C.gold:C.textMuted,border:`1px solid ${view===v?C.goldDim:'transparent'}`,fontSize:11,padding:'5px 12px'}}>{v.toUpperCase()}</button>
           ))}
           <button onClick={()=>router.push('/anatomy')} style={{...S.btn(),background:'transparent',color:C.textMuted,border:'1px solid transparent',fontSize:11,padding:'5px 12px'}}>ANATOMY</button>
@@ -1436,6 +1447,45 @@ Write next week's program by day and category (Pre-Throwing, Throwing, Post-Thro
                 <div style={{padding:4}}><PitchMechanics2D pitcherId={selected.id}/></div>
               )}
             </div>
+            )
+          })()}
+
+          {view==='adherence'&&(()=>{
+            const daysSince=(dateStr:string|null|undefined)=>{
+              if(!dateStr) return null
+              const diffMs=Date.now()-new Date(dateStr+'T00:00:00').getTime()
+              return Math.floor(diffMs/(1000*60*60*24))
+            }
+            const rows=pitchers.map(p=>{
+              const lastDate=lastLogDates[p.id]||null
+              return {p,lastDate,days:daysSince(lastDate)}
+            }).sort((a,b)=>(b.days??999)-(a.days??999))
+            const statusFor=(days:number|null)=>{
+              if(days===null||days>=5) return {label:days===null?'Never logged':`${days}d ago`,color:C.red,bg:C.redBg}
+              if(days>=2) return {label:`${days}d ago`,color:C.gold,bg:C.goldBg}
+              return {label:days===0?'Today':'Yesterday',color:C.teal,bg:'rgba(57,211,83,0.1)'}
+            }
+            return (
+              <div style={{padding:'24px 28px',maxWidth:720}}>
+                <div style={{fontSize:18,fontWeight:700,color:C.white,marginBottom:4}}>Adherence</div>
+                <div style={{fontSize:12,color:C.textMuted,marginBottom:20}}>Sorted by longest since their last logged session -- the ones most worth a personal check-in are at the top.</div>
+                {rows.length===0?(
+                  <div style={{fontSize:13,color:C.textDim}}>No pitchers yet.</div>
+                ):(
+                  <div style={{display:'flex',flexDirection:'column',gap:6}}>
+                    {rows.map(({p,days})=>{
+                      const s=statusFor(days)
+                      return (
+                        <div key={p.id} onClick={()=>selectPitcher(p)} style={{display:'flex',alignItems:'center',gap:12,padding:'10px 14px',background:C.bg2,border:`1px solid ${C.border}`,borderRadius:8,cursor:'pointer'}}>
+                          <Avatar name={p.full_name||'?'} size={28}/>
+                          <div style={{flex:1,minWidth:0,fontSize:13,fontWeight:500,color:C.text,whiteSpace:'nowrap' as const,overflow:'hidden',textOverflow:'ellipsis'}}>{p.full_name}</div>
+                          <span style={{fontSize:11,fontWeight:700,padding:'4px 10px',borderRadius:10,background:s.bg,color:s.color,whiteSpace:'nowrap' as const}}>{s.label}</span>
+                        </div>
+                      )
+                    })}
+                  </div>
+                )}
+              </div>
             )
           })()}
 
