@@ -14,6 +14,15 @@ const CAPTION_MAX = 2200
 
 type PostType = 'single' | 'thread' | 'photo'
 
+type Stats = {
+  like_count: number | null
+  comments_count: number | null
+  saved_count: number | null
+  shares_count: number | null
+  unavailable: string[]
+  fetched_at: string
+}
+
 type Post = {
   id: string
   source_text: string
@@ -25,6 +34,7 @@ type Post = {
   ig_media_id: string | null
   permalink: string | null
   error: string | null
+  stats: Stats | null
   created_at: string
   published_at: string | null
 }
@@ -86,6 +96,7 @@ export default function SocialPage() {
   const [action, setAction] = useState<ActionState>({ phase: 'idle' })
   const [recent, setRecent] = useState<Post[]>([])
   const [recentError, setRecentError] = useState<string | null>(null)
+  const [statsLoading, setStatsLoading] = useState<string | null>(null)
 
   useEffect(() => {
     const init = async () => {
@@ -240,6 +251,22 @@ export default function SocialPage() {
   const saveCaptionEdit = async (value: string) => {
     setCaption(value)
     if (postId) await supabase.from('social_posts').update({ caption: value }).eq('id', postId)
+  }
+
+  const loadStats = async (id: string) => {
+    setStatsLoading(id)
+    try {
+      const res = await fetch('/api/social/stats', {
+        method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ id }),
+      })
+      const data = await res.json()
+      if (!res.ok) { setAction({ phase: 'error', message: data.error || `Stats fetch failed (${res.status}).` }); setStatsLoading(null); return }
+      setRecent(list => list.map(p => p.id === id ? { ...p, stats: data.stats } : p))
+      if (data.error) setAction({ phase: 'error', message: data.error })
+    } catch (err: any) {
+      setAction({ phase: 'error', message: `Could not reach the stats API: ${err?.message || String(err)}` })
+    }
+    setStatsLoading(null)
   }
 
   const publish = async () => {
@@ -488,6 +515,34 @@ export default function SocialPage() {
               {p.caption && <div style={{ fontSize: 11, color: C.textMuted, fontStyle: 'italic', marginBottom: 6 }}>{p.caption.slice(0, 140)}{p.caption.length > 140 ? '...' : ''}</div>}
               {p.error && <div style={{ fontSize: 11, color: C.red, marginBottom: 6 }}>{p.error}</div>}
               {p.permalink && <a href={p.permalink} target="_blank" rel="noopener noreferrer" style={{ fontSize: 11, color: C.blue, display: 'block', marginBottom: 6 }}>View on Instagram ↗</a>}
+
+              {p.status === 'published' && (
+                <div style={{ marginBottom: 6 }}>
+                  {p.stats ? (
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' as const }}>
+                      <span style={{ fontSize: 12, color: C.text }}>
+                        ❤️ {p.stats.like_count ?? '—'} · 💬 {p.stats.comments_count ?? '—'}
+                        {p.stats.saved_count != null && ` · 🔖 ${p.stats.saved_count}`}
+                        {p.stats.shares_count != null && ` · ↗ ${p.stats.shares_count}`}
+                      </span>
+                      <span style={{ fontSize: 10, color: C.textDim }}>as of {new Date(p.stats.fetched_at).toLocaleString()}</span>
+                      <button style={smallBtn('default', statsLoading === p.id)} disabled={statsLoading === p.id} onClick={() => loadStats(p.id)}>
+                        {statsLoading === p.id ? 'Refreshing...' : 'Refresh'}
+                      </button>
+                      {p.stats.unavailable.length > 0 && (
+                        <span style={{ fontSize: 10, color: C.textDim, width: '100%' }}>
+                          Couldn't get: {p.stats.unavailable.join(', ')}
+                        </span>
+                      )}
+                    </div>
+                  ) : (
+                    <button style={smallBtn('default', statsLoading === p.id)} disabled={statsLoading === p.id} onClick={() => loadStats(p.id)}>
+                      {statsLoading === p.id ? 'Loading...' : 'Load Stats'}
+                    </button>
+                  )}
+                </div>
+              )}
+
               <div style={{ display: 'flex', gap: 8, marginTop: 4 }}>
                 <button style={smallBtn()} onClick={() => loadIntoComposer(p)}>Edit</button>
                 <button style={smallBtn('danger')} onClick={() => deletePost(p)}>Delete</button>
