@@ -424,6 +424,7 @@ export default function PitcherDashboard(){
                 <div style={{fontSize:10,color:classCol.text,fontWeight:700,textTransform:'uppercase' as const,letterSpacing:'1px',marginBottom:4}}>Your Training Profile</div>
                 <div style={{fontSize:16,fontWeight:700,color:classCol.text,marginBottom:6}}>{classification}</div>
                 <div style={{fontSize:12,color:C.textMuted,lineHeight:1.6}}>{classCol.desc}</div>
+                {latestCMJ&&<div style={{fontSize:10,color:C.textDim,marginTop:8}}>For reference, the real-world median across 1,934 CMJ tests (college & pro) is 15.7in jump height and 55.4 W/kg power-to-bodyweight.</div>}
               </div>
             )}
             {!program&&<div style={{...card,textAlign:'center',color:C.textMuted,padding:'32px 16px'}}>No program yet.</div>}
@@ -759,7 +760,7 @@ export default function PitcherDashboard(){
             )}
 
             {assessTab==='benchmarks'&&profile&&(
-              <AthleticBenchmarks pitcherId={profile.id}/>
+              <AthleticBenchmarks pitcherId={profile.id} cmjResults={cmjResults}/>
             )}
           </div>
         )}

@@ -1207,14 +1207,15 @@ Write next week's program by day and category (Pre-Throwing, Throwing, Post-Thro
                       </div>
                       <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:8,marginBottom:12}}>
                         {[
-                          {label:'Jump Height',val:`${latestCMJ.jump_height_in?.toFixed(1)} in`,tier:jumpTier},
-                          {label:'PP/kg (Magnitude)',val:`${latestCMJ.peak_power_per_kg?.toFixed(1)} W/kg`,tier:ppTier},
+                          {label:'Jump Height',val:`${latestCMJ.jump_height_in?.toFixed(1)} in`,tier:jumpTier,refMedian:'15.7 in'},
+                          {label:'PP/kg (Magnitude)',val:`${latestCMJ.peak_power_per_kg?.toFixed(1)} W/kg`,tier:ppTier,refMedian:'55.4 W/kg'},
                           {label:'RSI (Rate)',val:latestCMJ.rsi_mod?.toFixed(2),tier:rsiTier},
                         ].map(m=>(
                           <div key={m.label} style={{background:'rgba(0,0,0,0.2)',borderRadius:8,padding:'10px 12px'}}>
                             <div style={{fontSize:10,color:C.textMuted,marginBottom:4}}>{m.label}</div>
                             <div style={{fontSize:15,fontWeight:700,color:C.white,marginBottom:4}}>{m.val}</div>
                             <TierBadge tier={m.tier}/>
+                            {m.refMedian&&<div style={{fontSize:9,color:C.textDim,marginTop:4}} title="Median across 1,934 CMJ tests (all levels), separate from this app's own Above Average/Good/Developing/Limited tiers above">Ref. median: {m.refMedian}</div>}
                           </div>
                         ))}
                       </div>
@@ -1440,7 +1441,7 @@ Write next week's program by day and category (Pre-Throwing, Throwing, Post-Thro
               )}
 
               {tab==='benchmarks'&&(
-                <div style={{padding:4}}><AthleticBenchmarks pitcherId={selected.id} getRecommendation={getRecommendation}/></div>
+                <div style={{padding:4}}><AthleticBenchmarks pitcherId={selected.id} getRecommendation={getRecommendation} cmjResults={cmjResults}/></div>
               )}
 
               {tab==='mechanics'&&(

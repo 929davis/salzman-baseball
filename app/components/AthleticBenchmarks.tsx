@@ -22,14 +22,14 @@ const lbl:React.CSSProperties = {fontSize:10,color:C.textMuted,fontWeight:600,ma
 type FormState = {
   date:string,broad_jump_in:string,lateral_broad_jump_lr_in:string,sprint_10yd_sec:string,
   squat_lbs:string,bench_lbs:string,deadlift_lbs:string,shoulder_er_ir_lbs:string,
-  vertical_jump_in:string,vertical_jump_225_in:string,grip_strength_right_lbs:string,grip_strength_left_lbs:string,
+  vertical_jump_in:string,vertical_jump_225_in:string,squat_jump_in:string,grip_strength_right_lbs:string,grip_strength_left_lbs:string,
   wingspan_in:string,hip_rotation_trail_deg:string,hip_rotation_lead_deg:string,shoulder_rotation_deg:string,
   mb_seated_chest_pass_ft:string,mb_situp_throw_ft:string,mb_rotational_pass_ft:string,
 }
 const BLANK_FORM:FormState = {
   date:new Date().toISOString().split('T')[0],broad_jump_in:'',lateral_broad_jump_lr_in:'',sprint_10yd_sec:'',
   squat_lbs:'',bench_lbs:'',deadlift_lbs:'',shoulder_er_ir_lbs:'',
-  vertical_jump_in:'',vertical_jump_225_in:'',grip_strength_right_lbs:'',grip_strength_left_lbs:'',
+  vertical_jump_in:'',vertical_jump_225_in:'',squat_jump_in:'',grip_strength_right_lbs:'',grip_strength_left_lbs:'',
   wingspan_in:'',hip_rotation_trail_deg:'',hip_rotation_lead_deg:'',shoulder_rotation_deg:'',
   mb_seated_chest_pass_ft:'',mb_situp_throw_ft:'',mb_rotational_pass_ft:'',
 }
@@ -143,7 +143,10 @@ function RecommendedWorkList({items, getRecommendation}:{items:{key:string,label
   )
 }
 
-export default function AthleticBenchmarks({pitcherId, getRecommendation}:{pitcherId:string, getRecommendation?:(key:string)=>Recommendation}){
+// cmjResults: passed in rather than fetched here -- both coach and pitcher pages already load
+// this for the separate CMJ tool, so this avoids a second fetch of the same data. Used only
+// for the two BENCHMARKS entries with source:'cmj_results' (see lib/benchmarks.ts).
+export default function AthleticBenchmarks({pitcherId, getRecommendation, cmjResults=[]}:{pitcherId:string, getRecommendation?:(key:string)=>Recommendation, cmjResults?:any[]}){
   const supabase=createClient()
   const {videos,saveVideo}=useTestVideos()
   const [benchHistory,setBenchHistory]=useState<any[]>([])
@@ -172,6 +175,12 @@ export default function AthleticBenchmarks({pitcherId, getRecommendation}:{pitch
   const latest = benchHistory[benchHistory.length-1]||null
   const screenLatest = screenHistory[screenHistory.length-1]||null
 
+  // Resolves a benchmark's current value regardless of which table it actually lives in --
+  // used both for rendering the bar and for deciding what counts as "Below average" for the
+  // Recommended Corrective Work list below, so those two never drift out of sync.
+  const valueForDef=(def:BenchmarkDef)=>
+    def.source==='cmj_results'&&def.cmjField ? cmjResults[0]?.[def.cmjField] : latest?.[def.key]
+
   const submit=async()=>{
     setSaving(true); setFormError('')
     const num=(s:string)=>s.trim()===''?null:parseFloat(s)
@@ -183,7 +192,7 @@ export default function AthleticBenchmarks({pitcherId, getRecommendation}:{pitch
       sprint_10yd_sec:num(form.sprint_10yd_sec),
       squat_lbs:squat,bench_lbs:bench,deadlift_lbs:deadlift,total_body_strength_lbs:total,
       shoulder_er_ir_lbs:num(form.shoulder_er_ir_lbs),
-      vertical_jump_in:num(form.vertical_jump_in),vertical_jump_225_in:num(form.vertical_jump_225_in),
+      vertical_jump_in:num(form.vertical_jump_in),vertical_jump_225_in:num(form.vertical_jump_225_in),squat_jump_in:num(form.squat_jump_in),
       grip_strength_right_lbs:num(form.grip_strength_right_lbs),grip_strength_left_lbs:num(form.grip_strength_left_lbs),
       wingspan_in:num(form.wingspan_in),
       hip_rotation_trail_deg:num(form.hip_rotation_trail_deg),hip_rotation_lead_deg:num(form.hip_rotation_lead_deg),
@@ -278,6 +287,7 @@ export default function AthleticBenchmarks({pitcherId, getRecommendation}:{pitch
                   {numField('shoulder_er_ir_lbs','Shoulder ER/IR Strength (lbs)','e.g. 60')}
                   {numField('vertical_jump_in','Vertical Jump (in)','e.g. 25')}
                   {numField('vertical_jump_225_in','Vertical Jump @225 lbs (in)','e.g. 19')}
+                  {numField('squat_jump_in','Squat Jump Height (in)','e.g. 14')}
                   {numField('grip_strength_right_lbs','Grip Strength Right (lbs)','e.g. 100')}
                   {numField('grip_strength_left_lbs','Grip Strength Left (lbs)','e.g. 98')}
                   {numField('wingspan_in','Wingspan (in)','e.g. 71')}
@@ -319,18 +329,20 @@ export default function AthleticBenchmarks({pitcherId, getRecommendation}:{pitch
         <div key={tier} style={{background:C.bg2,border:`1px solid ${C.border}`,borderRadius:8,padding:16,marginBottom:12}}>
           <div style={{fontSize:11,fontWeight:700,color:C.gold,textTransform:'uppercase' as const,letterSpacing:'0.5px',marginBottom:2}}>{TIER_INFO[tier].label}</div>
           <div style={{fontSize:11,color:C.textDim,marginBottom:14}}>{TIER_INFO[tier].desc}</div>
-          {BENCHMARKS.filter(b=>b.tier===tier).map(def=>(
-            <BenchmarkBar key={def.key} def={def} value={latest?.[def.key]}
-              history={benchHistory.map(r=>({date:r.test_date,value:r[def.key]})).filter(h=>h.value!=null)}
-              videos={videos} onSaveVideo={saveVideo}/>
-          ))}
+          {BENCHMARKS.filter(b=>b.tier===tier).map(def=>{
+            const history = def.source==='cmj_results'&&def.cmjField
+              ? cmjResults.map((r:any)=>({date:r.test_date,value:r[def.cmjField as string]})).filter((h:any)=>h.value!=null).reverse()
+              : benchHistory.map(r=>({date:r.test_date,value:r[def.key]})).filter(h=>h.value!=null)
+            return <BenchmarkBar key={def.key} def={def} value={valueForDef(def)}
+              history={history} videos={videos} onSaveVideo={saveVideo}/>
+          })}
         </div>
       ))}
 
       {getRecommendation && (
         <div style={{marginBottom:12}}>
           <RecommendedWorkList
-            items={BENCHMARKS.filter(def=>benchmarkStatus(def,latest?.[def.key])?.label==='Below average').map(def=>({key:`benchmark_${def.key}`,label:def.label,statusLabel:'Below average'}))}
+            items={BENCHMARKS.filter(def=>benchmarkStatus(def,valueForDef(def))?.label==='Below average').map(def=>({key:`benchmark_${def.key}`,label:def.label,statusLabel:'Below average'}))}
             getRecommendation={getRecommendation}
           />
         </div>

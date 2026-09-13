@@ -4,6 +4,8 @@ export type BenchmarkKey =
   | 'vertical_jump_in' | 'vertical_jump_225_in'
   | 'grip_strength_right_lbs' | 'grip_strength_left_lbs' | 'wingspan_in'
   | 'hip_rotation_trail_deg' | 'hip_rotation_lead_deg' | 'shoulder_rotation_deg'
+  | 'squat_jump_in'
+  | 'cmj_jump_height_in' | 'cmj_peak_power_per_kg'
 
 export type BenchmarkDef = {
   key: BenchmarkKey
@@ -18,18 +20,42 @@ export type BenchmarkDef = {
   lowerIsBetter?: boolean
   scaleMin: number
   scaleMax: number
+  // Where this value actually lives. Defaults to 'athletic_benchmarks' (the manual assessment
+  // form) when omitted. 'cmj_results' means the value is computed elsewhere (the CMJ tool's
+  // flight-time calculation) and just displayed here too, via cmjField below -- there's no
+  // separate manual entry for it on this page.
+  source?: 'athletic_benchmarks' | 'cmj_results'
+  cmjField?: 'jump_height_in' | 'peak_power_per_kg'
 }
 
 // scaleMin/scaleMax are a display convenience (roughly 1.3x the highest reference point) —
-// not part of the source benchmark data itself, just a sane bar range per metric.
+// not part of the source benchmark data itself, just a sane bar range per metric. Where
+// scaleMin/scaleMax below are instead the real min/max from a reference dataset (noted per
+// entry), that's a more grounded range than the 1.3x-guess convention used elsewhere here.
+//
+// cmj_jump_height_in / cmj_peak_power_per_kg: sourced from a reference dataset of 1,934
+// "High Performance" force-plate/CMJ sessions across levels (the same family of dataset this
+// app's CMJ velocity-estimation formula was already calibrated against -- see lib/cmj.ts).
+// p50 = that dataset's median; scaleMin/scaleMax = its real min/max, not a guess. Correlation
+// to pitch velocity in that same dataset: jump height r=0.725 (all levels), peak power/BM
+// r=0.707 (all levels) -- high enough to justify Tier 1 placement alongside broad jump.
+// These two are NOT manually entered here -- they mirror whatever the athlete's CMJ tool
+// entries already computed (see AthleticBenchmarks.tsx's cmjResults handling).
 export const BENCHMARKS: BenchmarkDef[] = [
   {key:'broad_jump_in',label:'Broad Jump',unit:'in',tier:1,p50:96,scaleMin:0,scaleMax:130},
   {key:'lateral_broad_jump_lr_in',label:'Lateral Broad Jump (L+R)',unit:'in',tier:1,p50:156,scaleMin:0,scaleMax:210},
+  {key:'cmj_jump_height_in',label:'CMJ Jump Height',unit:'in',tier:1,p50:15.67,scaleMin:3.9,scaleMax:24.53,source:'cmj_results',cmjField:'jump_height_in'},
+  {key:'cmj_peak_power_per_kg',label:'CMJ Peak Power / Bodyweight',unit:'W/kg',tier:1,p50:55.4,scaleMin:24.3,scaleMax:84.4,source:'cmj_results',cmjField:'peak_power_per_kg'},
   {key:'sprint_10yd_sec',label:'10-Yard Sprint',unit:'sec',tier:2,p50:1.70,elite:1.60,lowerIsBetter:true,scaleMin:1.3,scaleMax:2.1},
   {key:'total_body_strength_lbs',label:'Total Body Strength (Squat + Bench + Deadlift)',unit:'lbs',tier:2,p50:400,scaleMin:0,scaleMax:650},
   {key:'shoulder_er_ir_lbs',label:'Shoulder ER/IR Strength',unit:'lbs',tier:2,p50:63,scaleMin:0,scaleMax:100},
   {key:'vertical_jump_in',label:'Vertical Jump',unit:'in',tier:2,p50:26,mlbAvg:24.4,scaleMin:0,scaleMax:36},
   {key:'vertical_jump_225_in',label:'Vertical Jump @225 lbs',unit:'in',tier:2,p50:20,p75:22,scaleMin:0,scaleMax:30},
+  // Same reference dataset as the two CMJ entries above (median/min/max converted cm->in).
+  // Measured the same way as the CMJ tool's flight-time method, just from a static squat
+  // pause instead of a countermovement -- no force plate needed, a phone timer is enough.
+  // Velocity correlation in that dataset: r=0.631 (all levels) -- Tier 2, not quite Tier 1.
+  {key:'squat_jump_in',label:'Squat Jump Height',unit:'in',tier:2,p50:14.02,scaleMin:3.62,scaleMax:22.4},
   {key:'grip_strength_right_lbs',label:'Grip Strength (Right)',unit:'lbs',tier:2,p50:105,p75:120,scaleMin:0,scaleMax:160},
   {key:'grip_strength_left_lbs',label:'Grip Strength (Left)',unit:'lbs',tier:2,p50:105,p75:115,scaleMin:0,scaleMax:160},
   {key:'wingspan_in',label:'Wingspan',unit:'in',tier:2,p50:72,scaleMin:60,scaleMax:84},
@@ -39,7 +65,7 @@ export const BENCHMARKS: BenchmarkDef[] = [
 ]
 
 export const TIER_INFO: Record<1|2|3,{label:string,desc:string}> = {
-  1:{label:'Tier 1 — Highest Predictive Power',desc:'Broad jump and lateral broad jump carry the strongest predictive signal of the metrics tracked here.'},
+  1:{label:'Tier 1 — Highest Predictive Power',desc:'Broad jump, lateral broad jump, and CMJ jump height/power carry the strongest predictive signal of the metrics tracked here.'},
   2:{label:'Tier 2 — High Predictive Power',desc:'Sprint speed, strength, grip, and jump metrics.'},
   3:{label:'Tier 3 — Mobility Metrics',desc:'Lower predictive power on their own, but flag restriction that can cap the metrics above.'},
 }
