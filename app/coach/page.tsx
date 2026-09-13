@@ -984,7 +984,7 @@ Write next week's program by day and category (Pre-Throwing, Throwing, Post-Thro
               <ProgressOverview pitcherId={selected.id} mode="coach"/>
 
               <div style={{display:'flex',gap:6,marginBottom:16,flexWrap:'wrap' as const}}>
-                {['overview','logs','program','iq','benchmarks','mechanics'].map(t=>(
+                {['overview','weekly','logs','program','iq','benchmarks','mechanics'].map(t=>(
                   <button key={t} style={S.tab(tab===t)} onClick={()=>setTab(t)}>{t}</button>
                 ))}
               </div>
@@ -1338,6 +1338,103 @@ Write next week's program by day and category (Pre-Throwing, Throwing, Post-Thro
                   )}
                 </div>
               )}
+
+              {tab==='weekly'&&(()=>{
+                const lastPitchSession=logs.find((l:any)=>l.pitch_count!=null)||null
+                const daysOwed=lastPitchSession?daysUntilClearToThrow(lastPitchSession.pitch_count,lastPitchSession.log_date):0
+                const latestArmTest=armCareTests[0]||null
+                const effVelocity=getEffectiveVelocity(selected,cmjResults)||null
+                const svr=latestArmTest?calcStrengthVelocityRatio(latestArmTest.er_load_lbs,latestArmTest.ir_load_lbs,effVelocity):null
+                const erPct=latestArmTest?calcBodyweightPct(latestArmTest.er_load_lbs,latestArmTest.bodyweight_lbs):null
+                const irPct=latestArmTest?calcBodyweightPct(latestArmTest.ir_load_lbs,latestArmTest.bodyweight_lbs):null
+                const romAsym=latestArmTest?calcRomAsymmetry(latestArmTest.er_rom_deg,latestArmTest.ir_rom_deg):null
+                const erStatus=bodyweightPctStatus(erPct,'ER'), irStatus=bodyweightPctStatus(irPct,'IR')
+                const {classification}=classifyCMJ(cmjResults[0])
+                const armCareTrendsForCallout=computeArmCareTrends(armCareTests,effVelocity)
+                const workloadHist=[...logs].reverse()
+                const workloadCallout=computeWorkloadArmHealthCallout([
+                  {label:'Pitch Count', hist:workloadHist.map(r=>({date:r.log_date,value:r.pitch_count})).filter(h=>h.value!=null)},
+                  {label:'High-Effort Throws', hist:workloadHist.map(r=>({date:r.log_date,value:r.high_effort_throws})).filter(h=>h.value!=null)},
+                ], armCareTrendsForCallout)
+
+                const flags:{label:string,color:string}[]=[]
+                if (daysOwed>0) flags.push({label:`Rest owed: ${daysOwed} day${daysOwed===1?'':'s'} before next outing`, color:C.gold})
+                if (svr?.flagged) flags.push({label:'Strength-Velocity Ratio flagged', color:C.red})
+                if (erStatus==='Caution'||erStatus==='Flag') flags.push({label:`ER strength ${erStatus.toLowerCase()}`, color:erStatus==='Flag'?C.red:C.gold})
+                if (irStatus==='Caution'||irStatus==='Flag') flags.push({label:`IR strength ${irStatus.toLowerCase()}`, color:irStatus==='Flag'?C.red:C.gold})
+                if (romAsym?.status==='Caution'||romAsym?.status==='Flag') flags.push({label:`ROM asymmetry ${romAsym.status.toLowerCase()}`, color:romAsym.status==='Flag'?C.red:C.gold})
+                if (workloadCallout) flags.push({label:`${workloadCallout.workloadLabel} up ${workloadCallout.workloadChangePct}% while ${workloadCallout.armMetricLabel} ${workloadCallout.armMetricChangePct>=0?'rose':'dropped'} ${Math.abs(workloadCallout.armMetricChangePct)}%`, color:workloadCallout.severity==='Flag'?C.red:C.gold})
+                if (classification==='Both Limited'||classification==='Rate Limiter'||classification==='Magnitude Limiter') flags.push({label:`CMJ classification: ${classification}`, color:C.purple})
+
+                const recentLogs=logs.slice(0,7)
+
+                return (
+                  <div>
+                    <div style={{fontSize:11,color:C.textDim,marginBottom:16,lineHeight:1.5}}>Everything worth checking before adjusting {selected.full_name}'s program for next week — flags, recent feedback, and this week's assignment. Doesn't include Athletic Benchmarks/Mobility Screens flags yet (those live on the Benchmarks tab).</div>
+
+                    <div style={{...S.card,marginBottom:12}}>
+                      <div style={{fontSize:11,color:C.textMuted,fontWeight:700,textTransform:'uppercase' as const,letterSpacing:'1px',marginBottom:10}}>Flags</div>
+                      {flags.length===0?(
+                        <div style={{fontSize:12,color:C.textDim}}>Nothing flagged right now.</div>
+                      ):(
+                        <div style={{display:'flex',flexDirection:'column' as const,gap:8}}>
+                          {flags.map((f,i)=>(
+                            <div key={i} style={{display:'flex',alignItems:'center',gap:8,fontSize:12,color:C.text}}>
+                              <div style={{width:8,height:8,borderRadius:4,background:f.color,flexShrink:0}}/>
+                              {f.label}
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+
+                    <div style={{...S.card,marginBottom:12}}>
+                      <div style={{fontSize:11,color:C.textMuted,fontWeight:700,textTransform:'uppercase' as const,letterSpacing:'1px',marginBottom:10}}>Recent Feedback (last {recentLogs.length} log{recentLogs.length===1?'':'s'})</div>
+                      {recentLogs.length===0?(
+                        <div style={{fontSize:12,color:C.textDim}}>No logs yet.</div>
+                      ):(
+                        <div style={{display:'flex',flexDirection:'column' as const,gap:6}}>
+                          {recentLogs.map((log:any,i:number)=>(
+                            <div key={i} style={{background:C.bg3,borderRadius:6,padding:'8px 10px',fontSize:12}}>
+                              <div style={{display:'flex',gap:12,flexWrap:'wrap' as const}}>
+                                <span style={{color:C.textMuted,minWidth:80}}>{log.log_date}</span>
+                                <span style={{color:log.feeling>=7?C.teal:log.feeling>=4?C.gold:C.red}}>Feeling {log.feeling??'—'}/10</span>
+                                {log.readiness&&<span style={{color:READINESS_COLORS[log.readiness]}}>{READINESS_OPTIONS.find((o:any)=>o.value===log.readiness)?.label}</span>}
+                                {log.soreness?.length>0&&<span style={{color:C.red}}>Sore: {log.soreness.join(', ')}</span>}
+                              </div>
+                              {log.notes&&<div style={{color:C.textDim,fontStyle:'italic' as const,marginTop:4}}>"{log.notes}"</div>}
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+
+                    <div style={S.card}>
+                      <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:10}}>
+                        <div style={{fontSize:11,color:C.textMuted,fontWeight:700,textTransform:'uppercase' as const,letterSpacing:'1px'}}>This Week's Program</div>
+                        <button onClick={()=>setTab('program')} style={S.btn('gold')}>Edit Program →</button>
+                      </div>
+                      {(()=>{
+                        const rows=DAYS.map(day=>{
+                          const dayExercises=CATEGORIES.flatMap(cat=>structuredDays[`${day}___${cat.key}`]||[])
+                          return {day,dayExercises}
+                        }).filter(r=>r.dayExercises.length>0)
+                        if (rows.length===0) return <div style={{fontSize:12,color:C.textDim}}>No program set for this week yet.</div>
+                        return (
+                          <div style={{display:'flex',flexDirection:'column' as const,gap:6}}>
+                            {rows.map(r=>(
+                              <div key={r.day} style={{fontSize:12}}>
+                                <span style={{color:C.gold,fontWeight:600}}>{r.day}: </span>
+                                <span style={{color:C.textMuted}}>{r.dayExercises.map((e:any)=>e.name).join(', ')}</span>
+                              </div>
+                            ))}
+                          </div>
+                        )
+                      })()}
+                    </div>
+                  </div>
+                )
+              })()}
 
               {tab==='logs'&&(
                 <div style={S.card}>
