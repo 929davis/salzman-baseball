@@ -42,12 +42,21 @@ export function calcFatigueScore(baselineSec:number|null, postOutingSec:number|n
 }
 
 // ---------------------------------------------------------------------------
-// Recovery score — % of baseline hold time returned, plus a starting
-// recoveryModifier tier mapping for the arm-care load formula. These specific
-// cutoffs (95/85/70%) and modifier values (1.0/0.9/0.75/0.6) are a first pass,
-// not sourced from a validated study — tune over time like the 500 coefficient
-// in the main formula. No recovery test on file defaults to 1.0 (no penalty
-// without data to justify one).
+// Recovery score — % of baseline hold time returned, plus a recoveryModifier tier mapping
+// used to scale down the Speed/Power ground-contact ceiling (lib/speedPowerVolume.ts) when a
+// pitcher hasn't bounced back from a prior outing.
+//
+// Thresholds anchored to real research rather than an arbitrary guess: external rotation
+// strength drops ~11% on average after a single pitching outing, driven by infraspinatus
+// fatigue (Mullaney/McHugh-line of research on post-pitching ER strength loss — see PMC
+// 3910170). That means ~89% returned is a NORMAL single-outing dip, not a red flag — the old
+// 95% cutoff for "no penalty" was calling a normal recovery state a deficit. Bands below:
+// >=90% returned = within/better than the expected single-outing dip, no penalty. 75-90% =
+// a somewhat larger-than-typical dip, mild caution. 60-75% = meaningfully beyond the typical
+// dip. <60% = well beyond it, most conservative. Modifier values themselves (1.0/0.9/0.75/0.6)
+// are unchanged from before — it's specifically the pctReturned thresholds that moved to match
+// the research anchor. No recovery test on file defaults to 1.0 (no penalty without data to
+// justify one).
 // ---------------------------------------------------------------------------
 export function calcRecoveryScore(baselineSec:number|null, recoverySec:number|null):number|null{
   if (baselineSec==null||recoverySec==null||baselineSec===0) return null
@@ -56,9 +65,9 @@ export function calcRecoveryScore(baselineSec:number|null, recoverySec:number|nu
 
 export function recoveryModifierFromScore(pctReturned:number|null):number{
   if (pctReturned==null) return 1.0
-  if (pctReturned>=95) return 1.0
-  if (pctReturned>=85) return 0.9
-  if (pctReturned>=70) return 0.75
+  if (pctReturned>=90) return 1.0
+  if (pctReturned>=75) return 0.9
+  if (pctReturned>=60) return 0.75
   return 0.6
 }
 
@@ -193,22 +202,6 @@ export function computeWorkloadArmHealthCallout(
   }
 }
 
-// ---------------------------------------------------------------------------
-// Strength-depletion-based arm care model.
-// strengthDepletionLbs: throw volume converted to an estimated strength-depletion figure.
-// footPoundsTarget: 500 is a starting coefficient, not a validated constant — tune over time
-// as real adjustedFootPoundsTarget outcomes get compared against actual soreness/injury data.
-// adjustedFootPoundsTarget: scaled down by recoveryModifier when a pitcher's most recent
-// recovery-check test shows they haven't fully recovered from a prior outing.
-// ---------------------------------------------------------------------------
-export const calcArmCare = (n:number, recoveryModifier:number) => {
-  if (!n) return {strengthDepletionLbs:0, footPoundsTarget:0, adjustedFootPoundsTarget:0}
-  const strengthDepletionLbs = (n/10)*0.1
-  const footPoundsTarget = strengthDepletionLbs*500
-  const adjustedFootPoundsTarget = footPoundsTarget*recoveryModifier
-  return {strengthDepletionLbs, footPoundsTarget, adjustedFootPoundsTarget}
-}
-
 // Effort-to-torque multipliers, derived from motion-capture research (Fleisig, Melugin,
 // Slenker) showing elbow/shoulder torque drops much less than perceived effort suggests —
 // e.g. 80% perceived effort still produces ~90% of max torque. Not linear with effort %.
@@ -227,6 +220,9 @@ export const SURFACE_MULTIPLIERS: Record<string, number> = {
   flat: 1.0,
 }
 
+// Currently unused (its only caller, the removed foot-pounds calcArmCare, is gone) -- kept
+// because the effort/surface weighting itself is still real and citation-backed, in case a
+// future "effective weekly workload" display wants it. Not wired into any UI right now.
 export const getEffectiveThrowCount = (selected: any, throwEntries: any[]) => {
   if (throwEntries && throwEntries.length > 0) {
     return throwEntries.reduce((sum, entry) => {

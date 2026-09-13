@@ -14,8 +14,10 @@ import { angleAt } from '@/lib/angles'
 import {
   calcStrengthVelocityRatio, calcBodyweightPct, bodyweightPctStatus,
   calcRomAsymmetry, computeArmCareTrends, computeArmCareFlagStatuses, computeWorkloadArmHealthCallout, THREE_TIER_COLORS,
-  calcArmCare, getEffectiveThrowCount, getRecoveryModifier,
+  getRecoveryModifier,
 } from '@/lib/armCare'
+import { restDaysRequired, daysUntilClearToThrow, DAILY_MAX_PITCHES, PITCH_SMART_NOTES } from '@/lib/pitchSmart'
+import { THROWERS_TEN, THROWERS_TEN_SETS, THROWERS_TEN_REPS } from '@/lib/throwersTen'
 import { parseTime, calcCMJFn } from '@/lib/cmj'
 import { CATEGORY_ORDER, CATEGORY_COLORS } from '@/lib/exerciseCategories'
 import { computeSpeedPowerGuardrail } from '@/lib/speedPowerVolume'
@@ -299,6 +301,7 @@ export default function CoachDashboard(){
   const [armCareTests,setArmCareTests]=useState<any[]>([])
   const [armCareModal,setArmCareModal]=useState(false)
   const [showArmCareHistory,setShowArmCareHistory]=useState(false)
+  const [showThrowersTen,setShowThrowersTen]=useState(false)
   const [armCareSaving,setArmCareSaving]=useState(false)
   const [armCareForm,setArmCareForm]=useState({
     test_type:'baseline_max',er_load_lbs:'',ir_load_lbs:'',er_hold_seconds:'',ir_hold_seconds:'',
@@ -772,7 +775,8 @@ export default function CoachDashboard(){
   }
 
   const buildPrompt=()=>{
-    const jiP=calcArmCare(getEffectiveThrowCount(selected,throwEntries),getRecoveryModifier(armCareTests)).adjustedFootPoundsTarget
+    const lastPitchSession=logs.find((l:any)=>l.pitch_count!=null)||null
+    const restOwed=lastPitchSession?daysUntilClearToThrow(lastPitchSession.pitch_count,lastPitchSession.log_date):0
     const lastCMJ=cmjResults[0]
     const {classification}=classifyCMJ(lastCMJ)
     const rule=recommendationRules.find(r=>r.classification===classification)
@@ -782,7 +786,7 @@ export default function CoachDashboard(){
 PITCHER DATA:
 - Avg Velocity: ${selected?.avg_velocity||'—'} mph
 - Weekly Pitches: ${selected?.weekly_pitches||'—'} | HE Throws: ${selected?.weekly_high_effort||'—'}
-- Adjusted Foot-Lbs Target: ${jiP.toLocaleString()} ft·lb
+- Last Outing: ${lastPitchSession?`${lastPitchSession.pitch_count} pitches on ${lastPitchSession.log_date} (Pitch Smart: ${restDaysRequired(lastPitchSession.pitch_count)} day(s) rest, ${restOwed} still owed)`:'No pitch count logged'}
 ${lastCMJ?`- CMJ: Jump ${lastCMJ.jump_height_in?.toFixed(1)}in | RSI ${lastCMJ.rsi_mod?.toFixed(2)} | PP/kg ${lastCMJ.peak_power_per_kg?.toFixed(1)} W/kg`:'- No CMJ data'}
 - Neuro Classification: ${classification}
 ${rule?`- Training Emphasis: ${rule.emphasis} | Load Range: ${rule.load_range}`:''}
@@ -999,7 +1003,9 @@ Write next week's program by day and category (Pre-Throwing, Throwing, Post-Thro
                   {/* Arm Care */}
                   {(()=>{
                     const recoveryModifier=getRecoveryModifier(armCareTests)
-                    const {strengthDepletionLbs,footPoundsTarget,adjustedFootPoundsTarget}=calcArmCare(getEffectiveThrowCount(selected,throwEntries),recoveryModifier)
+                    const lastPitchSession=logs.find((l:any)=>l.pitch_count!=null)||null
+                    const daysOwed=lastPitchSession?daysUntilClearToThrow(lastPitchSession.pitch_count,lastPitchSession.log_date):0
+                    const requiredRest=lastPitchSession?restDaysRequired(lastPitchSession.pitch_count):0
                     const latestTest=armCareTests[0]||null
                     const svr=latestTest?calcStrengthVelocityRatio(latestTest.er_load_lbs,latestTest.ir_load_lbs,getEffectiveVelocity(selected,cmjResults)||null):null
                     const erPct=latestTest?calcBodyweightPct(latestTest.er_load_lbs,latestTest.bodyweight_lbs):null
@@ -1024,28 +1030,25 @@ Write next week's program by day and category (Pre-Throwing, Throwing, Post-Thro
                           <div style={{fontSize:11,color:C.textMuted,fontWeight:700,textTransform:'uppercase' as const,letterSpacing:'1px'}}>Arm Care</div>
                           <div style={{display:'flex',gap:8}}>
                             {armCareTests.length>0&&<button onClick={()=>setShowArmCareHistory(s=>!s)} style={S.btn()}>{showArmCareHistory?'Hide':'History'} ({armCareTests.length})</button>}
+                            <button onClick={()=>setShowThrowersTen(s=>!s)} style={S.btn()}>{showThrowersTen?'Hide':'Show'} Thrower's Ten</button>
                             <button onClick={()=>setArmCareModal(true)} style={S.btn('gold')}>+ Log Arm Care Test</button>
                           </div>
                         </div>
-                        <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:10,marginBottom:8}}>
+                        <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10,marginBottom:8}}>
                           <div style={{background:C.bg3,border:`1px solid ${C.border}`,borderRadius:8,padding:'10px 14px'}}>
-                            <div style={{fontSize:10,color:C.textMuted,textTransform:'uppercase' as const,letterSpacing:'0.5px',marginBottom:4}}>Strength Depletion</div>
-                            <div style={{fontSize:18,fontWeight:700,color:C.white}}>{strengthDepletionLbs?strengthDepletionLbs.toFixed(2):'—'}<span style={{fontSize:11,color:C.textMuted}}> lbs</span></div>
+                            <div style={{fontSize:10,color:C.textMuted,textTransform:'uppercase' as const,letterSpacing:'0.5px',marginBottom:4}}>Last Outing</div>
+                            <div style={{fontSize:18,fontWeight:700,color:C.white}}>{lastPitchSession?`${lastPitchSession.pitch_count} pitches`:'—'}<span style={{fontSize:10,color:C.textDim,fontWeight:400}}> / {DAILY_MAX_PITCHES} max</span></div>
+                            {lastPitchSession&&<div style={{fontSize:10,color:C.textDim,marginTop:2}}>{new Date(lastPitchSession.log_date+'T00:00:00').toLocaleDateString()}</div>}
                           </div>
-                          <div style={{background:C.bg3,border:`1px solid ${C.border}`,borderRadius:8,padding:'10px 14px'}}>
-                            <div style={{fontSize:10,color:C.textMuted,textTransform:'uppercase' as const,letterSpacing:'0.5px',marginBottom:4}}>Foot-Lbs Target</div>
-                            <div style={{fontSize:18,fontWeight:700,color:C.white}}>{footPoundsTarget?footPoundsTarget.toLocaleString():'—'}<span style={{fontSize:11,color:C.textMuted}}> ft·lb</span></div>
-                          </div>
-                          <div style={{background:C.goldBg,border:`1px solid ${C.goldDim}`,borderRadius:8,padding:'10px 14px'}}>
-                            <div style={{fontSize:10,color:C.gold,textTransform:'uppercase' as const,letterSpacing:'0.5px',marginBottom:4}}>Adjusted Target</div>
-                            <div style={{fontSize:18,fontWeight:700,color:C.gold}}>{adjustedFootPoundsTarget?adjustedFootPoundsTarget.toLocaleString():'—'}<span style={{fontSize:11,color:C.goldDim}}> ft·lb</span></div>
+                          <div style={{background:daysOwed>0?C.goldBg:C.bg3,border:`1px solid ${daysOwed>0?C.goldDim:C.border}`,borderRadius:8,padding:'10px 14px'}}>
+                            <div style={{fontSize:10,color:daysOwed>0?C.gold:C.textMuted,textTransform:'uppercase' as const,letterSpacing:'0.5px',marginBottom:4}}>Rest Status</div>
+                            <div style={{fontSize:18,fontWeight:700,color:daysOwed>0?C.gold:C.white}}>{!lastPitchSession?'—':daysOwed>0?`${daysOwed} day${daysOwed===1?'':'s'} left`:'Clear to throw'}</div>
                           </div>
                         </div>
                         <div style={{background:C.bg3,border:`1px solid ${C.border}`,borderRadius:8,padding:'10px 12px',marginBottom:12}}>
-                          <div style={{fontSize:11,fontWeight:700,color:C.text,marginBottom:6}}>What these numbers mean</div>
-                          <div style={{fontSize:11,color:C.textMuted,lineHeight:1.6}}><b>Strength Depletion</b> converts recent throw volume into an estimated strength cost. <b>Foot-Lbs Target</b> scales that into a recovery-work target (the 500 coefficient below is unvalidated, tune over time). <b>Adjusted Target</b> is the same number scaled down by the recovery modifier when the pitcher's last recovery-check test showed incomplete recovery from a prior outing. Treat all three as a starting model to sanity-check against arm feel and soreness reports, not a standalone diagnosis.</div>
+                          <div style={{fontSize:11,fontWeight:700,color:C.text,marginBottom:6}}>What this means</div>
+                          <div style={{fontSize:11,color:C.textMuted,lineHeight:1.6}}>Based on Pitch Smart (MLB/USA Baseball, developed with ASMI research): {lastPitchSession?`the last logged outing was ${lastPitchSession.pitch_count} pitches, which calls for ${requiredRest} day${requiredRest===1?'':'s'} of rest before pitching again.`:'no pitch count has been logged yet.'} Pitch Smart also recommends never pitching in a game on 3 consecutive days regardless of count, and at least 3 months off from competitive pitching per year (including 4 continuous weeks of no throwing at all). This is workload guidance, not a medical diagnosis — cross-check against soreness reports and how the arm actually feels.</div>
                         </div>
-                        <div style={{fontSize:10,color:C.textDim,marginBottom:latestTest?12:0}}>Recovery modifier applied: ×{recoveryModifier.toFixed(2)}{recoveryModifier<1?' (from most recent recovery-check test vs. baseline)':' (no recovery-check on file yet — no adjustment applied)'}. 500 ft·lb coefficient is a starting figure, not validated — tune over time.</div>
                         {latestTest&&(
                           <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(150px,1fr))',gap:8,paddingTop:12,borderTop:`1px solid ${C.border}`}}>
                             <div>
@@ -1118,6 +1121,23 @@ Write next week's program by day and category (Pre-Throwing, Throwing, Post-Thro
                                 {t.notes&&<span style={{color:C.textDim,fontStyle:'italic' as const}}>{t.notes}</span>}
                               </div>
                             ))}
+                          </div>
+                        )}
+                        {showThrowersTen&&(
+                          <div style={{marginTop:12,paddingTop:12,borderTop:`1px solid ${C.border}`}}>
+                            <div style={{fontSize:10,color:C.textDim,marginBottom:10,lineHeight:1.6}}>Wilk et al.'s EMG-researched rotator cuff/scapular program for throwing athletes. Standard dose: {THROWERS_TEN_SETS} sets of {THROWERS_TEN_REPS} reps each, band or light dumbbell, minimal rest between exercises.</div>
+                            <div style={{display:'flex',flexDirection:'column' as const,gap:6}}>
+                              {THROWERS_TEN.map(ex=>(
+                                <div key={ex.key} style={{background:C.bg3,borderRadius:6,padding:'6px 10px',fontSize:11}}>
+                                  <span style={{color:C.gold,fontWeight:700}}>{ex.order}. </span>
+                                  <span style={{color:C.white,fontWeight:600}}>{ex.name}</span>
+                                  <span style={{color:C.textMuted}}> — {ex.description}</span>
+                                </div>
+                              ))}
+                            </div>
+                            <div style={{fontSize:10,color:C.textDim,marginTop:8,lineHeight:1.5}}>
+                              {PITCH_SMART_NOTES.map((n,i)=><div key={i}>• {n}</div>)}
+                            </div>
                           </div>
                         )}
                       </div>

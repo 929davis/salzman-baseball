@@ -2,10 +2,12 @@
 import { useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import {
-  calcArmCare, getEffectiveThrowCount, getRecoveryModifier,
+  getRecoveryModifier,
   calcStrengthVelocityRatio, calcBodyweightPct, bodyweightPctStatus,
   calcRomAsymmetry, computeArmCareTrends, THREE_TIER_COLORS,
 } from '@/lib/armCare'
+import { restDaysRequired, daysUntilClearToThrow, DAILY_MAX_PITCHES, PITCH_SMART_NOTES } from '@/lib/pitchSmart'
+import { THROWERS_TEN, THROWERS_TEN_SETS, THROWERS_TEN_REPS } from '@/lib/throwersTen'
 import { useTestVideos } from '@/lib/testVideos'
 import TestVideoLink from '@/app/components/TestVideoLink'
 import MiniSparkline from '@/app/components/MiniSparkline'
@@ -21,25 +23,25 @@ export default function ArmCareSummary({pitcherId}:{pitcherId:string}){
   const {videos, saveVideo} = useTestVideos()
   const [loading,setLoading] = useState(true)
   const [profile,setProfile] = useState<any>(null)
-  const [throwEntries,setThrowEntries] = useState<any[]>([])
   const [armCareTests,setArmCareTests] = useState<any[]>([])
   const [cmjResults,setCmjResults] = useState<any[]>([])
+  const [lastSession,setLastSession] = useState<any>(null)
 
   useEffect(()=>{
     let cancelled = false
     const load = async () => {
       setLoading(true)
-      const [{data:prof},{data:throws},{data:armCare},{data:cmj}] = await Promise.all([
+      const [{data:prof},{data:armCare},{data:cmj},{data:sessions}] = await Promise.all([
         supabase.from('profiles').select('weekly_pitches,weekly_high_effort,effort_tier,throw_surface,avg_velocity').eq('id',pitcherId).single(),
-        supabase.from('throw_volume_entries').select('*').eq('pitcher_id',pitcherId).order('created_at'),
         supabase.from('arm_care_tests').select('*').eq('pitcher_id',pitcherId).order('created_at',{ascending:false}),
         supabase.from('cmj_results').select('estimated_velocity').eq('pitcher_id',pitcherId).order('test_date',{ascending:false}).limit(1),
+        supabase.from('session_logs').select('log_date,pitch_count').eq('pitcher_id',pitcherId).not('pitch_count','is',null).order('log_date',{ascending:false}).limit(1),
       ])
       if (cancelled) return
       setProfile(prof||null)
-      setThrowEntries(throws||[])
       setArmCareTests(armCare||[])
       setCmjResults(cmj||[])
+      setLastSession(sessions?.[0]||null)
       setLoading(false)
     }
     load()
@@ -50,8 +52,9 @@ export default function ArmCareSummary({pitcherId}:{pitcherId:string}){
 
   const effectiveVelocity = cmjResults[0]?.estimated_velocity || profile?.avg_velocity || null
   const recoveryModifier = getRecoveryModifier(armCareTests)
-  const {strengthDepletionLbs, footPoundsTarget, adjustedFootPoundsTarget} = calcArmCare(getEffectiveThrowCount(profile,throwEntries), recoveryModifier)
   const latestTest = armCareTests[0]||null
+  const daysOwed = lastSession ? daysUntilClearToThrow(lastSession.pitch_count, lastSession.log_date) : 0
+  const requiredRest = lastSession ? restDaysRequired(lastSession.pitch_count) : 0
   const svr = latestTest ? calcStrengthVelocityRatio(latestTest.er_load_lbs, latestTest.ir_load_lbs, effectiveVelocity) : null
   const erPct = latestTest ? calcBodyweightPct(latestTest.er_load_lbs, latestTest.bodyweight_lbs) : null
   const irPct = latestTest ? calcBodyweightPct(latestTest.ir_load_lbs, latestTest.bodyweight_lbs) : null
@@ -60,29 +63,26 @@ export default function ArmCareSummary({pitcherId}:{pitcherId:string}){
 
   return (
     <div style={{color:C.text,fontSize:13}}>
-      <div style={{fontSize:16,fontWeight:700,color:C.gold,marginBottom:4}}>Arm Care Score</div>
-      <div style={{fontSize:11,color:C.textMuted,marginBottom:16}}>How much throwing load your arm is estimated to need to recover from, based on your recent throwing volume.</div>
+      <div style={{fontSize:16,fontWeight:700,color:C.gold,marginBottom:4}}>Arm Care</div>
+      <div style={{fontSize:11,color:C.textMuted,marginBottom:16}}>Rest guidance from your last logged outing, plus your latest arm-care test results.</div>
 
       <div style={{background:C.bg2,border:`1px solid ${C.border}`,borderRadius:8,padding:16,marginBottom:12}}>
-        <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:10,marginBottom:12}}>
+        <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10,marginBottom:12}}>
           <div style={{background:C.bg3,border:`1px solid ${C.border}`,borderRadius:8,padding:'10px 14px'}}>
-            <div style={{fontSize:10,color:C.textMuted,textTransform:'uppercase' as const,letterSpacing:'0.5px',marginBottom:4}}>Strength Depletion</div>
-            <div style={{fontSize:18,fontWeight:700,color:C.white}}>{strengthDepletionLbs?strengthDepletionLbs.toFixed(2):'—'}<span style={{fontSize:11,color:C.textMuted}}> lbs</span></div>
+            <div style={{fontSize:10,color:C.textMuted,textTransform:'uppercase' as const,letterSpacing:'0.5px',marginBottom:4}}>Last Outing</div>
+            <div style={{fontSize:18,fontWeight:700,color:C.white}}>{lastSession?`${lastSession.pitch_count} pitches`:'—'}<span style={{fontSize:10,color:C.textDim,fontWeight:400}}> / {DAILY_MAX_PITCHES} max</span></div>
+            {lastSession&&<div style={{fontSize:10,color:C.textDim,marginTop:2}}>{new Date(lastSession.log_date+'T00:00:00').toLocaleDateString()}</div>}
           </div>
-          <div style={{background:C.bg3,border:`1px solid ${C.border}`,borderRadius:8,padding:'10px 14px'}}>
-            <div style={{fontSize:10,color:C.textMuted,textTransform:'uppercase' as const,letterSpacing:'0.5px',marginBottom:4}}>Recovery Target</div>
-            <div style={{fontSize:18,fontWeight:700,color:C.white}}>{footPoundsTarget?footPoundsTarget.toLocaleString():'—'}<span style={{fontSize:11,color:C.textMuted}}> ft·lb</span></div>
-          </div>
-          <div style={{background:C.goldBg,border:`1px solid ${C.goldDim}`,borderRadius:8,padding:'10px 14px'}}>
-            <div style={{fontSize:10,color:C.gold,textTransform:'uppercase' as const,letterSpacing:'0.5px',marginBottom:4}}>Your Target Today</div>
-            <div style={{fontSize:18,fontWeight:700,color:C.gold}}>{adjustedFootPoundsTarget?adjustedFootPoundsTarget.toLocaleString():'—'}<span style={{fontSize:11,color:C.goldDim}}> ft·lb</span></div>
+          <div style={{background:daysOwed>0?C.goldBg:C.bg3,border:`1px solid ${daysOwed>0?C.goldDim:C.border}`,borderRadius:8,padding:'10px 14px'}}>
+            <div style={{fontSize:10,color:daysOwed>0?C.gold:C.textMuted,textTransform:'uppercase' as const,letterSpacing:'0.5px',marginBottom:4}}>Rest Status</div>
+            <div style={{fontSize:18,fontWeight:700,color:daysOwed>0?C.gold:C.white}}>{!lastSession?'—':daysOwed>0?`${daysOwed} day${daysOwed===1?'':'s'} left`:'Clear to throw'}</div>
           </div>
         </div>
 
         <div style={{background:C.bg3,border:`1px solid ${C.border}`,borderRadius:8,padding:'10px 12px',marginBottom:latestTest?12:0}}>
           <div style={{fontSize:11,fontWeight:700,color:C.text,marginBottom:6}}>What does this mean?</div>
           <div style={{fontSize:11,color:C.textMuted,lineHeight:1.6}}>
-            The more you've been throwing, the more your arm's strength has been "spent" — that's <b>Strength Depletion</b>. <b>Recovery Target</b> turns that into an estimate of how much recovery work (band work, mobility, light strength) your arm needs to bounce back. <b>Your Target Today</b> is that same number, adjusted down if your last recovery-check test showed you hadn't fully bounced back from a prior outing yet{recoveryModifier<1?` (currently ×${recoveryModifier.toFixed(2)}, since your last recovery check wasn't back to full)`:' (currently no adjustment — your last recovery check was back to full, or you haven\'t logged one yet)'}. These numbers are a starting model, not a medical diagnosis — always combine them with how your arm actually feels.
+            Based on Pitch Smart (MLB/USA Baseball, developed with ASMI research): {lastSession?`your last outing was ${lastSession.pitch_count} pitches, which calls for ${requiredRest} day${requiredRest===1?'':'s'} of rest before pitching again.`:'log a session with a pitch count to see your rest guidance.'} Pitch Smart also recommends never pitching in a game on 3 consecutive days regardless of count, and at least 3 months off from competitive pitching per year (including 4 continuous weeks of no throwing at all). This is workload guidance, not a medical diagnosis — always combine it with how your arm actually feels.
           </div>
         </div>
 
@@ -133,6 +133,26 @@ export default function ArmCareSummary({pitcherId}:{pitcherId:string}){
           </div>
         </div>
       )}
+
+      <div style={{background:C.bg2,border:`1px solid ${C.border}`,borderRadius:8,padding:16,marginTop:12}}>
+        <div style={{fontSize:11,color:C.textMuted,fontWeight:700,textTransform:'uppercase' as const,letterSpacing:'1px',marginBottom:4}}>Thrower's Ten</div>
+        <div style={{fontSize:11,color:C.textDim,marginBottom:12,lineHeight:1.6}}>A rotator cuff/scapular strengthening program (Wilk et al.) built specifically for throwing athletes, backed by EMG research on which exercises actually load these muscles through the throwing-relevant range. Standard dose: {THROWERS_TEN_SETS} sets of {THROWERS_TEN_REPS} reps each, band or light dumbbell, minimal rest between exercises.</div>
+        <div style={{display:'flex',flexDirection:'column' as const,gap:8}}>
+          {THROWERS_TEN.map(ex=>(
+            <div key={ex.key} style={{background:C.bg3,borderRadius:6,padding:'8px 12px'}}>
+              <div style={{display:'flex',gap:8,alignItems:'baseline',marginBottom:2}}>
+                <span style={{fontSize:10,color:C.gold,fontWeight:700}}>{ex.order}.</span>
+                <span style={{fontSize:12,fontWeight:600,color:C.white}}>{ex.name}</span>
+              </div>
+              <div style={{fontSize:11,color:C.textMuted,lineHeight:1.5}}>{ex.description}</div>
+              <div style={{fontSize:10,color:C.textDim,marginTop:2}}>Targets: {ex.targets}</div>
+            </div>
+          ))}
+        </div>
+        <div style={{fontSize:10,color:C.textDim,marginTop:10,lineHeight:1.5}}>
+          {PITCH_SMART_NOTES.map((n,i)=><div key={i}>• {n}</div>)}
+        </div>
+      </div>
     </div>
   )
 }
