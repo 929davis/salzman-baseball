@@ -383,9 +383,11 @@ export default function SocialPage() {
               <button style={smallBtn('default', segments.length >= THREAD_MAX_SEGMENTS)} disabled={segments.length >= THREAD_MAX_SEGMENTS} onClick={addSegment}>+ Add Part</button>
               <button style={btn('gold', !threadValid)} disabled={!threadValid} onClick={saveSegments}>Save Thread Parts</button>
             </div>
-            {!threadValid && segments.length > 0 && (
-              <div style={{ fontSize: 11, color: C.textDim, marginTop: 6 }}>
-                Needs {THREAD_MIN_SEGMENTS}–{THREAD_MAX_SEGMENTS} non-empty parts, each under {THREAD_SEGMENT_MAX_LENGTH} characters, before saving.
+            {!threadValid && (
+              <div style={{ fontSize: 11, color: C.gold, marginTop: 6 }}>
+                {segments.length === 0
+                  ? `Add at least ${THREAD_MIN_SEGMENTS} parts below to enable saving.`
+                  : `Needs ${THREAD_MIN_SEGMENTS}–${THREAD_MAX_SEGMENTS} non-empty parts, each under ${THREAD_SEGMENT_MAX_LENGTH} characters, before saving.`}
               </div>
             )}
           </div>
