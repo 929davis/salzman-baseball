@@ -18,8 +18,15 @@ export default function LoginPage() {
     setError('')
     const { data, error } = await supabase.auth.signInWithPassword({ email, password })
     if (error) { setError(error.message); setLoading(false); return }
-    const { data: profile } = await supabase.from('profiles').select('role').eq('id', data.user.id).single()
-    if (profile?.role === 'coach') router.push('/coach')
+    const { data: profile, error: profileError } = await supabase.from('profiles').select('role').eq('id', data.user.id).maybeSingle()
+    // A failed/missing profile lookup used to default to '/pitcher' silently, which could
+    // misroute a coach on a transient error. Surface it and let them retry instead.
+    if (profileError || !profile) {
+      setError('Signed in, but could not load your account role. Please try again.')
+      setLoading(false)
+      return
+    }
+    if (profile.role === 'coach') router.push('/coach')
     else router.push('/pitcher')
   }
 

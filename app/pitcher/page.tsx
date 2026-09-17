@@ -11,7 +11,7 @@ import ArmCareSummary from '@/app/components/ArmCareSummary'
 import ThrowingPrinciples from '@/app/components/ThrowingPrinciples'
 import TestVideoLink from '@/app/components/TestVideoLink'
 import { useTestVideos } from '@/lib/testVideos'
-import { parseTime, calcCMJFn } from '@/lib/cmj'
+import { parseTime, calcCMJFn, classifyCMJ } from '@/lib/cmj'
 import { CATEGORY_ORDER, CATEGORY_COLORS } from '@/lib/exerciseCategories'
 import { getRecoveryModifier, computeArmCareFlagStatuses } from '@/lib/armCare'
 import { computeSpeedPowerGuardrail, GROUND_CONTACTS_PER_REP } from '@/lib/speedPowerVolume'
@@ -54,36 +54,8 @@ const GI_OPTIONS = [
   {label:'High (over 70) — white bread, sugary drinks',value:'high',gi:80,glMult:1.5},
 ]
 
-const CMJ_THRESHOLDS = {
-  jumpHeight:{aboveAverage:21,good:18,developing:15},
-  ppKg:{aboveAverage:70,good:62,developing:55},
-  rsi:{aboveAverage:0.86,good:0.64,developing:0.45},
-}
-
-function getTier(val:number,thresholds:{aboveAverage:number,good:number,developing:number}){
-  if (!val) return 'No Data'
-  if (val>=thresholds.aboveAverage) return 'Above Average'
-  if (val>=thresholds.good) return 'Good'
-  if (val>=thresholds.developing) return 'Developing'
-  return 'Limited'
-}
-
-function classifyCMJ(cmj:any){
-  if (!cmj) return {classification:'No Data',jumpTier:'No Data',ppTier:'No Data',rsiTier:'No Data'}
-  const jumpTier=getTier(cmj.jump_height_in,CMJ_THRESHOLDS.jumpHeight)
-  const ppTier=getTier(cmj.peak_power_per_kg,CMJ_THRESHOLDS.ppKg)
-  const rsiTier=getTier(cmj.rsi_mod,CMJ_THRESHOLDS.rsi)
-  const isRateLimited=cmj.rsi_mod<CMJ_THRESHOLDS.rsi.developing&&cmj.peak_power_per_kg>=CMJ_THRESHOLDS.ppKg.good
-  const isMagnitudeLimited=cmj.peak_power_per_kg<CMJ_THRESHOLDS.ppKg.developing&&cmj.rsi_mod>=CMJ_THRESHOLDS.rsi.developing
-  const isBothLimited=cmj.rsi_mod<CMJ_THRESHOLDS.rsi.developing&&cmj.peak_power_per_kg<CMJ_THRESHOLDS.ppKg.developing
-  const isWellDeveloped=cmj.rsi_mod>=CMJ_THRESHOLDS.rsi.good&&cmj.peak_power_per_kg>=CMJ_THRESHOLDS.ppKg.good
-  let classification='Developing'
-  if (isBothLimited) classification='Both Limited'
-  else if (isRateLimited) classification='Rate Limiter'
-  else if (isMagnitudeLimited) classification='Magnitude Limiter'
-  else if (isWellDeveloped) classification='Well Developed'
-  return {classification,jumpTier,ppTier,rsiTier}
-}
+// CMJ_THRESHOLDS / classifyCMJ now live in lib/cmj.ts (imported above) -- previously duplicated
+// byte-for-byte here and in app/coach/page.tsx.
 
 const TIER_COLORS:Record<string,{bg:string,border:string,text:string}> = {
   'Above Average':{bg:'rgba(57,211,83,0.12)',border:'rgba(57,211,83,0.4)',text:'#39d353'},
@@ -193,8 +165,17 @@ export default function PitcherDashboard(){
     const init=async()=>{
       const {data:{user}}=await supabase.auth.getUser()
       if (!user){router.push('/auth/login');return}
-      const {data:prof}=await supabase.from('profiles').select('*').eq('id',user.id).single()
-      if (!prof||prof.role==='coach'){router.push('/coach');return}
+      const {data:prof,error:profError}=await supabase.from('profiles').select('*').eq('id',user.id).maybeSingle()
+      // A failed profile lookup used to be treated identically to "this is actually a coach" --
+      // both sent to /coach. Combined with the coach page's equivalent guard, a transient
+      // failure here could ping-pong a real pitcher between /pitcher and /coach. Sign out and
+      // send to login on a genuine failure; only route to /coach when the role is really coach.
+      if (profError) {
+        console.error('pitcher dashboard: failed to load profile',profError)
+        await supabase.auth.signOut();router.push('/auth/login');return
+      }
+      if (!prof){router.push('/auth/login');return}
+      if (prof.role==='coach'){router.push('/coach');return}
       setProfile(prof)
       const sevenDaysAgo=new Date(Date.now()-7*24*60*60*1000).toISOString().split('T')[0]
       const [progRes,logsRes,cmjRes,foodRes,fuelRes,weekFuelRes,videosRes,armCareRes,customExRes]=await Promise.all([

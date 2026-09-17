@@ -11,15 +11,19 @@ export async function GET(request: Request) {
     if (!error) {
       const { data: { user } } = await supabase.auth.getUser()
       if (user) {
-        const { data: profile } = await supabase
+        const { data: profile, error: profileError } = await supabase
           .from('profiles')
           .select('role')
           .eq('id', user.id)
-          .single()
-        if (profile?.role === 'coach') {
-          return NextResponse.redirect(`${origin}/coach`)
+          .maybeSingle()
+        // A failed/missing profile lookup used to fall through to '/pitcher' unconditionally.
+        // Fall through to the /auth/login redirect at the bottom instead of guessing a role.
+        if (!profileError && profile) {
+          if (profile.role === 'coach') {
+            return NextResponse.redirect(`${origin}/coach`)
+          }
+          return NextResponse.redirect(`${origin}/pitcher`)
         }
-        return NextResponse.redirect(`${origin}/pitcher`)
       }
     }
   }
