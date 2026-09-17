@@ -1012,6 +1012,8 @@ Write next week's program by day and category (Pre-Throwing, Throwing, Post-Thro
           ))}
           <button onClick={()=>router.push('/anatomy')} style={{...S.btn(),background:'transparent',color:C.textMuted,border:'1px solid transparent',fontSize:11,padding:'5px 12px'}}>ANATOMY</button>
           <button onClick={()=>router.push('/social')} style={{...S.btn(),background:'transparent',color:C.textMuted,border:'1px solid transparent',fontSize:11,padding:'5px 12px'}}>SOCIAL</button>
+          {/* /articles is the public, unauthenticated site -- opened in a new tab so it doesn't navigate away from (and drop state on) this dashboard. */}
+          <a href="/articles" target="_blank" rel="noopener noreferrer" style={{...S.btn(),background:'transparent',color:C.textMuted,border:'1px solid transparent',fontSize:11,padding:'5px 12px',textDecoration:'none',display:'inline-block'}}>PUBLIC SITE</a>
           <button onClick={signOut} style={{...S.btn(),fontSize:11,padding:'5px 12px',color:C.textMuted}}>Sign Out</button>
         </div>
       </header>
