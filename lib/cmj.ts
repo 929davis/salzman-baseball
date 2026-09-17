@@ -36,3 +36,44 @@ export const calcCMJFn=({startTime,takeoffTime,landingTime,massKg}:{startTime:nu
   const ev=18.684+(0.9543*ppkg)+(93.1773*rsi)+(-1.3367*ei)
   return{flightTime:ft,jumpHeightIn:jhi,rsiMod:rsi,peakPowerPerKg:ppkg,takeoffVelocity:tv,explosiveIndex:ei,estimatedVelocity:ev}
 }
+
+// ---------------------------------------------------------------------------
+// CMJ classification -- previously duplicated byte-for-byte in app/coach/page.tsx:73-98 and
+// app/pitcher/page.tsx:57-86 (two copies of the same thresholds and logic, kept in sync by
+// hand). Consolidated here as the one implementation; both pages import it.
+// ---------------------------------------------------------------------------
+
+export type CMJTierThresholds = { aboveAverage:number, good:number, developing:number }
+
+export const CMJ_THRESHOLDS: { jumpHeight:CMJTierThresholds, ppKg:CMJTierThresholds, rsi:CMJTierThresholds } = {
+  jumpHeight:{ aboveAverage:21, good:18, developing:15 },
+  ppKg:{ aboveAverage:70, good:62, developing:55 },
+  rsi:{ aboveAverage:0.86, good:0.64, developing:0.45 },
+}
+
+export function getTier(val:number, thresholds:CMJTierThresholds):string {
+  if (!val) return 'No Data'
+  if (val>=thresholds.aboveAverage) return 'Above Average'
+  if (val>=thresholds.good) return 'Good'
+  if (val>=thresholds.developing) return 'Developing'
+  return 'Limited'
+}
+
+export type CMJClassification = { classification:string, jumpTier:string, ppTier:string, rsiTier:string }
+
+export function classifyCMJ(cmj:any): CMJClassification {
+  if (!cmj) return {classification:'No Data',jumpTier:'No Data',ppTier:'No Data',rsiTier:'No Data'}
+  const jumpTier=getTier(cmj.jump_height_in,CMJ_THRESHOLDS.jumpHeight)
+  const ppTier=getTier(cmj.peak_power_per_kg,CMJ_THRESHOLDS.ppKg)
+  const rsiTier=getTier(cmj.rsi_mod,CMJ_THRESHOLDS.rsi)
+  const isRateLimited=cmj.rsi_mod<CMJ_THRESHOLDS.rsi.developing&&cmj.peak_power_per_kg>=CMJ_THRESHOLDS.ppKg.good
+  const isMagnitudeLimited=cmj.peak_power_per_kg<CMJ_THRESHOLDS.ppKg.developing&&cmj.rsi_mod>=CMJ_THRESHOLDS.rsi.developing
+  const isBothLimited=cmj.rsi_mod<CMJ_THRESHOLDS.rsi.developing&&cmj.peak_power_per_kg<CMJ_THRESHOLDS.ppKg.developing
+  const isWellDeveloped=cmj.rsi_mod>=CMJ_THRESHOLDS.rsi.good&&cmj.peak_power_per_kg>=CMJ_THRESHOLDS.ppKg.good
+  let classification='Developing'
+  if (isBothLimited) classification='Both Limited'
+  else if (isRateLimited) classification='Rate Limiter'
+  else if (isMagnitudeLimited) classification='Magnitude Limiter'
+  else if (isWellDeveloped) classification='Well Developed'
+  return {classification,jumpTier,ppTier,rsiTier}
+}
