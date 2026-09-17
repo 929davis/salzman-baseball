@@ -653,9 +653,10 @@ async function main() {
   console.log('\nUploading to Supabase...')
   await upsert(supabase, 'bs_joint', joint, 'p_throws,bats,pitch_type_group,count_bucket,outs_when_up,base_state')
   await upsert(supabase, 'bs_pitch_marginal', pitchMarginal, 'p_throws,bats,pitch_type_group,count_bucket')
-  await upsert(supabase, 'bs_re_marginal', reMarginal, 'outs_when_up,base_state,count_bucket')
-  await upsert(supabase, 'bs_re24_split', re24.split, 'p_throws,bats,outs_when_up,base_state')
-  await upsert(supabase, 'bs_re24_base', re24.base, 'outs_when_up,base_state')
+  // bs_re_marginal / bs_re24_split / bs_re24_base upserts removed -- those tables were never
+  // read by any app component and have been dropped (see sql/drop_dead_tables.sql). reMarginal
+  // and re24 are still computed above and printed under --dry-run; nothing here deletes that
+  // computation, only the now-pointless writes.
   await upsert(supabase, 'bs_count_leverage', countLeverage, 'count_bucket')
   await upsert(supabase, 'bs_zone_sample', zoneSample, 'p_throws,bats,pitch_type_group,count_bucket,outcome')
   await upsert(supabase, 'bs_ev_buckets', evBuckets, 'ev_bucket')

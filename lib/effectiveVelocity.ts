@@ -137,7 +137,7 @@ export type EvPrincipleStat = {
   n: number
   // Note on sign: delta_run_exp is from the BATTING team's perspective (positive = good for
   // the batter) — so a LOWER runValue is the better outcome for the pitcher, same convention
-  // used throughout the rest of this tool (bs_re_marginal, bs_count_leverage, etc).
+  // used throughout the rest of this tool (bs_count_leverage, bs_joint, etc).
   whiffRate: WilsonResult | null
   hardHitRate: WilsonResult | null  // among balls in play only
   barrelRate: WilsonResult | null   // among balls in play only
