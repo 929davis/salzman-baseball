@@ -202,42 +202,6 @@ export function computeWorkloadArmHealthCallout(
   }
 }
 
-// Effort-to-torque multipliers, derived from motion-capture research (Fleisig, Melugin,
-// Slenker) showing elbow/shoulder torque drops much less than perceived effort suggests —
-// e.g. 80% perceived effort still produces ~90% of max torque. Not linear with effort %.
-export const EFFORT_MULTIPLIERS: Record<string, number> = {
-  '80-90': 0.92,
-  '90-95': 0.97,
-  '95+': 1.0,
-}
-
-// Mound vs. flat-ground multiplier. Best-supported figure (~6%) comes from an adolescent
-// population (Nissen et al.) — collegiate-level studies found smaller/no significant
-// difference, and long-toss at distance can match or exceed mound loads. Treated here as
-// an upper-bound estimate, not a precisely validated figure for this roster's age group.
-export const SURFACE_MULTIPLIERS: Record<string, number> = {
-  mound: 1.06,
-  flat: 1.0,
-}
-
-// Currently unused (its only caller, the removed foot-pounds calcArmCare, is gone) -- kept
-// because the effort/surface weighting itself is still real and citation-backed, in case a
-// future "effective weekly workload" display wants it. Not wired into any UI right now.
-export const getEffectiveThrowCount = (selected: any, throwEntries: any[]) => {
-  if (throwEntries && throwEntries.length > 0) {
-    return throwEntries.reduce((sum, entry) => {
-      const effortMult = EFFORT_MULTIPLIERS[entry.effort_tier] ?? 1
-      const surfaceMult = SURFACE_MULTIPLIERS[entry.surface] ?? 1
-      return sum + (entry.weekly_count * effortMult * surfaceMult)
-    }, 0)
-  }
-  // Fallback for pitchers without any entries yet
-  const raw = selected?.weekly_pitches || selected?.weekly_high_effort || 0
-  const effortMult = EFFORT_MULTIPLIERS[selected?.effort_tier] ?? 1
-  const surfaceMult = SURFACE_MULTIPLIERS[selected?.throw_surface] ?? 1
-  return raw * effortMult * surfaceMult
-}
-
 // Most recent recovery_check compared against most recent baseline_max — defaults to
 // no penalty (1.0) if either is missing, per recoveryModifierFromScore's own fallback.
 export const getRecoveryModifier = (tests:any[]) => {
