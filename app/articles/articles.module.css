@@ -1,0 +1,298 @@
+/* Scouting-report / stat-sheet register: paper background, ruled dividers, zero radius,
+   no shadows. Six colors, each with exactly one job -- see lib/articles.ts for where the
+   category colors are assigned. */
+.shell {
+  --bg: #f2f3f1;
+  --ink: #14161a;
+  --navy: #1e3a5f;
+  --red: #a6352c;
+  --gold: #8a6414;
+  --slate: #6b7280;
+  --rule: #d7d9d5;
+
+  background: var(--bg);
+  color: var(--ink);
+  min-height: 100vh;
+}
+
+.topbar {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  max-width: 760px;
+  margin: 0 auto;
+  padding: 28px 20px 0;
+}
+
+.wordmark {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--slate);
+  text-decoration: none;
+}
+.wordmark:hover { color: var(--ink); }
+
+.container {
+  max-width: 760px;
+  margin: 0 auto;
+  padding: 20px 20px 80px;
+}
+
+/* ---------- Index page ---------- */
+
+.indexHeader {
+  border-bottom: 1px solid var(--rule);
+  padding-bottom: 20px;
+  margin-bottom: 8px;
+}
+
+.indexTitle {
+  font-family: var(--font-sans);
+  font-size: 34px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  margin: 8px 0 8px;
+}
+
+.indexDek {
+  font-family: var(--font-sans);
+  font-size: 15px;
+  color: var(--slate);
+  max-width: 60ch;
+  line-height: 1.55;
+}
+
+.filterRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 20px 0 4px;
+}
+
+.filterBtn {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  border: 1px solid var(--rule);
+  background: transparent;
+  color: var(--slate);
+  padding: 5px 10px;
+  cursor: pointer;
+  line-height: 1;
+}
+.filterBtn:hover:not(.filterBtnActive) { border-color: var(--ink); color: var(--ink); }
+.filterBtnActive {
+  border-color: var(--tag-color, var(--ink));
+  color: var(--tag-color, var(--ink));
+  background: color-mix(in srgb, var(--tag-color, var(--ink)) 8%, transparent);
+}
+
+.list {
+  list-style: none;
+  margin: 12px 0 0;
+  padding: 0;
+}
+
+.row {
+  display: grid;
+  grid-template-columns: 78px 1fr auto;
+  gap: 16px;
+  align-items: start;
+  padding: 18px 0;
+  border-bottom: 1px solid var(--rule);
+  text-decoration: none;
+  color: inherit;
+}
+
+.rowTag {
+  padding-top: 3px;
+}
+
+.rowTitle {
+  font-family: var(--font-sans);
+  font-size: 18px;
+  font-weight: 700;
+  margin: 0 0 4px;
+  line-height: 1.3;
+}
+.row:hover .rowTitle { text-decoration: underline; text-decoration-color: var(--rule); text-underline-offset: 3px; }
+
+.rowDek {
+  font-family: var(--font-sans);
+  font-size: 14px;
+  color: var(--slate);
+  line-height: 1.5;
+  margin: 0;
+}
+
+.rowMeta {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--slate);
+  white-space: nowrap;
+  text-align: right;
+  padding-top: 3px;
+}
+
+.empty {
+  font-family: var(--font-mono);
+  font-size: 13px;
+  color: var(--slate);
+  padding: 24px 0;
+}
+
+/* ---------- Category tag (shared) ---------- */
+
+.tag {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--tag-color, var(--ink));
+  border: 1px solid var(--tag-color, var(--ink));
+  padding: 2px 6px;
+  display: inline-block;
+  line-height: 1.4;
+  white-space: nowrap;
+}
+
+/* ---------- Article page ---------- */
+
+.articleHeader {
+  border-bottom: 1px solid var(--rule);
+  padding-bottom: 24px;
+  margin-bottom: 32px;
+}
+
+.metaLine {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--slate);
+  margin-bottom: 16px;
+}
+
+.title {
+  font-family: var(--font-sans);
+  font-size: 38px;
+  font-weight: 700;
+  line-height: 1.15;
+  letter-spacing: -0.01em;
+  margin: 0 0 14px;
+}
+
+.dek {
+  font-family: var(--font-sans);
+  font-size: 18px;
+  color: var(--slate);
+  line-height: 1.5;
+  max-width: 62ch;
+  margin: 0;
+}
+
+.body {
+  font-family: var(--font-sans);
+  font-size: 18px;
+  line-height: 1.7;
+  color: var(--ink);
+  max-width: 68ch;
+}
+
+.body p { margin: 0 0 22px; }
+
+.body h2 {
+  font-family: var(--font-sans);
+  font-size: 24px;
+  font-weight: 700;
+  border-top: 1px solid var(--rule);
+  padding-top: 20px;
+  margin: 40px 0 18px;
+}
+
+.body h3 {
+  font-family: var(--font-sans);
+  font-size: 19px;
+  font-weight: 700;
+  margin: 32px 0 12px;
+}
+
+.body ul, .body ol {
+  margin: 0 0 22px;
+  padding-left: 22px;
+}
+.body li { margin-bottom: 8px; }
+
+.body a { color: var(--navy); text-decoration: underline; text-underline-offset: 2px; }
+.body a:hover { color: var(--ink); }
+
+.body strong { font-weight: 700; }
+
+.body code {
+  font-family: var(--font-mono);
+  font-size: 0.85em;
+  background: color-mix(in srgb, var(--ink) 6%, transparent);
+  padding: 1px 5px;
+}
+
+/* Blockquote repurposed as the stat-callout / key-finding box -- the one place a pull-quote
+   convention earns its keep on a data-driven post: a boxed number or finding, not a decorative
+   quote mark. Left rule color follows the article's category via --article-accent, set inline
+   on .body in the page component. */
+.body blockquote {
+  margin: 28px 0;
+  padding: 14px 20px;
+  border-left: 4px solid var(--article-accent, var(--navy));
+  background: color-mix(in srgb, var(--article-accent, var(--navy)) 6%, transparent);
+  font-style: italic;
+  color: var(--ink);
+}
+.body blockquote p { margin: 0; }
+.body blockquote p + p { margin-top: 10px; }
+
+.body table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 8px 0 28px;
+  font-size: 15px;
+}
+.body th {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  text-align: right;
+  color: var(--slate);
+  border-bottom: 2px solid var(--ink);
+  padding: 6px 10px;
+}
+.body th:first-child { text-align: left; }
+.body td {
+  font-family: var(--font-mono);
+  text-align: right;
+  border-bottom: 1px solid var(--rule);
+  padding: 8px 10px;
+}
+.body td:first-child { font-family: var(--font-sans); text-align: left; }
+
+.footer {
+  border-top: 1px solid var(--rule);
+  margin-top: 48px;
+  padding-top: 20px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.backLink {
+  font-family: var(--font-mono);
+  font-size: 13px;
+  color: var(--navy);
+  text-decoration: none;
+}
+.backLink:hover { text-decoration: underline; }
+
+@media (max-width: 560px) {
+  .row { grid-template-columns: 1fr; gap: 6px; }
+  .rowMeta { text-align: left; }
+  .title { font-size: 28px; }
+  .body { font-size: 16px; }
+  .body table { display: block; overflow-x: auto; }
+}

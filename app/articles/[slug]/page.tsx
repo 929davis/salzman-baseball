@@ -1,7 +1,11 @@
 import { notFound } from 'next/navigation'
+import Link from 'next/link'
 import { marked } from 'marked'
 import type { Metadata } from 'next'
 import { getAllArticleSlugs, getArticleBySlug } from '@/lib/articles'
+import { ARTICLE_CATEGORIES, formatArticleDate } from '@/lib/articleCategories'
+import CategoryTag from '../CategoryTag'
+import styles from '../articles.module.css'
 
 const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || 'http://localhost:3000'
 
@@ -28,17 +32,31 @@ export default async function ArticlePage({ params }: Props) {
   if (!article) notFound()
 
   const html = await marked.parse(article.content)
+  const accent = ARTICLE_CATEGORIES[article.category].color
 
   return (
-    <main style={{ maxWidth: 720, margin: '0 auto', padding: '48px 20px', fontFamily: 'system-ui' }}>
-      <h1 style={{ fontSize: 32, fontWeight: 700, marginBottom: 8 }}>{article.title}</h1>
-      <div style={{ fontSize: 13, color: '#888', marginBottom: 32 }}>
-        {new Date(article.date).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })}
+    <main className={styles.container}>
+      <div className={styles.articleHeader}>
+        <div className={styles.metaLine}>
+          <CategoryTag category={article.category} />
+          <span>{formatArticleDate(article.date)}</span>
+          <span>·</span>
+          <span>{article.readTimeMinutes} MIN READ</span>
+        </div>
+        <h1 className={styles.title}>{article.title}</h1>
+        <p className={styles.dek}>{article.description}</p>
       </div>
+
       <article
-        style={{ fontSize: 16, lineHeight: 1.7, color: '#222' }}
+        className={styles.body}
+        style={{ ['--article-accent' as string]: accent }}
         dangerouslySetInnerHTML={{ __html: html }}
       />
+
+      <div className={styles.footer}>
+        <Link href="/articles" className={styles.backLink}>All articles</Link>
+        <CategoryTag category={article.category} />
+      </div>
     </main>
   )
 }

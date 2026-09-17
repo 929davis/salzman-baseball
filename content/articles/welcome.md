@@ -1,10 +1,20 @@
 ---
-title: Welcome to the Blog
-description: An introduction to the new articles section on Salzman Baseball.
+title: What This Section Is For
+description: Data-driven breakdowns, not hot takes dressed up as analysis. Here's the beat.
 date: 2026-09-17
 slug: welcome
+category: takes
 ---
 
-This is the first post in the new **Articles** section.
+Most pitching content on the internet is built to be shared, not to be checked. A claim gets made, it sounds right, it gets 40,000 views, and nobody ever goes back to see whether the underlying number held up.
 
-Posts live as Markdown files in `content/articles/[slug].md` with frontmatter for the title, description, and date. No database, no auth — just files.
+This section runs the other way. Four beats:
+
+- **[DATA]** — Statcast pulls, run with actual query logic shown, not just a chart with a caption.
+- **[MECH]** — mechanics breakdowns grounded in what the cameras and the sensors actually show, not what a drill cue implies.
+- **[BIO]** — biomechanics research, translated without flattening the uncertainty out of it.
+- **[TAKES]** — contrarian positions on mainstream coaching, argued from evidence, not vibes.
+
+> If a piece here makes a claim it can't support with a number or a citation, that's a bug. Tell us.
+
+Filter by beat above. Newest first, no algorithm involved.
