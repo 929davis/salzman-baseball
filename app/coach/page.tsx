@@ -7,6 +7,8 @@ import PitchingIQTab from '@/app/components/PitchingIQTab'
 import AthleticBenchmarks from '@/app/components/AthleticBenchmarks'
 import PitchMechanics2D from '@/app/components/PitchMechanics2D'
 import ProgressOverview from '@/app/components/ProgressOverview'
+import AthleteStatePanel from '@/app/components/AthleteStatePanel'
+import ThrowLogPanel from '@/app/components/ThrowLogPanel'
 import MiniSparkline from '@/app/components/MiniSparkline'
 import TestVideoLink from '@/app/components/TestVideoLink'
 import { useTestVideos } from '@/lib/testVideos'
@@ -18,7 +20,10 @@ import {
 } from '@/lib/armCare'
 import { restDaysRequired, daysUntilClearToThrow, DAILY_MAX_PITCHES, PITCH_SMART_NOTES } from '@/lib/pitchSmart'
 import { THROWERS_TEN, THROWERS_TEN_SETS, THROWERS_TEN_REPS } from '@/lib/throwersTen'
-import { parseTime, calcCMJFn } from '@/lib/cmj'
+import { selectPrinciplesSections, formatPrinciplesForPrompt, summarizePrinciplesSelection, PRINCIPLES_PROMPT_CHAR_BUDGET, type PrinciplesSection } from '@/lib/principlesSections'
+import { checkDeprecated, checkEquipmentTier, checkGateRequirement, checkThrowingIntent, checkCNSAdjacency, computeAthleteConstraints, renderAthleteConstraintsBlock, type EngineAthleteState, type EngineExercise, type EngineSlot } from '@/lib/engine'
+import PrinciplesSectionsEditor from '@/app/components/PrinciplesSectionsEditor'
+import { parseTime, calcCMJFn, classifyCMJ } from '@/lib/cmj'
 import { CATEGORY_ORDER, CATEGORY_COLORS } from '@/lib/exerciseCategories'
 import { computeSpeedPowerGuardrail } from '@/lib/speedPowerVolume'
 
@@ -51,6 +56,16 @@ const CNS_COLORS:Record<string,{bg:string,border:string,text:string,dot:string}>
 
 const DAYS = ['Monday','Tuesday','Wednesday','Thursday','Friday','Saturday','Sunday']
 
+// Renders a program entry's prescription for both display and re-export (Copy Week). Most
+// entries are "SxR @ Load%" (sets, reps, optional %1RM or throwing-intent load); a bare-count
+// throwing entry ("35 @ I4", see parseAndImportProgram) has no sets/reps at all -- ex.count is
+// set instead, and this is the one place both shapes get rendered consistently rather than
+// each call site assuming every entry has sets/reps.
+const formatPrescription=(ex:{sets?:number|null,reps?:number|null,count?:number|null,load?:string|null,intent_level?:string|null})=>{
+  if(ex.count!=null) return `${ex.count}${ex.intent_level?` @ ${ex.intent_level}`:''}`
+  return `${ex.sets}x${ex.reps}${ex.load?` @ ${ex.load}%`:''}`
+}
+
 const serializeWeek=(structured:any)=>{
   const blocks:string[]=[]
   for(const day of DAYS){
@@ -59,8 +74,7 @@ const serializeWeek=(structured:any)=>{
       const key=`${day}___${cat.key}`
       const items=structured[key]||[]
       for(const ex of items){
-        const loadStr=ex.load?` @${ex.load}%`:''
-        dayLines.push(`${cat.key} | ${ex.name} | ${ex.sets}x${ex.reps}${loadStr}`)
+        dayLines.push(`${cat.key} | ${ex.name} | ${formatPrescription(ex)}`)
       }
     }
     if(dayLines.length>0){
@@ -70,35 +84,8 @@ const serializeWeek=(structured:any)=>{
   return blocks.join('\n\n')
 }
 
-const CMJ_THRESHOLDS = {
-  jumpHeight:{ aboveAverage:21, good:18, developing:15 },
-  ppKg:{ aboveAverage:70, good:62, developing:55 },
-  rsi:{ aboveAverage:0.86, good:0.64, developing:0.45 },
-}
-
-function classifyCMJ(cmj:any):{classification:string,jumpTier:string,ppTier:string,rsiTier:string}{
-  if (!cmj) return {classification:'No Data',jumpTier:'No Data',ppTier:'No Data',rsiTier:'No Data'}
-  const getTier=(val:number,thresholds:{aboveAverage:number,good:number,developing:number})=>{
-    if (!val) return 'No Data'
-    if (val>=thresholds.aboveAverage) return 'Above Average'
-    if (val>=thresholds.good) return 'Good'
-    if (val>=thresholds.developing) return 'Developing'
-    return 'Limited'
-  }
-  const jumpTier=getTier(cmj.jump_height_in,CMJ_THRESHOLDS.jumpHeight)
-  const ppTier=getTier(cmj.peak_power_per_kg,CMJ_THRESHOLDS.ppKg)
-  const rsiTier=getTier(cmj.rsi_mod,CMJ_THRESHOLDS.rsi)
-  const isRateLimited=cmj.rsi_mod<CMJ_THRESHOLDS.rsi.developing&&cmj.peak_power_per_kg>=CMJ_THRESHOLDS.ppKg.good
-  const isMagnitudeLimited=cmj.peak_power_per_kg<CMJ_THRESHOLDS.ppKg.developing&&cmj.rsi_mod>=CMJ_THRESHOLDS.rsi.developing
-  const isBothLimited=cmj.rsi_mod<CMJ_THRESHOLDS.rsi.developing&&cmj.peak_power_per_kg<CMJ_THRESHOLDS.ppKg.developing
-  const isWellDeveloped=cmj.rsi_mod>=CMJ_THRESHOLDS.rsi.good&&cmj.peak_power_per_kg>=CMJ_THRESHOLDS.ppKg.good
-  let classification='Developing'
-  if (isBothLimited) classification='Both Limited'
-  else if (isRateLimited) classification='Rate Limiter'
-  else if (isMagnitudeLimited) classification='Magnitude Limiter'
-  else if (isWellDeveloped) classification='Well Developed'
-  return {classification,jumpTier,ppTier,rsiTier}
-}
+// CMJ_THRESHOLDS / classifyCMJ now live in lib/cmj.ts (imported above) -- previously duplicated
+// byte-for-byte here and in app/pitcher/page.tsx.
 
 const TIER_COLORS:Record<string,{bg:string,border:string,text:string}> = {
   'Above Average':{bg:'rgba(57,211,83,0.12)',border:'rgba(57,211,83,0.4)',text:'#39d353'},
@@ -138,82 +125,127 @@ function scoreColor(score:number){
 }
 
 const BUILT_IN_EXERCISES = [
-  {id:'ex_001',name:'Barbell Back Squat',pattern:'Squat',category:'Main Exercises',cns:'High',description:'Stand with bar on upper traps, feet shoulder-width. Brace core, push knees out, descend until thighs parallel or below.'},
-  {id:'ex_002',name:'Goblet Squat',pattern:'Squat',category:'Accessory',cns:'Moderate',description:'Hold KB at chest, feet slightly wider than shoulder-width. Squat deep, elbows track inside knees.'},
-  {id:'ex_003',name:'Rear Foot Elevated Split Squat',pattern:'Lunge',category:'Main Exercises',cns:'Moderate',description:'Rear foot elevated on bench, front foot far enough forward so shin stays vertical.'},
-  {id:'ex_004',name:'Lateral Lunge',pattern:'Lunge',category:'Accessory',cns:'Moderate',description:'Step wide to one side, push hips back and sit into the stepping leg.'},
-  {id:'ex_005',name:'Barbell Conventional Deadlift',pattern:'Hinge',category:'Main Exercises',cns:'High',description:'Bar over mid-foot, hip-width stance. Hinge to grip, set back flat, drive floor away.'},
-  {id:'ex_006',name:'Romanian Deadlift',pattern:'Hinge',category:'Main Exercises',cns:'Moderate',description:'Soft knee bend, push hips straight back maintaining flat back. Bar stays close.'},
-  {id:'ex_007',name:'Single Leg RDL',pattern:'Hinge',category:'Accessory',cns:'Moderate',description:'Hinge on one leg, rear leg floats back as counterbalance.'},
-  {id:'ex_008',name:'Sumo Deadlift',pattern:'Hinge',category:'Main Exercises',cns:'High',description:'Wide stance deadlift emphasizing inner thigh and hip strength.'},
-  {id:'ex_009',name:'Trap Bar Deadlift',pattern:'Hinge',category:'Main Exercises',cns:'High',description:'Stand in center of trap bar. More upright than conventional, easier to learn.'},
-  {id:'ex_010',name:'Kettlebell Swing',pattern:'Hinge',category:'Speed/Power',cns:'High',description:'Ballistic hip hinge. Bell driven by hips not arms.'},
-  {id:'ex_011',name:'Barbell Bench Press',pattern:'Horizontal Push',category:'Main Exercises',cns:'High',description:'Lie flat, grip slightly wider than shoulder-width. Lower bar to lower chest.'},
-  {id:'ex_012',name:'1-Arm DB Bench Press',pattern:'Horizontal Push',category:'Accessory',cns:'Moderate',description:'Unilateral pressing that challenges rotational stability.'},
-  {id:'ex_013',name:'Landmine Press',pattern:'Horizontal Push',category:'Accessory',cns:'Moderate',description:'Shoulder-friendly pressing variation with a natural arc.'},
-  {id:'ex_014',name:'Incline Dumbbell Press',pattern:'Horizontal Push',category:'Accessory',cns:'Moderate',description:'Set bench to 30-45 degrees. Elbows at 45 degrees.'},
-  {id:'ex_015',name:'Push-Up',pattern:'Horizontal Push',category:'Accessory',cns:'Low',description:'Hands slightly wider than shoulders, body in one rigid plank.'},
-  {id:'ex_016',name:'Barbell Row',pattern:'Horizontal Pull',category:'Main Exercises',cns:'High',description:'Hinge to roughly 45 degrees. Pull bar to lower sternum, lead with elbows.'},
-  {id:'ex_017',name:'Pendlay Row',pattern:'Horizontal Pull',category:'Main Exercises',cns:'High',description:'Strict horizontal row from the floor each rep.'},
-  {id:'ex_018',name:'Single Arm DB Row',pattern:'Horizontal Pull',category:'Accessory',cns:'Moderate',description:'Supported unilateral row. Pull DB to hip, lead with elbow.'},
-  {id:'ex_019',name:'Pull-Up',pattern:'Vertical Pull',category:'Main Exercises',cns:'Moderate',description:'Dead hang start. Pull until chin clears bar.'},
-  {id:'ex_020',name:'Lat Pulldown',pattern:'Vertical Pull',category:'Accessory',cns:'Low',description:'Slight lean back, pull bar to upper chest.'},
-  {id:'ex_021',name:'DB Shoulder Press',pattern:'Vertical Push',category:'Main Exercises',cns:'Moderate',description:'Press dumbbells from shoulder height to full lockout overhead.'},
-  {id:'ex_022',name:'Power Clean',pattern:'Hinge',category:'Main Exercises',cns:'High',description:'Pull bar from floor, triple extend, catch in front rack.'},
-  {id:'ex_023',name:'Hang Clean',pattern:'Hinge',category:'Main Exercises',cns:'High',description:'Power clean starting from hang position at mid-thigh.'},
-  {id:'ex_024',name:'Med Ball Scoop Toss',pattern:'Rotation',category:'Speed/Power',cns:'High',description:'Load into back hip, drive hips through, scoop ball upward and forward.'},
-  {id:'ex_025',name:'Med Ball Rotational Chest Pass',pattern:'Rotation',category:'Speed/Power',cns:'High',description:'Explosive rotational throw from parallel stance into wall.'},
-  {id:'ex_026',name:'Med Ball Overhead Slam',pattern:'Rotation',category:'Speed/Power',cns:'High',description:'Reach overhead then slam into ground using entire body.'},
-  {id:'ex_027',name:'Med Ball Side Slam',pattern:'Rotation',category:'Speed/Power',cns:'High',description:'Lateral rotational slam training same pattern as pitching.'},
-  {id:'ex_028',name:'Landmine Rotational Press',pattern:'Rotation',category:'Speed/Power',cns:'Moderate',description:'Rotational pressing from parallel stance.'},
-  {id:'ex_029',name:'Broad Jump',pattern:'Locomotion',category:'Speed/Power',cns:'High',description:'Horizontal plyometric training explosive hip extension.'},
-  {id:'ex_030',name:'Triple Broad Jump',pattern:'Locomotion',category:'Speed/Power',cns:'High',description:'Three consecutive broad jumps for maximum distance.'},
-  {id:'ex_031',name:'Depth Jump',pattern:'Locomotion',category:'Speed/Power',cns:'High',description:'Step off box, land and immediately jump as high as possible.'},
-  {id:'ex_032',name:'Lateral Bound',pattern:'Locomotion',category:'Speed/Power',cns:'High',description:'Jump from one foot to the other laterally.'},
-  {id:'ex_033',name:'Skater Jump',pattern:'Locomotion',category:'Speed/Power',cns:'High',description:'Continuous lateral bounds with brief hold on each landing.'},
-  {id:'ex_034',name:'Pogo Hops',pattern:'Locomotion',category:'Speed/Power',cns:'High',description:'Rapid low-amplitude bilateral hops. Minimal knee bend.'},
-  {id:'ex_035',name:'30-Yard Sprint',pattern:'Locomotion',category:'Speed/Power',cns:'High',description:'Short acceleration sprint. Drive phase first 10 yards.'},
-  {id:'ex_036',name:'Dead Bug',pattern:'Core',category:'Accessory',cns:'Low',description:'Lie on back, arms up, knees at 90 degrees. Extend opposite arm and leg.'},
-  {id:'ex_037',name:'Plank',pattern:'Core',category:'Accessory',cns:'Low',description:'Static anti-extension hold. Body in one rigid line.'},
-  {id:'ex_038',name:'Side Plank',pattern:'Core',category:'Accessory',cns:'Low',description:'Lateral anti-flexion hold.'},
-  {id:'ex_039',name:'Ab Wheel Rollout',pattern:'Core',category:'Accessory',cns:'Low',description:'Dynamic anti-extension. Roll forward until fully extended, pull back using lats and abs.'},
-  {id:'ex_040',name:'Half-Kneeling Pallof Press',pattern:'Anti-Rotation',category:'Accessory',cns:'Low',description:'Anti-rotation press from split stance.'},
-  {id:'ex_041',name:'Copenhagen Plank',pattern:'Anti-Rotation',category:'Accessory',cns:'Low',description:'Side plank with top leg elevated on bench.'},
-  {id:'ex_042',name:'Bear Crawl',pattern:'Locomotion',category:'Pre-Throwing',cns:'Low',description:'Contralateral crawling. Knees hover 1 inch off floor.'},
-  {id:'ex_043',name:'Lateral Ape Crawl',pattern:'Locomotion',category:'Pre-Throwing',cns:'Low',description:'Lateral crawling developing frontal plane stability.'},
-  {id:'ex_044',name:'Spiderman Crawl',pattern:'Locomotion',category:'Pre-Throwing',cns:'Low',description:'Forward crawl where knee drives to outside elbow with each step.'},
-  {id:'ex_045',name:'Crab Walk',pattern:'Locomotion',category:'Pre-Throwing',cns:'Low',description:'Posterior movement with hands and feet on floor, hips lifted.'},
-  {id:'ex_046',name:'Band Pull-Apart',pattern:'Arm Care',category:'Pre-Throwing',cns:'Low',description:'Hold band at shoulder width, pull apart to chest while squeezing shoulder blades.'},
-  {id:'ex_047',name:'Face Pull',pattern:'Arm Care',category:'Pre-Throwing',cns:'Low',description:'Pull rope to face while rotating elbows up and out.'},
-  {id:'ex_048',name:'External Rotation at 90',pattern:'Arm Care',category:'Post-Throwing',cns:'Low',description:'Isolated rotator cuff with arm abducted to 90 degrees.'},
-  {id:'ex_049',name:'Dumbbell Hammer Curl',pattern:'Arm Care',category:'Post-Throwing',cns:'Low',description:'Neutral grip curl targeting brachialis.'},
-  {id:'ex_050',name:'Dumbbell Pronation',pattern:'Arm Care',category:'Post-Throwing',cns:'Low',description:'Offset grip. Forearm supported. Rotate from supinated to fully pronated.'},
-  {id:'ex_051',name:'Dumbbell Supination',pattern:'Arm Care',category:'Post-Throwing',cns:'Low',description:'Offset grip. Rotate from pronated to fully supinated.'},
-  {id:'ex_052',name:'Dumbbell Wrist Extension',pattern:'Arm Care',category:'Post-Throwing',cns:'Low',description:'Forearm supported, palm down. Raise wrist into extension.'},
-  {id:'ex_053',name:'2-to-1 Eccentric Hammer Curl',pattern:'Arm Care',category:'Post-Throwing',cns:'Low',description:'Both hands up, one hand down over 4-5 seconds.'},
-  {id:'ex_054',name:'2-to-1 Eccentric Rear Delt Fly',pattern:'Arm Care',category:'Post-Throwing',cns:'Low',description:'Both arms raise, one arm lowers over 4-5 seconds.'},
-  {id:'ex_055',name:'Rear Delt Fly',pattern:'Arm Care',category:'Post-Throwing',cns:'Low',description:'Hinge forward, raise arms to sides leading with pinkies.'},
-  {id:'ex_056',name:'Prone Y-T-W',pattern:'Arm Care',category:'Post-Throwing',cns:'Low',description:'Lying face down, arms form Y T and W positions lifting against gravity.'},
-  {id:'ex_057',name:'Scapular Wall Slide',pattern:'Arm Care',category:'Pre-Throwing',cns:'Low',description:'Back against wall, slide arms overhead maintaining contact.'},
-  {id:'ex_058',name:'Sleeper Stretch',pattern:'Mobility',category:'Recovery',cns:'Low',description:'Lie on throwing-arm side, use free hand to gently push forearm toward floor.'},
-  {id:'ex_059',name:'Hip 90/90 Stretch',pattern:'Mobility',category:'Recovery',cns:'Low',description:'Sit with both legs at 90 degree angles. Transition between sides.'},
-  {id:'ex_060',name:'Thoracic Spine Rotation',pattern:'Mobility',category:'Recovery',cns:'Low',description:'Improve thoracic rotation in quadruped seated or lying positions.'},
-  {id:'ex_061',name:'Worlds Greatest Stretch',pattern:'Mobility',category:'Pre-Throwing',cns:'Low',description:'Multi-joint stretch combining hip flexor thoracic rotation and ankle mobility.'},
-  {id:'td_001',name:'Two Knee Throw',pattern:'Throwing',category:'Throwing',cns:'Low',description:'Kneel on both knees. Throw using only trunk rotation and arm action.'},
-  {id:'td_002',name:'One Knee Throw',pattern:'Throwing',category:'Throwing',cns:'Low',description:'Throwing-side knee down, glove-side foot forward.'},
-  {id:'td_003',name:'Rocker Drill',pattern:'Throwing',category:'Throwing',cns:'Moderate',description:'Split stance. Rock weight back to front rhythmically.'},
-  {id:'td_004',name:'Hover Throw',pattern:'Throwing',category:'Throwing',cns:'Moderate',description:'Balance on pivot foot with lead leg lifted. Hold 1-2 seconds then throw.'},
-  {id:'td_005',name:'Split Stance Throw',pattern:'Throwing',category:'Throwing',cns:'Moderate',description:'Lead foot already planted at stride width. Throw from fixed position.'},
-  {id:'td_006',name:'Walk Away Throw',pattern:'Throwing',category:'Throwing',cns:'Moderate',description:'Walk away from target, pivot and throw in one fluid motion.'},
-  {id:'td_007',name:'Toss Up Throw',pattern:'Throwing',category:'Throwing',cns:'Moderate',description:'Toss ball slightly upward and catch in throwing hand as arm begins action.'},
-  {id:'td_008',name:'Forward Hop Throw',pattern:'Throwing',category:'Throwing',cns:'High',description:'Hop forward on pivot foot, land, immediately throw upon landing.'},
-  {id:'td_009',name:'Double Hop Throw',pattern:'Throwing',category:'Throwing',cns:'High',description:'Two consecutive hops pivot foot then lead foot throw immediately.'},
-  {id:'apr_001',name:'POW Walks',pattern:'Locomotion',category:'Pre-Throwing',cns:'Low',description:'Contralateral walking with exaggerated arm swing.'},
-  {id:'apr_002',name:'Band Pull Apart Arm Prep',pattern:'Arm Care',category:'Pre-Throwing',cns:'Low',description:'Pre-throwing band pull apart for scapular activation.'},
-  {id:'apr_003',name:'Band Face Pull Arm Prep',pattern:'Arm Care',category:'Pre-Throwing',cns:'Low',description:'Pre-throwing face pull activating external rotators.'},
-  {id:'apr_004',name:'Arm Swings',pattern:'Mobility',category:'Pre-Throwing',cns:'Low',description:'Swing both arms forward and back in controlled pendulum.'},
-  {id:'apr_005',name:'Reverse Throws',pattern:'Throwing',category:'Post-Throwing',cns:'Moderate',description:'Simulate deceleration phase of throwing in reverse.'},
-  {id:'apr_006',name:'Roll-In Throws',pattern:'Throwing',category:'Pre-Throwing',cns:'Low',description:'Underhand rolling motion from throwing position.'},
+  {id:'ex_001',name:'Barbell Back Squat',pattern:'Squat',category:'Main Exercises',cns:'High',description:'Stand with bar on upper traps, feet shoulder-width. Brace core, push knees out, descend until thighs parallel or below.',movement_category:'bilateral_squat_strength',equipment_tier:'E1',deprecated:false,throwing_phase:null},
+  {id:'ex_002',name:'Goblet Squat',pattern:'Squat',category:'Accessory',cns:'Moderate',description:'Hold KB at chest, feet slightly wider than shoulder-width. Squat deep, elbows track inside knees.',movement_category:'bilateral_squat_strength',equipment_tier:'E2',deprecated:false,throwing_phase:null},
+  {id:'ex_003',name:'Rear Foot Elevated Split Squat',pattern:'Lunge',category:'Main Exercises',cns:'Moderate',description:'Rear foot elevated on bench, front foot far enough forward so shin stays vertical.',movement_category:'unilateral_squat_strength',equipment_tier:'E3',deprecated:false,throwing_phase:null},
+  {id:'ex_004',name:'Lateral Lunge',pattern:'Lunge',category:'Accessory',cns:'Moderate',description:'Step wide to one side, push hips back and sit into the stepping leg.',movement_category:'unilateral_frontal_plane_strength',equipment_tier:'E3',deprecated:false,throwing_phase:null},
+  {id:'ex_005',name:'Barbell Conventional Deadlift',pattern:'Hinge',category:'Main Exercises',cns:'High',description:'Bar over mid-foot, hip-width stance. Hinge to grip, set back flat, drive floor away.',movement_category:'bilateral_hinge_strength',equipment_tier:'E1',deprecated:false,throwing_phase:null},
+  {id:'ex_006',name:'Romanian Deadlift',pattern:'Hinge',category:'Main Exercises',cns:'Moderate',description:'Soft knee bend, push hips straight back maintaining flat back. Bar stays close.',movement_category:'bilateral_hinge_strength',equipment_tier:'E1',deprecated:false,throwing_phase:null},
+  {id:'ex_007',name:'Single Leg RDL',pattern:'Hinge',category:'Accessory',cns:'Moderate',description:'Hinge on one leg, rear leg floats back as counterbalance.',movement_category:'unilateral_hinge_strength',equipment_tier:'E3',deprecated:false,throwing_phase:null},
+  {id:'ex_008',name:'Sumo Deadlift',pattern:'Hinge',category:'Main Exercises',cns:'High',description:'Wide stance deadlift emphasizing inner thigh and hip strength.',movement_category:'bilateral_hinge_strength',equipment_tier:'E1',deprecated:false,throwing_phase:null},
+  {id:'ex_009',name:'Trap Bar Deadlift',pattern:'Hinge',category:'Main Exercises',cns:'High',description:'Stand in center of trap bar. More upright than conventional, easier to learn.',movement_category:'bilateral_hinge_strength',equipment_tier:'E1',deprecated:false,throwing_phase:null},
+  {id:'ex_010',name:'Kettlebell Swing',pattern:'Hinge',category:'Speed/Power',cns:'High',description:'Ballistic hip hinge. Bell driven by hips not arms.',movement_category:'bilateral_hinge_power',equipment_tier:'E2',deprecated:false,throwing_phase:null},
+  {id:'ex_011',name:'Barbell Bench Press',pattern:'Horizontal Push',category:'Main Exercises',cns:'High',description:'Lie flat, grip slightly wider than shoulder-width. Lower bar to lower chest.',movement_category:'bilateral_horizontal_push_strength',equipment_tier:'E1',deprecated:false,throwing_phase:null},
+  {id:'ex_012',name:'1-Arm DB Bench Press',pattern:'Horizontal Push',category:'Accessory',cns:'Moderate',description:'Unilateral pressing that challenges rotational stability.',movement_category:'unilateral_horizontal_push_strength',equipment_tier:'E2',deprecated:false,throwing_phase:null},
+  {id:'ex_013',name:'Landmine Press',pattern:'Horizontal Push',category:'Accessory',cns:'Moderate',description:'Shoulder-friendly pressing variation with a natural arc.',movement_category:'unilateral_vertical_push_strength',equipment_tier:'E1',deprecated:false,throwing_phase:null},
+  {id:'ex_014',name:'Incline Dumbbell Press',pattern:'Horizontal Push',category:'Accessory',cns:'Moderate',description:'Set bench to 30-45 degrees. Elbows at 45 degrees.',movement_category:'bilateral_horizontal_push_strength',equipment_tier:'E2',deprecated:false,throwing_phase:null},
+  {id:'ex_015',name:'Push-Up',pattern:'Horizontal Push',category:'Accessory',cns:'Low',description:'Hands slightly wider than shoulders, body in one rigid plank.',movement_category:'bilateral_horizontal_push_strength',equipment_tier:'E3',deprecated:false,throwing_phase:null},
+  {id:'ex_016',name:'Barbell Row',pattern:'Horizontal Pull',category:'Main Exercises',cns:'High',description:'Hinge to roughly 45 degrees. Pull bar to lower sternum, lead with elbows.',movement_category:'bilateral_horizontal_pull_strength',equipment_tier:'E1',deprecated:false,throwing_phase:null},
+  {id:'ex_017',name:'Pendlay Row',pattern:'Horizontal Pull',category:'Main Exercises',cns:'High',description:'Strict horizontal row from the floor each rep.',movement_category:'bilateral_horizontal_pull_strength',equipment_tier:'E1',deprecated:false,throwing_phase:null},
+  {id:'ex_018',name:'Single Arm DB Row',pattern:'Horizontal Pull',category:'Accessory',cns:'Moderate',description:'Supported unilateral row. Pull DB to hip, lead with elbow.',movement_category:'unilateral_horizontal_pull_strength',equipment_tier:'E2',deprecated:false,throwing_phase:null},
+  {id:'ex_019',name:'Pull-Up',pattern:'Vertical Pull',category:'Main Exercises',cns:'Moderate',description:'Dead hang start. Pull until chin clears bar.',movement_category:'bilateral_vertical_pull_strength',equipment_tier:'E3',deprecated:false,throwing_phase:null},
+  {id:'ex_020',name:'Lat Pulldown',pattern:'Vertical Pull',category:'Accessory',cns:'Low',description:'Slight lean back, pull bar to upper chest.',movement_category:'bilateral_vertical_pull_strength',equipment_tier:'E1',deprecated:false,throwing_phase:null},
+  {id:'ex_021',name:'DB Shoulder Press',pattern:'Vertical Push',category:'Main Exercises',cns:'Moderate',description:'Press dumbbells from shoulder height to full lockout overhead.',movement_category:'bilateral_vertical_push_strength',equipment_tier:'E2',deprecated:false,throwing_phase:null},
+  {id:'ex_022',name:'Power Clean',pattern:'Hinge',category:'Main Exercises',cns:'High',description:'Pull bar from floor, triple extend, catch in front rack.',movement_category:'bilateral_hinge_power',equipment_tier:'E1',deprecated:true,throwing_phase:null},
+  {id:'ex_023',name:'Hang Clean',pattern:'Hinge',category:'Main Exercises',cns:'High',description:'Power clean starting from hang position at mid-thigh.',movement_category:'bilateral_hinge_power',equipment_tier:'E1',deprecated:true,throwing_phase:null},
+  {id:'ex_024',name:'Med Ball Scoop Toss',pattern:'Rotation',category:'Speed/Power',cns:'High',description:'Load into back hip, drive hips through, scoop ball upward and forward.',movement_category:'rotational_power',equipment_tier:'E3',deprecated:false,throwing_phase:null},
+  {id:'ex_025',name:'Med Ball Rotational Chest Pass',pattern:'Rotation',category:'Speed/Power',cns:'High',description:'Explosive rotational throw from parallel stance into wall.',movement_category:'rotational_power',equipment_tier:'E3',deprecated:false,throwing_phase:null},
+  {id:'ex_026',name:'Med Ball Overhead Slam',pattern:'Rotation',category:'Speed/Power',cns:'High',description:'Reach overhead then slam into ground using entire body.',movement_category:'rotational_power',equipment_tier:'E3',deprecated:false,throwing_phase:null},
+  {id:'ex_027',name:'Med Ball Side Slam',pattern:'Rotation',category:'Speed/Power',cns:'High',description:'Lateral rotational slam training same pattern as pitching.',movement_category:'rotational_power',equipment_tier:'E3',deprecated:false,throwing_phase:null},
+  {id:'ex_028',name:'Landmine Rotational Press',pattern:'Rotation',category:'Speed/Power',cns:'Moderate',description:'Rotational pressing from parallel stance.',movement_category:'rotational_power',equipment_tier:'E1',deprecated:false,throwing_phase:null},
+  {id:'ex_029',name:'Broad Jump',pattern:'Locomotion',category:'Speed/Power',cns:'High',description:'Horizontal plyometric training explosive hip extension.',movement_category:'bilateral_horizontal_power',equipment_tier:'E3',deprecated:false,throwing_phase:null},
+  {id:'ex_030',name:'Triple Broad Jump',pattern:'Locomotion',category:'Speed/Power',cns:'High',description:'Three consecutive broad jumps for maximum distance.',movement_category:'bilateral_horizontal_power',equipment_tier:'E3',deprecated:false,throwing_phase:null},
+  {id:'ex_031',name:'Depth Jump',pattern:'Locomotion',category:'Speed/Power',cns:'High',description:'Step off box, land and immediately jump as high as possible.',movement_category:'keat',equipment_tier:'E3',deprecated:false,throwing_phase:null},
+  {id:'ex_032',name:'Lateral Bound',pattern:'Locomotion',category:'Speed/Power',cns:'High',description:'Jump from one foot to the other laterally.',movement_category:'unilateral_lateral_power',equipment_tier:'E3',deprecated:false,throwing_phase:null},
+  {id:'ex_033',name:'Skater Jump',pattern:'Locomotion',category:'Speed/Power',cns:'High',description:'Continuous lateral bounds with brief hold on each landing.',movement_category:'unilateral_lateral_power',equipment_tier:'E3',deprecated:false,throwing_phase:null},
+  {id:'ex_034',name:'Pogo Hops',pattern:'Locomotion',category:'Speed/Power',cns:'High',description:'Rapid low-amplitude bilateral hops. Minimal knee bend.',movement_category:'bilateral_vertical_power',equipment_tier:'E3',deprecated:false,throwing_phase:null},
+  {id:'ex_035',name:'30-Yard Sprint',pattern:'Locomotion',category:'Speed/Power',cns:'High',description:'Short acceleration sprint. Drive phase first 10 yards.',movement_category:'linear_speed',equipment_tier:'E3',deprecated:false,throwing_phase:null},
+  {id:'ex_036',name:'Dead Bug',pattern:'Core',category:'Accessory',cns:'Low',description:'Lie on back, arms up, knees at 90 degrees. Extend opposite arm and leg.',movement_category:'anti_extension_core',equipment_tier:'E3',deprecated:false,throwing_phase:null},
+  {id:'ex_037',name:'Plank',pattern:'Core',category:'Accessory',cns:'Low',description:'Static anti-extension hold. Body in one rigid line.',movement_category:'anti_extension_core',equipment_tier:'E3',deprecated:false,throwing_phase:null},
+  {id:'ex_038',name:'Side Plank',pattern:'Core',category:'Accessory',cns:'Low',description:'Lateral anti-flexion hold.',movement_category:'anti_lateral_flexion_core',equipment_tier:'E3',deprecated:false,throwing_phase:null},
+  {id:'ex_039',name:'Ab Wheel Rollout',pattern:'Core',category:'Accessory',cns:'Low',description:'Dynamic anti-extension. Roll forward until fully extended, pull back using lats and abs.',movement_category:'anti_extension_core',equipment_tier:'E3',deprecated:false,throwing_phase:null},
+  {id:'ex_040',name:'Half-Kneeling Pallof Press',pattern:'Anti-Rotation',category:'Accessory',cns:'Low',description:'Anti-rotation press from split stance.',movement_category:'anti_rotation_core',equipment_tier:'E3',deprecated:false,throwing_phase:null},
+  {id:'ex_041',name:'Copenhagen Plank',pattern:'Adductor',category:'Accessory',cns:'Low',description:'Side plank with top leg elevated on bench.',movement_category:'adductor_strength',equipment_tier:'E3',deprecated:false,throwing_phase:null},
+  {id:'ex_042',name:'Bear Crawl',pattern:'Locomotion',category:'Pre-Throwing',cns:'Low',description:'Contralateral crawling. Knees hover 1 inch off floor.',movement_category:'quadrupedal_stability',equipment_tier:'E3',deprecated:false,throwing_phase:null},
+  {id:'ex_043',name:'Lateral Ape Crawl',pattern:'Locomotion',category:'Pre-Throwing',cns:'Low',description:'Lateral crawling developing frontal plane stability.',movement_category:'quadrupedal_stability',equipment_tier:'E3',deprecated:false,throwing_phase:null},
+  {id:'ex_044',name:'Spiderman Crawl',pattern:'Locomotion',category:'Pre-Throwing',cns:'Low',description:'Forward crawl where knee drives to outside elbow with each step.',movement_category:'quadrupedal_stability',equipment_tier:'E3',deprecated:false,throwing_phase:null},
+  {id:'ex_045',name:'Crab Walk',pattern:'Locomotion',category:'Pre-Throwing',cns:'Low',description:'Posterior movement with hands and feet on floor, hips lifted.',movement_category:'quadrupedal_stability',equipment_tier:'E3',deprecated:false,throwing_phase:null},
+  {id:'ex_046',name:'Band Pull-Apart',pattern:'Arm Care',category:'Pre-Throwing',cns:'Low',description:'Hold band at shoulder width, pull apart to chest while squeezing shoulder blades.',movement_category:'scapular_activation',equipment_tier:'E3',deprecated:false,throwing_phase:null},
+  {id:'ex_047',name:'Face Pull',pattern:'Arm Care',category:'Pre-Throwing',cns:'Low',description:'Pull rope to face while rotating elbows up and out.',movement_category:'scapular_activation',equipment_tier:'E1',deprecated:false,throwing_phase:null},
+  {id:'ex_048',name:'External Rotation at 90',pattern:'Arm Care',category:'Post-Throwing',cns:'Low',description:'Isolated rotator cuff with arm abducted to 90 degrees.',movement_category:'rotator_cuff_strength',equipment_tier:'E3',deprecated:false,throwing_phase:null},
+  {id:'ex_049',name:'Dumbbell Hammer Curl',pattern:'Arm Care',category:'Post-Throwing',cns:'Low',description:'Neutral grip curl targeting brachialis.',movement_category:'forearm_wrist_strength',equipment_tier:'E2',deprecated:false,throwing_phase:null},
+  {id:'ex_050',name:'Dumbbell Pronation',pattern:'Arm Care',category:'Post-Throwing',cns:'Low',description:'Offset grip. Forearm supported. Rotate from supinated to fully pronated.',movement_category:'forearm_wrist_strength',equipment_tier:'E2',deprecated:false,throwing_phase:null},
+  {id:'ex_051',name:'Dumbbell Supination',pattern:'Arm Care',category:'Post-Throwing',cns:'Low',description:'Offset grip. Rotate from pronated to fully supinated.',movement_category:'forearm_wrist_strength',equipment_tier:'E2',deprecated:false,throwing_phase:null},
+  {id:'ex_052',name:'Dumbbell Wrist Extension',pattern:'Arm Care',category:'Post-Throwing',cns:'Low',description:'Forearm supported, palm down. Raise wrist into extension.',movement_category:'forearm_wrist_strength',equipment_tier:'E2',deprecated:false,throwing_phase:null},
+  {id:'ex_053',name:'2-to-1 Eccentric Hammer Curl',pattern:'Arm Care',category:'Post-Throwing',cns:'Low',description:'Both hands up, one hand down over 4-5 seconds.',movement_category:'forearm_wrist_strength',equipment_tier:'E2',deprecated:false,throwing_phase:null},
+  {id:'ex_054',name:'2-to-1 Eccentric Rear Delt Fly',pattern:'Arm Care',category:'Post-Throwing',cns:'Low',description:'Both arms raise, one arm lowers over 4-5 seconds.',movement_category:'rotator_cuff_strength',equipment_tier:'E3',deprecated:false,throwing_phase:null},
+  {id:'ex_055',name:'Rear Delt Fly',pattern:'Arm Care',category:'Post-Throwing',cns:'Low',description:'Hinge forward, raise arms to sides leading with pinkies.',movement_category:'rotator_cuff_strength',equipment_tier:'E3',deprecated:false,throwing_phase:null},
+  {id:'ex_056',name:'Prone Y-T-W',pattern:'Arm Care',category:'Post-Throwing',cns:'Low',description:'Lying face down, arms form Y T and W positions lifting against gravity.',movement_category:'rotator_cuff_strength',equipment_tier:'E3',deprecated:false,throwing_phase:null},
+  {id:'ex_057',name:'Scapular Wall Slide',pattern:'Arm Care',category:'Pre-Throwing',cns:'Low',description:'Back against wall, slide arms overhead maintaining contact.',movement_category:'rotator_cuff_strength',equipment_tier:'E3',deprecated:false,throwing_phase:null},
+  {id:'ex_058',name:'Sleeper Stretch',pattern:'Mobility',category:'Recovery',cns:'Low',description:'Lie on throwing-arm side, use free hand to gently push forearm toward floor.',movement_category:'mobility_flexibility',equipment_tier:'E3',deprecated:false,throwing_phase:null},
+  {id:'ex_059',name:'Hip 90/90 Stretch',pattern:'Mobility',category:'Recovery',cns:'Low',description:'Sit with both legs at 90 degree angles. Transition between sides.',movement_category:'mobility_flexibility',equipment_tier:'E3',deprecated:false,throwing_phase:null},
+  {id:'ex_060',name:'Thoracic Spine Rotation',pattern:'Mobility',category:'Recovery',cns:'Low',description:'Improve thoracic rotation in quadruped seated or lying positions.',movement_category:'mobility_flexibility',equipment_tier:'E3',deprecated:false,throwing_phase:null},
+  {id:'ex_061',name:'Worlds Greatest Stretch',pattern:'Mobility',category:'Pre-Throwing',cns:'Low',description:'Multi-joint stretch combining hip flexor thoracic rotation and ankle mobility.',movement_category:'mobility_flexibility',equipment_tier:'E3',deprecated:false,throwing_phase:null},
+  {id:'td_001',name:'Two Knee Throw',pattern:'Throwing',category:'Throwing',cns:'Low',description:'Kneel on both knees. Throw using only trunk rotation and arm action.',movement_category:'throwing_progression_drill',equipment_tier:'E3',deprecated:false,throwing_phase:'Constrain'},
+  {id:'td_002',name:'One Knee Throw',pattern:'Throwing',category:'Throwing',cns:'Low',description:'Throwing-side knee down, glove-side foot forward.',movement_category:'throwing_progression_drill',equipment_tier:'E3',deprecated:false,throwing_phase:'Constrain'},
+  {id:'td_003',name:'Rocker Drill',pattern:'Throwing',category:'Throwing',cns:'Moderate',description:'Split stance. Rock weight back to front rhythmically.',movement_category:'throwing_progression_drill',equipment_tier:'E3',deprecated:false,throwing_phase:'Constrain'},
+  {id:'td_004',name:'Hover Throw',pattern:'Throwing',category:'Throwing',cns:'Moderate',description:'Balance on pivot foot with lead leg lifted. Hold 1-2 seconds then throw.',movement_category:'throwing_progression_drill',equipment_tier:'E3',deprecated:false,throwing_phase:'Constrain'},
+  {id:'td_005',name:'Split Stance Throw',pattern:'Throwing',category:'Throwing',cns:'Moderate',description:'Lead foot already planted at stride width. Throw from fixed position.',movement_category:'throwing_progression_drill',equipment_tier:'E3',deprecated:false,throwing_phase:'Constrain'},
+  {id:'td_006',name:'Walk Away Throw',pattern:'Throwing',category:'Throwing',cns:'Moderate',description:'Walk away from target, pivot and throw in one fluid motion.',movement_category:'throwing_progression_drill',equipment_tier:'E3',deprecated:false,throwing_phase:'Move'},
+  {id:'td_007',name:'Toss Up Throw',pattern:'Throwing',category:'Throwing',cns:'Moderate',description:'Toss ball slightly upward and catch in throwing hand as arm begins action.',movement_category:'throwing_progression_drill',equipment_tier:'E3',deprecated:false,throwing_phase:'Time'},
+  {id:'td_008',name:'Forward Hop Throw',pattern:'Throwing',category:'Throwing',cns:'High',description:'Hop forward on pivot foot, land, immediately throw upon landing.',movement_category:'throwing_progression_drill',equipment_tier:'E3',deprecated:false,throwing_phase:'Bounce'},
+  {id:'td_009',name:'Double Hop Throw',pattern:'Throwing',category:'Throwing',cns:'High',description:'Two consecutive hops pivot foot then lead foot throw immediately.',movement_category:'throwing_progression_drill',equipment_tier:'E3',deprecated:false,throwing_phase:'Bounce'},
+  {id:'apr_001',name:'POW Walks',pattern:'Locomotion',category:'Pre-Throwing',cns:'Low',description:'Contralateral walking with exaggerated arm swing.',movement_category:'gait_stability',equipment_tier:'E3',deprecated:false,throwing_phase:null},
+  {id:'apr_002',name:'Band Pull Apart Arm Prep',pattern:'Arm Care',category:'Pre-Throwing',cns:'Low',description:'Pre-throwing band pull apart for scapular activation.',movement_category:'scapular_activation',equipment_tier:'E3',deprecated:false,throwing_phase:null},
+  {id:'apr_003',name:'Band Face Pull Arm Prep',pattern:'Arm Care',category:'Pre-Throwing',cns:'Low',description:'Pre-throwing face pull activating external rotators.',movement_category:'scapular_activation',equipment_tier:'E3',deprecated:false,throwing_phase:null},
+  {id:'apr_004',name:'Arm Swings',pattern:'Mobility',category:'Pre-Throwing',cns:'Low',description:'Swing both arms forward and back in controlled pendulum.',movement_category:'mobility_flexibility',equipment_tier:'E3',deprecated:false,throwing_phase:null},
+  {id:'apr_005',name:'Reverse Throws',pattern:'Throwing',category:'Post-Throwing',cns:'Moderate',description:'Simulate deceleration phase of throwing in reverse.',movement_category:'throwing_progression_drill',equipment_tier:'E3',deprecated:false,throwing_phase:'Time'},
+  {id:'apr_006',name:'Roll-In Throws',pattern:'Throwing',category:'Pre-Throwing',cns:'Low',description:'Underhand rolling motion from throwing position.',movement_category:'throwing_progression_drill',equipment_tier:'E3',deprecated:false,throwing_phase:'Time'},
+  // --- E3 gap-fills (Task 1): equipment_tier is a MINIMUM, so a category only has a real gap
+  // when it lacks an E3 entry -- these 6 categories had none. unilateral_vertical_push_strength
+  // also gets an E2 fill (1-Arm DB Shoulder Press) alongside its E3 one, per explicit instruction.
+  {id:'ex_062',name:'Bodyweight Split Squat',pattern:'Lunge',category:'Accessory',cns:'Low',description:'No-load split squat -- front foot forward, rear knee drops straight down. Same pattern as RFESS with zero implement required.',movement_category:'unilateral_squat_strength',equipment_tier:'E3',deprecated:false,throwing_phase:null},
+  {id:'ex_063',name:'Bodyweight Single Leg RDL',pattern:'Hinge',category:'Accessory',cns:'Low',description:'Hinge on one leg with no added load, rear leg floats back as counterbalance, reach toward a cone or the floor.',movement_category:'unilateral_hinge_strength',equipment_tier:'E3',deprecated:false,throwing_phase:null},
+  {id:'ex_064',name:'Single-Arm Band Chest Press',pattern:'Horizontal Push',category:'Accessory',cns:'Low',description:'Band anchored behind at chest height, press one arm forward to full extension while resisting rotation.',movement_category:'unilateral_horizontal_push_strength',equipment_tier:'E3',deprecated:false,throwing_phase:null},
+  {id:'ex_065',name:'1-Arm Band Overhead Press',pattern:'Vertical Push',category:'Accessory',cns:'Low',description:'Band anchored under the same-side foot, press overhead to lockout with one arm, resisting lateral lean.',movement_category:'unilateral_vertical_push_strength',equipment_tier:'E3',deprecated:false,throwing_phase:null},
+  {id:'ex_066',name:'1-Arm DB Shoulder Press',pattern:'Vertical Push',category:'Accessory',cns:'Moderate',description:'Single dumbbell pressed from shoulder height to full lockout overhead, one arm at a time.',movement_category:'unilateral_vertical_push_strength',equipment_tier:'E2',deprecated:false,throwing_phase:null},
+  {id:'ex_067',name:'Single-Arm Band Row',pattern:'Horizontal Pull',category:'Accessory',cns:'Low',description:'Band anchored in front at chest height, row one handle to the hip while the free arm stays still.',movement_category:'unilateral_horizontal_pull_strength',equipment_tier:'E3',deprecated:false,throwing_phase:null},
+  {id:'ex_068',name:'Pike Push-Up',pattern:'Vertical Push',category:'Accessory',cns:'Low',description:'Hips high in an inverted-V position, lower the head toward the floor between the hands and press back up.',movement_category:'bilateral_vertical_push_strength',equipment_tier:'E3',deprecated:false,throwing_phase:null},
+  // --- Power replacements for the deprecated Olympic lifts (Task 2), plus two new power
+  // categories: bilateral_vertical_push_power (upper-body press-power) and keat (landing
+  // mechanics / advanced eccentric work -- Depth Jump above was moved into this category).
+  {id:'ex_069',name:'Trap Bar Jump',pattern:'Locomotion',category:'Speed/Power',cns:'High',description:'Hold a loaded trap bar at the sides, jump for maximum height and land softly back in the same rack position.',movement_category:'bilateral_vertical_power',equipment_tier:'E1',deprecated:false,throwing_phase:null},
+  {id:'ex_070',name:'DB Jump Shrug',pattern:'Hinge',category:'Speed/Power',cns:'High',description:'Dumbbells at the sides, hinge and explosively triple-extend into a shrug and small jump -- same intent as a clean pull without the catch.',movement_category:'bilateral_vertical_power',equipment_tier:'E2',deprecated:false,throwing_phase:null},
+  {id:'ex_071',name:'DB Squat Jump',pattern:'Squat',category:'Speed/Power',cns:'High',description:'Dumbbells at the sides or shoulders, squat to a quarter depth and jump for maximum height.',movement_category:'bilateral_vertical_power',equipment_tier:'E2',deprecated:false,throwing_phase:null},
+  {id:'ex_072',name:'Band-Resisted Squat Jump',pattern:'Squat',category:'Speed/Power',cns:'High',description:'Band anchored underfoot and over the shoulders, squat jump against the added band tension.',movement_category:'bilateral_vertical_power',equipment_tier:'E3',deprecated:false,throwing_phase:null},
+  {id:'ex_073',name:'Weighted Broad Jump',pattern:'Locomotion',category:'Speed/Power',cns:'High',description:'Hold light dumbbells at the sides, broad jump for maximum distance, land under control.',movement_category:'bilateral_horizontal_power',equipment_tier:'E2',deprecated:false,throwing_phase:null},
+  {id:'ex_074',name:'Weighted Lateral Bound',pattern:'Locomotion',category:'Speed/Power',cns:'High',description:'Hold a light dumbbell or vest load, bound laterally from one foot to the other, sticking each landing.',movement_category:'unilateral_lateral_power',equipment_tier:'E2',deprecated:false,throwing_phase:null},
+  {id:'ex_075',name:'Landmine Push Jerk',pattern:'Vertical Push',category:'Speed/Power',cns:'High',description:'Barbell in a landmine attachment at the shoulder, dip and drive through the legs to jerk the bar overhead.',movement_category:'bilateral_vertical_push_power',equipment_tier:'E1',deprecated:false,throwing_phase:null},
+  {id:'ex_076',name:'DB Push Press',pattern:'Vertical Push',category:'Speed/Power',cns:'High',description:'Dumbbells at the shoulders, dip and drive with the legs to press overhead with speed.',movement_category:'bilateral_vertical_push_power',equipment_tier:'E2',deprecated:false,throwing_phase:null},
+  {id:'ex_077',name:'Band Overhead Press for Speed',pattern:'Vertical Push',category:'Speed/Power',cns:'Moderate',description:'Band anchored underfoot, press overhead as fast as possible against the band tension.',movement_category:'bilateral_vertical_push_power',equipment_tier:'E3',deprecated:false,throwing_phase:null},
+  {id:'ex_078',name:'Altitude Landing',pattern:'Locomotion',category:'Speed/Power',cns:'High',description:'Step off a box and land, absorbing force through the hips and ankles with no jump afterward -- pure landing-mechanics work.',movement_category:'keat',equipment_tier:'E3',deprecated:false,throwing_phase:null},
+  {id:'ex_079',name:'Overspeed Eccentric Drop',pattern:'Locomotion',category:'Speed/Power',cns:'High',description:'Drop from a greater height or with assistance than a standard depth jump, emphasizing the fastest possible eccentric loading rate on landing.',movement_category:'keat',equipment_tier:'E3',deprecated:false,throwing_phase:null},
+  // --- Throwing-phase drills (Task 3): Constrain -> Time -> Adapt -> Move -> Bounce ->
+  // Transfer -> Compete. Phase assignments given directly, not inferred.
+  {id:'td_010',name:'Two-Knee Rocker Drill',pattern:'Throwing',category:'Throwing',cns:'Low',description:"Kneeling on both knees, rock weight back to front rhythmically before throwing -- combines the Two Knee Throw's constrained base with the Rocker Drill's timing cue.",movement_category:'throwing_progression_drill',equipment_tier:'E3',deprecated:false,throwing_phase:'Constrain'},
+  {id:'td_011',name:'Seated Throw',pattern:'Throwing',category:'Throwing',cns:'Low',description:'Seated on the ground, legs extended or crossed, throw using only trunk rotation and arm action with the lower half fully removed.',movement_category:'throwing_progression_drill',equipment_tier:'E3',deprecated:false,throwing_phase:'Constrain'},
+  {id:'td_012',name:'Toss Up with Leg Lift',pattern:'Throwing',category:'Throwing',cns:'Moderate',description:'Toss the ball slightly upward while lifting the lead knee, catching it in the throwing hand as the leg comes down and the arm begins its action.',movement_category:'throwing_progression_drill',equipment_tier:'E3',deprecated:false,throwing_phase:'Time'},
+  {id:'td_013',name:'Football Throw',pattern:'Throwing',category:'Throwing',cns:'Moderate',description:'Throw a football, adapting grip and release timing to a different implement shape and weight distribution.',movement_category:'throwing_progression_drill',equipment_tier:'E3',deprecated:false,throwing_phase:'Adapt'},
+  {id:'td_014',name:'Turbo Javelin Throw',pattern:'Throwing',category:'Throwing',cns:'Moderate',description:'Throw a turbo javelin, adapting to its long lever and tail-driven flight for release-point feel.',movement_category:'throwing_progression_drill',equipment_tier:'E3',deprecated:false,throwing_phase:'Adapt'},
+  {id:'td_015',name:'Softball Throw',pattern:'Throwing',category:'Throwing',cns:'Moderate',description:'Throw a softball, adapting grip to a larger-circumference implement.',movement_category:'throwing_progression_drill',equipment_tier:'E3',deprecated:false,throwing_phase:'Adapt'},
+  {id:'td_016',name:'Frisbee Throw',pattern:'Throwing',category:'Throwing',cns:'Moderate',description:'Throw a flying disc, adapting release and wrist action to a completely different flight mechanism.',movement_category:'throwing_progression_drill',equipment_tier:'E3',deprecated:false,throwing_phase:'Adapt'},
+  {id:'td_017',name:'Walking Windup',pattern:'Throwing',category:'Throwing',cns:'Moderate',description:'Walk into a full windup and throw without stopping, blending gait with the delivery.',movement_category:'throwing_progression_drill',equipment_tier:'E3',deprecated:false,throwing_phase:'Move'},
+  {id:'td_018',name:'Grab and Go',pattern:'Throwing',category:'Throwing',cns:'Moderate',description:'Ball handed off or picked up in motion, then thrown immediately with no set position beforehand.',movement_category:'throwing_progression_drill',equipment_tier:'E3',deprecated:false,throwing_phase:'Move'},
+  {id:'td_019',name:'Shuffle Throw',pattern:'Throwing',category:'Throwing',cns:'Moderate',description:'Lateral shuffle steps into the throw, simulating fielding-to-throw footwork.',movement_category:'throwing_progression_drill',equipment_tier:'E3',deprecated:false,throwing_phase:'Move'},
+  {id:'td_020',name:'Drop Step Throw',pattern:'Throwing',category:'Throwing',cns:'Moderate',description:'Drop step to open the hips and gain ground before throwing, simulating an outfield or infield redirect.',movement_category:'throwing_progression_drill',equipment_tier:'E3',deprecated:false,throwing_phase:'Move'},
+  {id:'td_021',name:'Anterior Hop Throw',pattern:'Throwing',category:'Throwing',cns:'High',description:'Hop forward off the pivot foot, land, and throw immediately on landing -- same intent as Forward Hop Throw with the anterior direction named explicitly.',movement_category:'throwing_progression_drill',equipment_tier:'E3',deprecated:false,throwing_phase:'Bounce'},
+  {id:'td_022',name:'Posterior Hop Throw',pattern:'Throwing',category:'Throwing',cns:'High',description:'Hop backward off the pivot foot, land, and throw immediately on landing, reversing the direction of Anterior Hop Throw.',movement_category:'throwing_progression_drill',equipment_tier:'E3',deprecated:false,throwing_phase:'Bounce'},
+  {id:'td_023',name:'Double Play Feed',pattern:'Throwing',category:'Throwing',cns:'Moderate',description:'Quick-transfer feed to a pivot player, emphasizing fast exchange and release over full-effort velocity.',movement_category:'throwing_progression_drill',equipment_tier:'E3',deprecated:false,throwing_phase:'Transfer'},
+  {id:'td_024',name:'Catcher Throw Down',pattern:'Throwing',category:'Throwing',cns:'Moderate',description:"Catcher's throw to a base from a receiving position, emphasizing rapid transfer out of the glove.",movement_category:'throwing_progression_drill',equipment_tier:'E3',deprecated:false,throwing_phase:'Transfer'},
+  {id:'td_025',name:'Catch Play',pattern:'Throwing',category:'Throwing',cns:'Low',description:'Easy, controlled catch-play throwing at conversational intensity -- the lowest-intent entry in live throwing.',movement_category:'throwing_progression_drill',equipment_tier:'E3',deprecated:false,throwing_phase:'Compete'},
+  {id:'td_026',name:'Flat Ground',pattern:'Throwing',category:'Throwing',cns:'Moderate',description:'Pitching off flat ground rather than a mound, building toward full mound intensity.',movement_category:'throwing_progression_drill',equipment_tier:'E3',deprecated:false,throwing_phase:'Compete'},
+  {id:'td_027',name:'Bullpen',pattern:'Throwing',category:'Throwing',cns:'High',description:'Pitching off a mound at competitive intensity in a practice setting.',movement_category:'throwing_progression_drill',equipment_tier:'E3',deprecated:false,throwing_phase:'Compete'},
+  {id:'td_028',name:'Competition',pattern:'Throwing',category:'Throwing',cns:'High',description:'Live game pitching.',movement_category:'throwing_progression_drill',equipment_tier:'E3',deprecated:false,throwing_phase:'Compete'},
 ]
 
 function parsePrinciples(text:string): Record<string,{sets:string,reps:string,load:string}> {
@@ -323,8 +355,7 @@ export default function CoachDashboard(){
   const [cmjEditingId,setCmjEditingId]=useState<string|null>(null)
   const [showCmjHistory,setShowCmjHistory]=useState(false)
   const [principles,setPrinciples]=useState('')
-  const [princText,setPrincText]=useState('')
-  const [princSaved,setPrincSaved]=useState(false)
+  const [promptSectionSummary,setPromptSectionSummary]=useState('')
   const [cellNotes,setCellNotes]=useState<Record<string,string>>({})
   const [expandedCell,setExpandedCell]=useState<string|null>(null)
   const [copyModal,setCopyModal]=useState<{ex:any,fromKey:string}|null>(null)
@@ -386,8 +417,16 @@ export default function CoachDashboard(){
       const {data:{user}}=await supabase.auth.getUser()
       if (!user){router.push('/auth/login');return}
       setUser(user)
-      const {data:profile}=await supabase.from('profiles').select('role').eq('id',user.id).single()
-      if (profile?.role!=='coach'){router.push('/pitcher');return}
+      const {data:profile,error:profileError}=await supabase.from('profiles').select('role').eq('id',user.id).maybeSingle()
+      // A failed/missing profile lookup used to fall through to router.push('/pitcher') the
+      // same as "not a coach" -- combined with the pitcher page's equivalent guard, a transient
+      // failure here could ping-pong a real coach between /coach and /pitcher. Sign out and
+      // send to login instead of guessing.
+      if (profileError || !profile) {
+        console.error('coach dashboard: failed to load profile role',profileError)
+        await supabase.auth.signOut();router.push('/auth/login');return
+      }
+      if (profile.role!=='coach'){router.push('/pitcher');return}
       const {data:ps}=await supabase.from('profiles').select('*').eq('role','pitcher').order('full_name')
       setPitchers(ps||[])
       // For the Adherence view -- one lightweight query for the whole roster's log dates,
@@ -400,8 +439,8 @@ export default function CoachDashboard(){
         allLogs.forEach((l:any)=>{lastLog[l.pitcher_id]=l.log_date})
         setLastLogDates(lastLog)
       }
-      const {data:pr}=await supabase.from('principles').select('*').single()
-      if (pr){setPrinciples(pr.content);setPrincText(pr.content)}
+      const {data:pr}=await supabase.from('principles').select('*').maybeSingle()
+      if (pr){setPrinciples(pr.content)}
       const {data:vids}=await supabase.from('exercise_videos').select('*')
       if (vids){const vm:Record<string,string>={};vids.forEach((v:any)=>{vm[v.exercise_id]=v.video_url});setExerciseVideos(vm)}
       const {data:custom}=await supabase.from('custom_exercises').select('*').order('created_at')
@@ -557,11 +596,15 @@ export default function CoachDashboard(){
 
   const signOut=async()=>{await supabase.auth.signOut();router.push('/auth/login')}
 
-
-  const savePrinciples=async()=>{
-    const {data:pr}=await supabase.from('principles').select('id').single()
-    if (pr)await supabase.from('principles').update({content:princText}).eq('id',pr.id)
-    setPrinciples(princText);setPrincSaved(true);setTimeout(()=>setPrincSaved(false),2000)
+  // Shared by parseAndImportProgram's validation and buildPrompt's computed-constraints block
+  // -- one place that normalizes BUILT_IN_EXERCISES+customExercises into the shape lib/engine
+  // expects, not two copies.
+  const buildExercisePool=():EngineExercise[]=>{
+    const all=[...BUILT_IN_EXERCISES,...customExercises]
+    return all.map((e:any)=>({
+      id:e.id||e.exercise_id,name:e.name,movement_category:e.movement_category??null,
+      equipment_tier:e.equipment_tier??null,deprecated:!!e.deprecated,throwing_phase:e.throwing_phase??null,
+    }))
   }
 
   const parseAndImportProgram=async(text:string)=>{
@@ -569,6 +612,20 @@ export default function CoachDashboard(){
     setImportSaving(true)
     const VALID_DAYS=['MONDAY','TUESDAY','WEDNESDAY','THURSDAY','FRIDAY','SATURDAY','SUNDAY']
     const VALID_CATS:string[]=[...CATEGORY_ORDER]
+
+    // Loaded fresh at import time (not from AthleteStatePanel's state, which may not be
+    // mounted/loaded for this pitcher) so validation always runs against the current row.
+    const {data:athleteStateRow}=selected
+      ? await supabase.from('athlete_state').select('*').eq('pitcher_id',selected.id).maybeSingle()
+      : {data:null}
+    const engineAthleteState:EngineAthleteState={
+      equipment_tier:athleteStateRow?.equipment_tier??null,
+      throwing_status:athleteStateRow?.throwing_status??null,
+      gates_passed:athleteStateRow?.gates_passed??[],
+    }
+    const allExercises=[...BUILT_IN_EXERCISES,...customExercises]
+    const exercisePool:EngineExercise[]=buildExercisePool()
+
     const lines=text.split('\n').map((l:string)=>l.trim()).filter((l:string)=>l.length>0)
     const newStructured={...structuredDays}
     let currentDay=''
@@ -587,25 +644,68 @@ export default function CoachDashboard(){
       // from before the rename — every exercise that used to live there is Speed/Power now.
       const cat=catRaw==='Conditioning'?'Speed/Power':catRaw
       if(!VALID_CATS.includes(cat)){skipped.push('Bad category: '+catRaw);continue}
-      const setsRepsMatch=prescription.match(/(\d+)\s*x\s*(\d+)(?:\s*@\s*(\d+)%?)?/i)
-      if(!setsRepsMatch){skipped.push('Bad prescription: '+prescription);continue}
-      const sets=parseInt(setsRepsMatch[1])
-      const reps=parseInt(setsRepsMatch[2])
-      const load=setsRepsMatch[3]||''
-      const allExercises=[...BUILT_IN_EXERCISES,...customExercises]
+      // Two accepted shapes. Sets-and-reps ("3x10 @ 75%" or "3x10 @ I4") for everything, plus a
+      // bare count ("35 @ I4") for Throwing slots only -- a bullpen is a pitch count, not sets
+      // and reps, and sets-and-reps was the wrong shape for it. The "@" slot in the SxR form
+      // takes either a numeric %1RM token or an I1-I5 throwing-intent token, told apart by
+      // shape, since a throwing line was never going to use %1RM anyway.
+      const setsRepsMatch=prescription.match(/(\d+)\s*x\s*(\d+)(?:\s*@\s*(\d+%?|I[1-5]))?/i)
+      const bareCountMatch=(!setsRepsMatch&&cat==='Throwing')?prescription.match(/(\d+)\s*@\s*(I[1-5])/i):null
+      if(!setsRepsMatch&&!bareCountMatch){skipped.push('Bad prescription: '+prescription);continue}
+      let sets:number|null=null,reps:number|null=null,count:number|null=null,load='',intent_level:string|null=null
+      if(setsRepsMatch){
+        sets=parseInt(setsRepsMatch[1]);reps=parseInt(setsRepsMatch[2])
+        const loadToken=setsRepsMatch[3]||''
+        const isIntentToken=/^I[1-5]$/i.test(loadToken)
+        load=isIntentToken?'':loadToken
+        intent_level=isIntentToken?loadToken.toUpperCase():null
+      } else if(bareCountMatch){
+        count=parseInt(bareCountMatch[1])
+        intent_level=bareCountMatch[2].toUpperCase()
+      }
       const match=allExercises.find((e:any)=>e.name.toLowerCase()===exName.toLowerCase())
       if(!match){skipped.push('Not in library: '+exName);continue}
+
+      // Engine validation -- reject into the same skipped[]/reported-reason mechanism as the
+      // checks above, not a separate silent-failure path. Order matters a little: deprecated
+      // and equipment come before the gate/intent checks since they're the cheaper, more
+      // fundamental "can this exercise be assigned at all" questions.
+      const slot:EngineSlot={
+        day:currentDay,category:cat,
+        exercise:{id:match.id||match.exercise_id,name:match.name,movement_category:match.movement_category??null,equipment_tier:match.equipment_tier??null,deprecated:!!match.deprecated,throwing_phase:match.throwing_phase??null},
+        intent_level,
+      }
+      const deprecatedCheck=checkDeprecated(engineAthleteState,slot)
+      if(!deprecatedCheck.ok){skipped.push(`${exName}: ${deprecatedCheck.reason}`);continue}
+      const equipmentCheck=checkEquipmentTier(engineAthleteState,slot,exercisePool)
+      if(!equipmentCheck.ok){skipped.push(`${exName}: ${equipmentCheck.reason}${equipmentCheck.suggestion?' '+equipmentCheck.suggestion:''}`);continue}
+      const gateCheck=checkGateRequirement(engineAthleteState,slot)
+      if(!gateCheck.ok){skipped.push(`${exName}: ${gateCheck.reason}`);continue}
+      const intentCheck=checkThrowingIntent(engineAthleteState,slot)
+      if(!intentCheck.ok){skipped.push(`${exName}: ${intentCheck.reason}`);continue}
+
       const key=currentDay+'___'+cat
       const current=newStructured[key]||[]
-      newStructured[key]=[...current,{id:match.id||match.exercise_id,name:match.name,sets,reps,load,notes:'',cns:match.cns||''}]
+      newStructured[key]=[...current,{id:match.id||match.exercise_id,name:match.name,sets,reps,count,load,notes:'',cns:match.cns||'',intent_level}]
       added++
     }
+
+    // Week-level warning, not a per-line rejection -- computed once over the final merged
+    // week, surfaced separately from the skipped-line summary below.
+    const cnsWarnings=checkCNSAdjacency(
+      DAYS.map(day=>({day,exercises:CATEGORIES.flatMap(c=>newStructured[`${day}___${c.key}`]||[])})),
+      DAYS,
+    )
+
     await saveProgram(newStructured,cellNotes)
     setStructuredDays(newStructured)
     setImportSaving(false)
     setImportText('')
     const skippedMsg=skipped.length>0?' Skipped '+skipped.length+': '+skipped.slice(0,3).join(', ')+(skipped.length>3?'...':'')+'.':''
-    setImportResult('Added '+added+' exercise'+(added!==1?'s':'')+'.'+skippedMsg)
+    // Advisory only -- this never blocks or removes anything already added above, unlike every
+    // skipped[] reason, which is a real rejection.
+    const warnMsg=cnsWarnings.length>0?' ⚠ High-CNS days back to back: '+cnsWarnings.map(w=>`${w.day1}/${w.day2}`).join(', ')+'.':''
+    setImportResult('Added '+added+' exercise'+(added!==1?'s':'')+'.'+skippedMsg+warnMsg)
   }
 
   const saveProgram=async(structured:any,notes:any)=>{
@@ -774,13 +874,47 @@ export default function CoachDashboard(){
     setCellNotes(updated);await saveProgram(structuredDays,updated)
   }
 
-  const buildPrompt=()=>{
+  const buildPrompt=async()=>{
     const lastPitchSession=logs.find((l:any)=>l.pitch_count!=null)||null
     const restOwed=lastPitchSession?daysUntilClearToThrow(lastPitchSession.pitch_count,lastPitchSession.log_date):0
     const lastCMJ=cmjResults[0]
     const {classification}=classifyCMJ(lastCMJ)
     const rule=recommendationRules.find(r=>r.classification===classification)
     const recentLogs=logs.slice(0,7)
+    const effVelocity=getEffectiveVelocity(selected,cmjResults)||null
+    const armFlagStatuses=computeArmCareFlagStatuses(armCareTests[0]||null,effVelocity)
+
+    // Context tags used to decide which non-engine-rule principles_sections are relevant to
+    // THIS pitcher right now -- built only from data the app already has. See the audit's
+    // "athlete-context fields buildPrompt would need" note for what's still missing (age/level,
+    // season phase, injury history, equipment access -- none of which exist on profiles today).
+    const contextTags:string[]=[
+      classification.toLowerCase().replace(/\s+/g,'_'),
+      restOwed>0?'rest_owed':'cleared_to_throw',
+      ...(armFlagStatuses.includes('Flag')?['arm_care_flag']:[]),
+      ...(armFlagStatuses.includes('Caution')?['arm_care_caution']:[]),
+    ]
+
+    // Fetched fresh at click-time (not from page-level state) so a section edited moments ago
+    // in the Principles tab is guaranteed to be reflected in the prompt.
+    const {data:sectionRows}=await supabase.from('principles_sections').select('*')
+    const sections=(sectionRows||[]) as PrinciplesSection[]
+    const selection=selectPrinciplesSections(sections,contextTags,PRINCIPLES_PROMPT_CHAR_BUDGET)
+    const principlesBlock=formatPrinciplesForPrompt(selection,PRINCIPLES_PROMPT_CHAR_BUDGET)
+
+    // Computed, not narrative -- athlete_state/throw_log/cmj_results/the exercise library run
+    // through lib/engine/athleteConstraints.ts, never the principles text.
+    const constraints=selected?await computeAthleteConstraints(supabase,selected.id,buildExercisePool()):null
+    const constraintsBlock=constraints?renderAthleteConstraintsBlock(constraints):'COMPUTED CONSTRAINTS — no pitcher selected.'
+
+    // "So I can see what the AI was actually given" -- logged to console for detail, and
+    // surfaced as a short visible line next to the Claude button (see render below).
+    console.log('[buildPrompt] context tags:',contextTags)
+    console.log('[buildPrompt] sections included:',selection.included.map(s=>`${s.doc} ${s.section_number} — ${s.title}${s.is_engine_rule?' (engine rule)':''}`))
+    if (selection.omitted.length>0) console.log('[buildPrompt] sections omitted (over budget):',selection.omitted.map(s=>`${s.doc} ${s.section_number} — ${s.title}`))
+    console.log('[buildPrompt] computed constraints:',constraints)
+    setPromptSectionSummary(summarizePrinciplesSelection(selection))
+
     const prompt=`You are helping Coach Salzman write a weekly training program for pitcher ${selected?.full_name}.
 
 PITCHER DATA:
@@ -794,8 +928,10 @@ ${rule?`- Training Emphasis: ${rule.emphasis} | Load Range: ${rule.load_range}`:
 RECENT LOGS:
 ${recentLogs.map((l:any)=>`  ${l.log_date}: vel=${l.velocity||'—'}mph, feeling=${l.feeling||'—'}/10, soreness=[${(l.soreness||[]).join(',')||'none'}]`).join('\n')||'  None.'}
 
-TRAINING PRINCIPLES:
-${principles||'No principles yet.'}
+${constraintsBlock}
+
+TRAINING PRINCIPLES (${selection.included.length} section(s), ~${selection.totalChars.toLocaleString()} chars):
+${principlesBlock||'No principles sections yet.'}
 
 Write next week's program by day and category (Pre-Throwing, Throwing, Post-Throwing, Speed/Power, Main Exercises, Accessory, Recovery). Use format: "Exercise Name SxR @ X%"`
     navigator.clipboard.writeText(prompt).catch(()=>{})
@@ -823,11 +959,16 @@ Write next week's program by day and category (Pre-Throwing, Throwing, Post-Thro
     if (!rule) return {exercises:[],notes:null}
     const preferredCats:string[]=rule.preferred_categories||[]
     const preferredPatterns:string[]=rule.preferred_patterns||[]
-    const exercises=EXERCISE_DB.filter(ex=>preferredCats.includes(ex.category)||preferredPatterns.includes(ex.pattern)).slice(0,6)
+    const exercises=EXERCISE_DB.filter(ex=>!ex.deprecated&&(preferredCats.includes(ex.category)||preferredPatterns.includes(ex.pattern))).slice(0,6)
     return {exercises, notes:rule.notes||null}
   }
 
+  // Deprecated exercises (Task 1: traditional Olympic lifts, replaced by weighted jumps) are
+  // excluded from both pickers below and from getRecommendation's suggestions above -- but NOT
+  // from EXERCISE_DB itself, so existing program rows that already reference one (by id lookup,
+  // e.g. the ground-contacts lookup or the edit-item modal) keep resolving correctly.
   const filteredExercises=useMemo(()=>EXERCISE_DB.filter(ex=>{
+    if (ex.deprecated) return false
     const q=pickerSearch.toLowerCase()
     if (q&&!ex.name.toLowerCase().includes(q)&&!ex.pattern.toLowerCase().includes(q))return false
     if (pickerCNS!=='All'&&ex.cns!==pickerCNS)return false
@@ -836,6 +977,7 @@ Write next week's program by day and category (Pre-Throwing, Throwing, Post-Thro
   }),[EXERCISE_DB,pickerSearch,pickerCNS,pickerCat])
 
   const filteredLibrary=useMemo(()=>EXERCISE_DB.filter(ex=>{
+    if (ex.deprecated) return false
     const q=libSearch.toLowerCase()
     if (q&&!ex.name.toLowerCase().includes(q)&&!ex.pattern.toLowerCase().includes(q))return false
     if (libCat!=='All'&&ex.category!==libCat)return false
@@ -982,6 +1124,8 @@ Write next week's program by day and category (Pre-Throwing, Throwing, Post-Thro
               </div>
 
               <ProgressOverview pitcherId={selected.id} mode="coach"/>
+              <AthleteStatePanel pitcherId={selected.id}/>
+              <ThrowLogPanel pitcherId={selected.id}/>
 
               <div style={{display:'flex',gap:6,marginBottom:16,flexWrap:'wrap' as const}}>
                 {['overview','weekly','logs','program','iq','benchmarks','mechanics'].map(t=>(
@@ -1475,7 +1619,7 @@ Write next week's program by day and category (Pre-Throwing, Throwing, Post-Thro
                       </div>
                     ))}
                     <div style={{marginLeft:'auto',display:'flex',alignItems:'center',gap:10}}>
-                      {['High','Moderate','Low'].map(c=>(
+                      {CNS_VALUES.map(c=>(
                         <div key={c} style={{display:'flex',alignItems:'center',gap:4}}>
                           <div style={{width:7,height:7,borderRadius:'50%',background:CNS_COLORS[c].dot}}/>
                           <span style={{fontSize:10,color:C.textMuted}}>{c}</span>
@@ -1487,6 +1631,7 @@ Write next week's program by day and category (Pre-Throwing, Throwing, Post-Thro
                     <button onClick={copyWeekToClipboard} style={S.btn()}>{copySuccess?'✓ Copied':'Copy Week'}</button>
                     <button onClick={clearWeek} style={{...S.btn(),background:'rgba(248,81,73,0.1)',color:C.red,border:'1px solid rgba(248,81,73,0.3)'}}>Clear Week</button>
                   </div>
+                  {promptSectionSummary&&<div style={{fontSize:11,color:C.textMuted,marginTop:-8,marginBottom:12}}>Last Claude prompt — {promptSectionSummary}</div>}
                   <div style={{overflowX:'auto' as const}}>
                     <div style={{minWidth:900}}>
                       <div style={{display:'grid',gridTemplateColumns:'130px repeat(7,1fr)',gap:4,marginBottom:4}}>
@@ -1528,7 +1673,7 @@ Write next week's program by day and category (Pre-Throwing, Throwing, Post-Thro
                                         <CNSDot cns={ex.cns}/>
                                         <span style={{fontSize:10,fontWeight:700,color:C.white,whiteSpace:'nowrap' as const,overflow:'hidden',textOverflow:'ellipsis',maxWidth:90}}>{ex.name}</span>
                                       </div>
-                                      <div style={{fontSize:9,color:cat.color,fontWeight:600}}>{ex.sets}x{ex.reps}{ex.load?` @ ${ex.load}%`:''}</div>
+                                      <div style={{fontSize:9,color:cat.color,fontWeight:600}}>{formatPrescription(ex)}</div>
                                       {ex.notes&&<div style={{fontSize:9,color:C.textDim,fontStyle:'italic',marginTop:1}}>{ex.notes}</div>}
                                       {exerciseVideos[ex.id]&&<a href={exerciseVideos[ex.id]} target="_blank" rel="noopener noreferrer" style={{fontSize:9,color:C.blue,display:'block',marginTop:2}}>Video</a>}
                                     </div>
@@ -1774,17 +1919,17 @@ Write next week's program by day and category (Pre-Throwing, Throwing, Post-Thro
           {view==='principles'&&(
             <div>
               <div style={{fontSize:20,fontWeight:700,color:C.white,marginBottom:4}}>TRAINING PRINCIPLES</div>
-              <div style={{fontSize:13,color:C.textMuted,marginBottom:4}}>Claude reads this when generating programs.</div>
+              <div style={{fontSize:13,color:C.textMuted,marginBottom:4}}>The "Claude" button on each pitcher's Program tab reads the engine-rule and context-matched sections below when generating that pitcher's prompt.</div>
               <div style={{fontSize:12,color:C.teal,marginBottom:16,padding:'8px 12px',background:'rgba(57,211,83,0.06)',border:'1px solid rgba(57,211,83,0.2)',borderRadius:6}}>
-                Tip: Write prescriptions as Exercise Name: SxR @ % and the program builder will auto-suggest them.
-                {Object.keys(parsedPrinciples).length>0&&<span style={{color:C.textMuted}}> · {Object.keys(parsedPrinciples).length} prescriptions detected.</span>}
+                Legacy note: the exercise-library auto-suggest below still reads the old single-document Training Principles text (not these sections) — that cutover hasn't happened yet.
+                {Object.keys(parsedPrinciples).length>0&&<span style={{color:C.textMuted}}> · {Object.keys(parsedPrinciples).length} prescriptions detected from that legacy text.</span>}
               </div>
+              {/* Section-based editor (principles_sections) -- replaces the old single-blob
+                  textarea. The `principles` table/row above is left untouched and still powers
+                  parsePrinciples()/lookupPrescription()'s exercise auto-suggest below until
+                  that's cut over to sections in a later step. */}
               <div style={S.card}>
-                <textarea style={{...S.input,minHeight:400,lineHeight:1.8,resize:'vertical' as const}} value={princText} onChange={e=>setPrincText(e.target.value)} placeholder="Paste your training principles here..."/>
-                <div style={{marginTop:12,display:'flex',alignItems:'center',gap:12}}>
-                  <button style={S.btn('gold')} onClick={savePrinciples}>Save</button>
-                  {princSaved&&<span style={{color:C.teal,fontSize:13,fontWeight:600}}>Saved</span>}
-                </div>
+                <PrinciplesSectionsEditor/>
               </div>
               {Object.keys(parsedPrinciples).length>0&&(
                 <div style={S.card}>
