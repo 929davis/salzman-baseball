@@ -1,7 +1,7 @@
 'use client'
 import { useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
-import { THROW_TYPES, IMPLEMENTS, INTENT_LEVELS, computeThrowLoadRatio, computeWeeklyBuckets, type ThrowLogEntry } from '@/lib/throwLog'
+import { THROW_TYPES, IMPLEMENTS, INTENT_LEVELS, WEEKLY_AGGREGATE_TYPE, computeThrowLoadRatio, computeWeeklyBuckets, type ThrowLogEntry } from '@/lib/throwLog'
 
 const C = {
   bg:'#0d1117',bg2:'#161b22',bg3:'#1c2333',border:'#30363d',
@@ -25,12 +25,25 @@ const blankForm = ():NewEntryForm => ({
   throw_date:new Date().toISOString().split('T')[0], throw_type:'bullpen', count:'', implement:'5oz', intent_level:'', notes:'',
 })
 
+// Fast entry: one row for a whole week instead of a form per session -- for the coach who
+// knows the shape of a pitcher's week but isn't going to log every drill and long-toss set.
+type WeeklyEntryForm = { week_of:string, count:string, intent_level:string, implement:string }
+const mondayOfToday = () => {
+  const d = new Date()
+  const dow = d.getDay()
+  d.setDate(d.getDate() + (dow===0?-6:1-dow))
+  return d.toISOString().split('T')[0]
+}
+const blankWeeklyForm = ():WeeklyEntryForm => ({ week_of:mondayOfToday(), count:'', intent_level:'', implement:'5oz' })
+
 export default function ThrowLogPanel({pitcherId}:{pitcherId:string}){
   const supabase = createClient()
   const [entries,setEntries] = useState<ThrowLogEntry[]>([])
   const [loading,setLoading] = useState(true)
   const [expanded,setExpanded] = useState(false)
+  const [entryMode,setEntryMode] = useState<'session'|'weekly'>('session')
   const [form,setForm] = useState<NewEntryForm>(blankForm())
+  const [weeklyForm,setWeeklyForm] = useState<WeeklyEntryForm>(blankWeeklyForm())
   const [saving,setSaving] = useState(false)
   const [error,setError] = useState('')
 
@@ -68,8 +81,27 @@ export default function ThrowLogPanel({pitcherId}:{pitcherId:string}){
     await load()
   }
 
+  const addWeeklyEntry = async () => {
+    setError('')
+    const count = parseInt(weeklyForm.count,10)
+    if (!weeklyForm.week_of || !weeklyForm.implement || !count || count<=0) {
+      setError('Week-of date, implement, and a count greater than 0 are required.')
+      return
+    }
+    setSaving(true)
+    const {error:insertError} = await supabase.from('throw_log').insert({
+      pitcher_id:pitcherId, throw_date:weeklyForm.week_of, throw_type:WEEKLY_AGGREGATE_TYPE,
+      count, implement:weeklyForm.implement, intent_level:weeklyForm.intent_level||null,
+    })
+    setSaving(false)
+    if (insertError) { setError('Save failed: '+insertError.message); return }
+    setWeeklyForm(blankWeeklyForm())
+    await load()
+  }
+
   const deleteEntry = async (entry:ThrowLogEntry) => {
-    if (!window.confirm(`Delete this ${entry.throw_type} entry from ${entry.throw_date} (${entry.count} throws)? This cannot be undone.`)) return
+    const label = entry.throw_type===WEEKLY_AGGREGATE_TYPE?`weekly total for the week of ${entry.throw_date}`:`${entry.throw_type} entry from ${entry.throw_date}`
+    if (!window.confirm(`Delete this ${label} (${entry.count} throws)? This cannot be undone.`)) return
     const {error} = await supabase.from('throw_log').delete().eq('id',entry.id)
     if (error) { alert('Delete failed: '+error.message); return }
     setEntries(prev=>prev.filter(e=>e.id!==entry.id))
@@ -122,39 +154,79 @@ export default function ThrowLogPanel({pitcherId}:{pitcherId:string}){
 
           {/* Add entry form */}
           <div>
-            <label style={lbl}>Log a Throwing Event</label>
-            <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(120px,1fr))',gap:8,marginBottom:8}}>
-              <div>
-                <label style={lbl}>Date</label>
-                <input type="date" style={inp} value={form.throw_date} onChange={e=>setForm(f=>({...f,throw_date:e.target.value}))}/>
-              </div>
-              <div>
-                <label style={lbl}>Type</label>
-                <select style={inp} value={form.throw_type} onChange={e=>setForm(f=>({...f,throw_type:e.target.value}))}>
-                  {THROW_TYPES.map(t=><option key={t} value={t}>{t}</option>)}
-                </select>
-              </div>
-              <div>
-                <label style={lbl}>Count</label>
-                <input type="text" inputMode="numeric" style={inp} placeholder="e.g. 35" value={form.count} onChange={e=>setForm(f=>({...f,count:e.target.value.replace(/[^0-9]/g,'')}))}/>
-              </div>
-              <div>
-                <label style={lbl}>Implement</label>
-                <select style={inp} value={form.implement} onChange={e=>setForm(f=>({...f,implement:e.target.value}))}>
-                  {IMPLEMENTS.map(i=><option key={i} value={i}>{i}</option>)}
-                </select>
-              </div>
-              <div>
-                <label style={lbl}>Intent</label>
-                <select style={inp} value={form.intent_level} onChange={e=>setForm(f=>({...f,intent_level:e.target.value}))}>
-                  <option value="">—</option>
-                  {INTENT_LEVELS.map(i=><option key={i} value={i}>{i}</option>)}
-                </select>
+            <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:8}}>
+              <label style={{...lbl,marginBottom:0}}>{entryMode==='session'?'Log a Throwing Event':'Quick Weekly Total'}</label>
+              <div style={{display:'flex',gap:4}}>
+                <button onClick={()=>{setError('');setEntryMode('session')}} style={{background:entryMode==='session'?C.goldBg:'transparent',color:entryMode==='session'?C.gold:C.textMuted,border:`1px solid ${entryMode==='session'?C.goldDim:C.border}`,borderRadius:6,padding:'3px 9px',fontSize:10,fontWeight:700,cursor:'pointer'}}>Per-Session</button>
+                <button onClick={()=>{setError('');setEntryMode('weekly')}} style={{background:entryMode==='weekly'?C.goldBg:'transparent',color:entryMode==='weekly'?C.gold:C.textMuted,border:`1px solid ${entryMode==='weekly'?C.goldDim:C.border}`,borderRadius:6,padding:'3px 9px',fontSize:10,fontWeight:700,cursor:'pointer'}}>Quick Weekly Total</button>
               </div>
             </div>
-            <input type="text" style={{...inp,marginBottom:8}} placeholder="Notes (optional)" value={form.notes} onChange={e=>setForm(f=>({...f,notes:e.target.value}))}/>
-            {error && <div style={{fontSize:11,color:C.red,marginBottom:8}}>{error}</div>}
-            <button onClick={addEntry} disabled={saving} style={{background:C.gold,color:C.bg,border:`1px solid ${C.gold}`,borderRadius:6,padding:'7px 16px',fontSize:12,fontWeight:700,cursor:saving?'not-allowed':'pointer'}}>{saving?'Saving...':'Add Entry'}</button>
+
+            {entryMode==='session' ? (
+              <>
+                <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(120px,1fr))',gap:8,marginBottom:8}}>
+                  <div>
+                    <label style={lbl}>Date</label>
+                    <input type="date" style={inp} value={form.throw_date} onChange={e=>setForm(f=>({...f,throw_date:e.target.value}))}/>
+                  </div>
+                  <div>
+                    <label style={lbl}>Type</label>
+                    <select style={inp} value={form.throw_type} onChange={e=>setForm(f=>({...f,throw_type:e.target.value}))}>
+                      {THROW_TYPES.map(t=><option key={t} value={t}>{t}</option>)}
+                    </select>
+                  </div>
+                  <div>
+                    <label style={lbl}>Count</label>
+                    <input type="text" inputMode="numeric" style={inp} placeholder="e.g. 35" value={form.count} onChange={e=>setForm(f=>({...f,count:e.target.value.replace(/[^0-9]/g,'')}))}/>
+                  </div>
+                  <div>
+                    <label style={lbl}>Implement</label>
+                    <select style={inp} value={form.implement} onChange={e=>setForm(f=>({...f,implement:e.target.value}))}>
+                      {IMPLEMENTS.map(i=><option key={i} value={i}>{i}</option>)}
+                    </select>
+                  </div>
+                  <div>
+                    <label style={lbl}>Intent</label>
+                    <select style={inp} value={form.intent_level} onChange={e=>setForm(f=>({...f,intent_level:e.target.value}))}>
+                      <option value="">—</option>
+                      {INTENT_LEVELS.map(i=><option key={i} value={i}>{i}</option>)}
+                    </select>
+                  </div>
+                </div>
+                <input type="text" style={{...inp,marginBottom:8}} placeholder="Notes (optional)" value={form.notes} onChange={e=>setForm(f=>({...f,notes:e.target.value}))}/>
+                {error && <div style={{fontSize:11,color:C.red,marginBottom:8}}>{error}</div>}
+                <button onClick={addEntry} disabled={saving} style={{background:C.gold,color:C.bg,border:`1px solid ${C.gold}`,borderRadius:6,padding:'7px 16px',fontSize:12,fontWeight:700,cursor:saving?'not-allowed':'pointer'}}>{saving?'Saving...':'Add Entry'}</button>
+              </>
+            ) : (
+              <>
+                <div style={{fontSize:11,color:C.textDim,marginBottom:8}}>One row for the whole week — the count is spread evenly across those 7 days for the acute/chronic ratio, so it's a smoothed estimate, not a day-by-day picture.</div>
+                <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(120px,1fr))',gap:8,marginBottom:8}}>
+                  <div>
+                    <label style={lbl}>Week Of</label>
+                    <input type="date" style={inp} value={weeklyForm.week_of} onChange={e=>setWeeklyForm(f=>({...f,week_of:e.target.value}))}/>
+                  </div>
+                  <div>
+                    <label style={lbl}>Total Throws</label>
+                    <input type="text" inputMode="numeric" style={inp} placeholder="e.g. 180" value={weeklyForm.count} onChange={e=>setWeeklyForm(f=>({...f,count:e.target.value.replace(/[^0-9]/g,'')}))}/>
+                  </div>
+                  <div>
+                    <label style={lbl}>Dominant Intent</label>
+                    <select style={inp} value={weeklyForm.intent_level} onChange={e=>setWeeklyForm(f=>({...f,intent_level:e.target.value}))}>
+                      <option value="">—</option>
+                      {INTENT_LEVELS.map(i=><option key={i} value={i}>{i}</option>)}
+                    </select>
+                  </div>
+                  <div>
+                    <label style={lbl}>Dominant Implement</label>
+                    <select style={inp} value={weeklyForm.implement} onChange={e=>setWeeklyForm(f=>({...f,implement:e.target.value}))}>
+                      {IMPLEMENTS.map(i=><option key={i} value={i}>{i}</option>)}
+                    </select>
+                  </div>
+                </div>
+                {error && <div style={{fontSize:11,color:C.red,marginBottom:8}}>{error}</div>}
+                <button onClick={addWeeklyEntry} disabled={saving} style={{background:C.gold,color:C.bg,border:`1px solid ${C.gold}`,borderRadius:6,padding:'7px 16px',fontSize:12,fontWeight:700,cursor:saving?'not-allowed':'pointer'}}>{saving?'Saving...':'Add Weekly Total'}</button>
+              </>
+            )}
           </div>
 
           {/* Recent entries */}
@@ -164,17 +236,20 @@ export default function ThrowLogPanel({pitcherId}:{pitcherId:string}){
               <div style={{fontSize:12,color:C.textDim}}>Nothing logged yet.</div>
             ) : (
               <div style={{maxHeight:220,overflowY:'auto' as const}}>
-                {entries.map(e=>(
+                {entries.map(e=>{
+                  const isWeekly = e.throw_type===WEEKLY_AGGREGATE_TYPE
+                  return (
                   <div key={e.id} style={{display:'flex',alignItems:'center',gap:8,padding:'6px 0',borderBottom:`1px solid ${C.border}`,fontSize:12}}>
-                    <span style={{color:C.textMuted,minWidth:80}}>{e.throw_date}</span>
-                    <span style={{color:C.white,minWidth:80}}>{e.throw_type}</span>
+                    <span style={{color:C.textMuted,minWidth:80}}>{isWeekly?`wk of ${e.throw_date}`:e.throw_date}</span>
+                    <span style={{color:isWeekly?C.gold:C.white,minWidth:110}}>{isWeekly?'weekly total':e.throw_type}</span>
                     <span style={{color:C.gold,minWidth:60}}>{e.count} throws</span>
                     <span style={{color:C.textMuted,minWidth:70}}>{e.implement}</span>
                     <span style={{color:C.textMuted,minWidth:40}}>{e.intent_level||'—'}</span>
                     <span style={{color:C.textDim,flex:1,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{e.notes}</span>
                     <button onClick={()=>deleteEntry(e)} style={{background:'transparent',border:'none',color:C.red,cursor:'pointer',fontSize:11}}>Delete</button>
                   </div>
-                ))}
+                  )
+                })}
               </div>
             )}
           </div>

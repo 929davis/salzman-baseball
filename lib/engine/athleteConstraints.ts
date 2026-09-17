@@ -84,7 +84,7 @@ export async function computeAthleteConstraints(
 
   const [{ data: athleteStateRow }, { data: throwLogRows }, { data: cmjRows }, { data: programRow }] = await Promise.all([
     supabase.from('athlete_state').select('*').eq('pitcher_id', pitcherId).maybeSingle(),
-    supabase.from('throw_log').select('throw_date,count,implement,intent_level').eq('pitcher_id', pitcherId).order('throw_date', { ascending: false }),
+    supabase.from('throw_log').select('throw_date,count,implement,intent_level,throw_type').eq('pitcher_id', pitcherId).order('throw_date', { ascending: false }),
     supabase.from('cmj_results').select('*').eq('pitcher_id', pitcherId).order('test_date', { ascending: false }).limit(1),
     supabase.from('programs').select('structured_days').eq('pitcher_id', pitcherId).order('week_of', { ascending: false }).limit(1).maybeSingle(),
   ])
@@ -155,7 +155,7 @@ export async function computeAthleteConstraints(
 
   // Throw load (acute/chronic/ratio/band) -- see lib/throwLog.ts for the weighting and the
   // 28-day-minimum-history rule.
-  const throwEntries = (throwLogRows ?? []).map((r: any) => ({ throw_date: r.throw_date, count: r.count, implement: r.implement }))
+  const throwEntries = (throwLogRows ?? []).map((r: any) => ({ throw_date: r.throw_date, count: r.count, implement: r.implement, throw_type: r.throw_type }))
   const throwLoad = computeThrowLoadRatio(throwEntries)
 
   // Days since the most recent I4/I5 throwing exposure on record (any distance back, not just

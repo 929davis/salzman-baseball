@@ -356,6 +356,8 @@ export default function CoachDashboard(){
   const [showCmjHistory,setShowCmjHistory]=useState(false)
   const [principles,setPrinciples]=useState('')
   const [promptSectionSummary,setPromptSectionSummary]=useState('')
+  const [coachNoteModal,setCoachNoteModal]=useState(false)
+  const [coachNoteText,setCoachNoteText]=useState('')
   const [cellNotes,setCellNotes]=useState<Record<string,string>>({})
   const [expandedCell,setExpandedCell]=useState<string|null>(null)
   const [copyModal,setCopyModal]=useState<{ex:any,fromKey:string}|null>(null)
@@ -874,7 +876,7 @@ export default function CoachDashboard(){
     setCellNotes(updated);await saveProgram(structuredDays,updated)
   }
 
-  const buildPrompt=async()=>{
+  const buildPrompt=async(coachNote:string='')=>{
     const lastPitchSession=logs.find((l:any)=>l.pitch_count!=null)||null
     const restOwed=lastPitchSession?daysUntilClearToThrow(lastPitchSession.pitch_count,lastPitchSession.log_date):0
     const lastCMJ=cmjResults[0]
@@ -915,7 +917,14 @@ export default function CoachDashboard(){
     console.log('[buildPrompt] computed constraints:',constraints)
     setPromptSectionSummary(summarizePrinciplesSelection(selection))
 
-    const prompt=`You are helping Coach Salzman write a weekly training program for pitcher ${selected?.full_name}.
+    // One-time context handed over at click-time, not logged anywhere -- the fix for this
+    // prompt otherwise having no memory of anything Davis knows but hasn't (and won't) put
+    // into structured fields. Deliberately not persisted; see the modal that collects it.
+    const notePrefix=coachNote.trim()
+      ?`COACH'S NOTE — recency context not captured elsewhere:\n${coachNote.trim()}\n\n`
+      :''
+
+    const prompt=`${notePrefix}You are helping Coach Salzman write a weekly training program for pitcher ${selected?.full_name}.
 
 PITCHER DATA:
 - Avg Velocity: ${selected?.avg_velocity||'—'} mph
@@ -1628,7 +1637,7 @@ Write next week's program by day and category (Pre-Throwing, Throwing, Post-Thro
                         </div>
                       ))}
                     </div>
-                    <button style={S.btn('gold')} onClick={buildPrompt}>Claude</button>
+                    <button style={S.btn('gold')} onClick={()=>{setCoachNoteText('');setCoachNoteModal(true)}}>Claude</button>
                     <button style={{...S.btn(),background:'rgba(88,166,255,0.1)',color:'#58a6ff',border:'1px solid rgba(88,166,255,0.3)'}} onClick={()=>{setImportModal(true);setImportResult(null)}}>Import</button>
                     <button onClick={copyWeekToClipboard} style={S.btn()}>{copySuccess?'✓ Copied':'Copy Week'}</button>
                     <button onClick={clearWeek} style={{...S.btn(),background:'rgba(248,81,73,0.1)',color:C.red,border:'1px solid rgba(248,81,73,0.3)'}}>Clear Week</button>
@@ -2054,6 +2063,25 @@ Write next week's program by day and category (Pre-Throwing, Throwing, Post-Thro
           </div>
         </div>
       )}
+    {coachNoteModal&&(
+      <div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.7)',zIndex:9999,display:'flex',alignItems:'center',justifyContent:'center'}} onClick={()=>setCoachNoteModal(false)}>
+        <div style={{background:'#1a1a2e',border:'1px solid rgba(255,255,255,0.1)',borderRadius:12,padding:24,width:480,maxWidth:'90vw'}} onClick={e=>e.stopPropagation()}>
+          <div style={{fontSize:15,fontWeight:700,color:'#fff',marginBottom:4}}>Anything about this guy this week?</div>
+          <div style={{fontSize:12,color:'#888',marginBottom:12}}>Soreness, a good bullpen, something you noticed — optional. Not saved anywhere; just goes into this one prompt.</div>
+          <textarea
+            autoFocus
+            style={{width:'100%',height:100,background:'#0d0d1a',border:'1px solid rgba(255,255,255,0.1)',borderRadius:8,padding:'10px 12px',fontSize:13,color:'#fff',outline:'none',resize:'vertical' as const,boxSizing:'border-box' as const}}
+            placeholder="e.g. mentioned some elbow soreness Tuesday, nothing major but keep an eye on it..."
+            value={coachNoteText}
+            onChange={e=>setCoachNoteText(e.target.value)}
+          />
+          <div style={{display:'flex',gap:8,marginTop:12}}>
+            <button onClick={()=>{setCoachNoteModal(false);buildPrompt('')}} style={{flex:1,background:'transparent',border:'1px solid rgba(255,255,255,0.1)',borderRadius:8,padding:'10px',fontSize:13,color:'#888',cursor:'pointer'}}>Skip</button>
+            <button onClick={()=>{setCoachNoteModal(false);buildPrompt(coachNoteText)}} style={{flex:2,background:'rgba(232,184,75,0.15)',border:'1px solid rgba(232,184,75,0.4)',borderRadius:8,padding:'10px',fontSize:13,color:'#e8b84b',cursor:'pointer'}}>Generate Prompt</button>
+          </div>
+        </div>
+      </div>
+    )}
     {exerciseImportModal&&(
       <div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.7)',zIndex:9999,display:'flex',alignItems:'center',justifyContent:'center'}} onClick={()=>setExerciseImportModal(false)}>
         <div style={{background:'#1a1a2e',border:'1px solid rgba(255,255,255,0.1)',borderRadius:12,padding:24,width:560,maxWidth:'90vw'}} onClick={e=>e.stopPropagation()}>
