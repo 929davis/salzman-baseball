@@ -33,13 +33,20 @@ alter table programs
 -- program (that's why it's stale -- it keeps getting edited in place). There is no way to
 -- recover what was actually true in past weeks; every edit overwrote the previous state with
 -- nothing kept. Re-stamping to the current week is the honest move: it starts the dated-
--- history clock from a true statement ("accurate as of now"), not a fabricated one. These
--- rows are backfilled as already-edited (first_edited_at = now(), carried_forward stays
--- false), so none of them are excluded from ledger math.
+-- history clock from a true statement ("accurate as of now"), not a fabricated one.
 update programs
-set week_of = date_trunc('week', now())::date,
-    first_edited_at = coalesce(first_edited_at, now())
+set week_of = date_trunc('week', now())::date
 where week_of is null or week_of <> date_trunc('week', now())::date;
+
+-- Unconditional, deliberately its own statement -- NOT folded into the week_of backfill's
+-- WHERE clause above. Every existing row is a live, actively-maintained program regardless of
+-- whether its week_of happened to need re-stamping; scoping this to the same WHERE would skip
+-- any row already sitting at the current Monday and leave it with first_edited_at NULL --
+-- carried_forward defaults false so it wouldn't wrongly get excluded from ledger math today,
+-- but it's a never-edited flag on a program that's actively being edited, an inconsistent
+-- state with no reason to exist.
+update programs
+set first_edited_at = coalesce(first_edited_at, now());
 
 alter table programs
   alter column week_of set not null;
