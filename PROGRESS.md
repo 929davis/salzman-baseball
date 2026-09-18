@@ -77,14 +77,35 @@ it sooner (not started, no rows touched):
 6. Confirm their row is byte-identical to the step-1 backup.
 Candidate pitcher discussed: Adrian Pineda (`9388833f-08de-4409-a7c9-d36d64a2b12a`).
 
-**Next after verification: Step F** -- wire the structural validation
-rules (`lib/engine/*`: deprecated/equipment/gate/throwing-intent/CNS-
-adjacency checks) into `confirmAddExercise`, the exercise-picker "Add"
-flow. Confirmed this session: those rules currently run ONLY inside
-`parseAndImportProgram` (bulk paste-import) -- the picker path, which is
-the primary way exercises actually get added, has zero validation today.
+**Step F -- DONE (partial scope; committed locally, not pushed, `0bbc79c`).**
+`confirmAddExercise` (the exercise-picker "Add" flow) now fetches
+athlete_state fresh and runs checkDeprecated/checkEquipmentTier/
+checkGateRequirement/checkThrowingIntent before saving, same as
+`parseAndImportProgram` already did for bulk paste-import. Blocks the
+save and shows the reason inline (in plain language, via
+`humanizeReason` -- see below) on failure. Confirm-time blocking only,
+by explicit scope decision -- no list-level graying, `filteredExercises`
+untouched. **Not included: checkCNSAdjacency.** That's a week-level
+check (two high-CNS days back to back), not a per-slot one, and still
+only runs inside `parseAndImportProgram` as an advisory warning over
+the whole merged week -- the picker path has no CNS-adjacency check at
+all. Worth a decision later on whether/how to surface that on a
+single-exercise add.
 
-**Remaining steps after F**, in the order already agreed: A/C (ledger
+**Also done, adjacent to the above (separate request, same session):**
+a plain-language rendering layer (`lib/plainLanguage.ts`:
+intentLabel/gateLabel/stageLabel/tierLabel, all `{plain, code}`) --
+coach-side UI shows plain label as primary text with the raw code as a
+secondary tag/tooltip (AthleteStatePanel, Program tab grid, ThrowLogPanel,
+and now the picker's validation-failure messages); pitcher-side strips
+codes entirely. Found and fixed a real bug in the process: the pitcher
+program view only ever rendered `ex.sets`/`ex.reps`, so a Throwing slot
+(count + intent_level, no sets/reps) rendered as literal
+"undefined×undefined". The full constraints block (`renderAthleteConstraintsBlock`)
+was deliberately left untranslated -- confirmed it's clipboard content
+bound for Claude.ai, not a human-reading surface.
+
+**Remaining steps**, in the order already agreed: A/C (ledger
 persistence proper -- today's dated-history fix only gets MAX resolution
 as far as the current week; 28-day chronic prescribed history still
 needs the ledger) -> H (three-state gates: passed/failed/not_tested,
