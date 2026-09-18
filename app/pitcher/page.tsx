@@ -15,6 +15,7 @@ import { parseTime, calcCMJFn, classifyCMJ } from '@/lib/cmj'
 import { CATEGORY_ORDER, CATEGORY_COLORS } from '@/lib/exerciseCategories'
 import { getRecoveryModifier, computeArmCareFlagStatuses } from '@/lib/armCare'
 import { computeSpeedPowerGuardrail, GROUND_CONTACTS_PER_REP } from '@/lib/speedPowerVolume'
+import { intentLabel } from '@/lib/plainLanguage'
 
 const C = {
   bg:'#0d1117',bg2:'#161b22',bg3:'#1c2333',border:'#30363d',
@@ -454,14 +455,23 @@ export default function PitcherDashboard(){
                               </span>
                             )}
                           </div>
-                          {exercises.map((ex:any,i:number)=>(
+                          {exercises.map((ex:any,i:number)=>{
+                            // Throwing slots are written as a count + intent code (e.g. "35 @
+                            // I4"), not sets/reps -- plain language only here, never the raw
+                            // code (I1-I5, gate codes, equipment tiers never reach this page at
+                            // all: see lib/plainLanguage.ts).
+                            const prescription=ex.count!=null
+                              ?`${ex.count} throws${ex.intent_level?` — ${intentLabel(ex.intent_level).plain}`:''}`
+                              :`${ex.sets}×${ex.reps}${ex.load?` @ ${ex.load}%`:''}`
+                            return (
                             <div key={i} style={{padding:'8px 10px',background:C.bg3,borderRadius:8,marginBottom:6,borderLeft:`3px solid ${catCol}`}}>
                               <div style={{fontSize:13,fontWeight:600,color:C.white,marginBottom:2}}>{ex.name}</div>
-                              <div style={{fontSize:12,color:catCol,fontWeight:600}}>{ex.sets}×{ex.reps}{ex.load?` @ ${ex.load}%`:''}</div>
+                              <div style={{fontSize:12,color:catCol,fontWeight:600}}>{prescription}</div>
                               {ex.notes&&<div style={{fontSize:11,color:C.textMuted,marginTop:2,fontStyle:'italic'}}>{ex.notes}</div>}
                               {exerciseVideos[ex.id]&&<a href={exerciseVideos[ex.id]} target="_blank" rel="noopener noreferrer" style={{fontSize:11,color:C.blue,marginTop:4,display:'inline-block',textDecoration:'none'}}>▶ Watch Video</a>}
                             </div>
-                          ))}
+                            )
+                          })}
                           {note&&<div style={{fontSize:12,color:C.textMuted,fontStyle:'italic',padding:'6px 10px',background:C.bg3,borderRadius:6}}>{note}</div>}
                         </div>
                       )

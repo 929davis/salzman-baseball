@@ -27,6 +27,7 @@ import { parseTime, calcCMJFn, classifyCMJ } from '@/lib/cmj'
 import { CATEGORY_ORDER, CATEGORY_COLORS } from '@/lib/exerciseCategories'
 import { computeSpeedPowerGuardrail } from '@/lib/speedPowerVolume'
 import { currentWeekOf, addWeeks } from '@/lib/weekUtils'
+import { intentLabel, gateLabel, stageLabel, tierLabel } from '@/lib/plainLanguage'
 
 const C = {
   bg:'#0d1117',bg2:'#161b22',bg3:'#1c2333',border:'#30363d',
@@ -65,6 +66,19 @@ const DAYS = ['Monday','Tuesday','Wednesday','Thursday','Friday','Saturday','Sun
 const formatPrescription=(ex:{sets?:number|null,reps?:number|null,count?:number|null,load?:string|null,intent_level?:string|null})=>{
   if(ex.count!=null) return `${ex.count}${ex.intent_level?` @ ${ex.intent_level}`:''}`
   return `${ex.sets}x${ex.reps}${ex.load?` @ ${ex.load}%`:''}`
+}
+
+// Display-only sibling of formatPrescription -- that one's output round-trips through
+// serializeWeek/copyWeekToClipboard/parseAndImportProgram (the "I4" token has to stay a
+// literal I4 for re-import to parse it), so it can't be touched. This is for the Program tab
+// grid cell only: plain label as the primary text, raw code kept as a small secondary line for
+// anyone who wants it.
+const formatPrescriptionPlain=(ex:{sets?:number|null,reps?:number|null,count?:number|null,load?:string|null,intent_level?:string|null}):{main:string,code:string|null}=>{
+  if(ex.count!=null){
+    if(ex.intent_level) return {main:`${ex.count} throws — ${intentLabel(ex.intent_level).plain}`,code:ex.intent_level}
+    return {main:`${ex.count} throws`,code:null}
+  }
+  return {main:`${ex.sets}x${ex.reps}${ex.load?` @ ${ex.load}%`:''}`,code:null}
 }
 
 const serializeWeek=(structured:any)=>{
@@ -1754,14 +1768,19 @@ Write next week's program by day and category (Pre-Throwing, Throwing, Post-Thro
                                     {speedPowerGuardrail.is48hDriven?`${speedPowerGuardrail.rolling48hContacts} in 48h`:`${speedPowerGuardrail.totalContacts} contacts`} — {speedPowerGuardrail.status}
                                   </div>
                                 )}
-                                {exercises.map((ex:any,i:number)=>(
+                                {exercises.map((ex:any,i:number)=>{
+                                  const prescription=formatPrescriptionPlain(ex)
+                                  return (
                                   <div key={i} style={{background:cat.bg,borderLeft:`3px solid ${cat.color}`,borderRadius:4,padding:'4px 6px',marginBottom:3,display:'flex',alignItems:'flex-start',gap:5}}>
                                     <div style={{flex:1,minWidth:0}}>
                                       <div style={{display:'flex',alignItems:'center',gap:4,marginBottom:1}}>
                                         <CNSDot cns={ex.cns}/>
                                         <span style={{fontSize:10,fontWeight:700,color:C.white,whiteSpace:'nowrap' as const,overflow:'hidden',textOverflow:'ellipsis',maxWidth:90}}>{ex.name}</span>
                                       </div>
-                                      <div style={{fontSize:9,color:cat.color,fontWeight:600}}>{formatPrescription(ex)}</div>
+                                      <div style={{fontSize:9,color:cat.color,fontWeight:600}}>
+                                        {prescription.main}
+                                        {prescription.code&&<span title={prescription.code} style={{color:C.textDim,fontWeight:400,marginLeft:4}}>({prescription.code})</span>}
+                                      </div>
                                       {ex.notes&&<div style={{fontSize:9,color:C.textDim,fontStyle:'italic',marginTop:1}}>{ex.notes}</div>}
                                       {exerciseVideos[ex.id]&&<a href={exerciseVideos[ex.id]} target="_blank" rel="noopener noreferrer" style={{fontSize:9,color:C.blue,display:'block',marginTop:2}}>Video</a>}
                                     </div>
@@ -1769,7 +1788,8 @@ Write next week's program by day and category (Pre-Throwing, Throwing, Post-Thro
                                     {isCurrentWeek&&<button onClick={()=>setCopyModal({ex,fromKey:key})} style={{background:'transparent',border:'none',color:C.blue,cursor:'pointer',fontSize:9,padding:'0 2px',lineHeight:1,flexShrink:0}}>copy</button>}
                                     {isCurrentWeek&&<button onClick={()=>removeExercise(key,i)} style={{background:'transparent',border:'none',color:C.textDim,cursor:'pointer',fontSize:11,padding:'0 2px',lineHeight:1,flexShrink:0}}>x</button>}
                                   </div>
-                                ))}
+                                  )
+                                })}
                                 {note&&!isExpanded&&<div style={{fontSize:9,color:C.textDim,fontStyle:'italic',marginTop:exercises.length>0?3:0,cursor:isCurrentWeek?'pointer':'default'}} onClick={()=>isCurrentWeek&&setExpandedCell(key)}>{note.length>40?note.slice(0,40)+'...':note}</div>}
                                 {isExpanded&&isCurrentWeek&&<textarea autoFocus style={{width:'100%',background:C.bg3,border:`1px solid ${cat.border}`,borderRadius:4,padding:'4px 6px',fontSize:10,color:C.text,resize:'none' as const,outline:'none',minHeight:52,boxSizing:'border-box' as const,marginTop:3,fontFamily:'system-ui'}} value={note} onChange={e=>updateCellNote(day,cat.key,e.target.value)} onBlur={()=>setExpandedCell(null)} placeholder="Coaching note..."/>}
                                 {isCurrentWeek&&(

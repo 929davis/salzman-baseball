@@ -2,6 +2,7 @@
 import { useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { THROW_TYPES, IMPLEMENTS, INTENT_LEVELS, WEEKLY_AGGREGATE_TYPE, computeThrowLoadRatio, computeWeeklyBuckets, type ThrowLogEntry } from '@/lib/throwLog'
+import { intentLabel } from '@/lib/plainLanguage'
 
 const C = {
   bg:'#0d1117',bg2:'#161b22',bg3:'#1c2333',border:'#30363d',
@@ -189,7 +190,7 @@ export default function ThrowLogPanel({pitcherId}:{pitcherId:string}){
                     <label style={lbl}>Intent</label>
                     <select style={inp} value={form.intent_level} onChange={e=>setForm(f=>({...f,intent_level:e.target.value}))}>
                       <option value="">—</option>
-                      {INTENT_LEVELS.map(i=><option key={i} value={i}>{i}</option>)}
+                      {INTENT_LEVELS.map(i=><option key={i} value={i}>{intentLabel(i).plain} ({i})</option>)}
                     </select>
                   </div>
                 </div>
@@ -213,7 +214,7 @@ export default function ThrowLogPanel({pitcherId}:{pitcherId:string}){
                     <label style={lbl}>Dominant Intent</label>
                     <select style={inp} value={weeklyForm.intent_level} onChange={e=>setWeeklyForm(f=>({...f,intent_level:e.target.value}))}>
                       <option value="">—</option>
-                      {INTENT_LEVELS.map(i=><option key={i} value={i}>{i}</option>)}
+                      {INTENT_LEVELS.map(i=><option key={i} value={i}>{intentLabel(i).plain} ({i})</option>)}
                     </select>
                   </div>
                   <div>
@@ -244,7 +245,7 @@ export default function ThrowLogPanel({pitcherId}:{pitcherId:string}){
                     <span style={{color:isWeekly?C.gold:C.white,minWidth:110}}>{isWeekly?'weekly total':e.throw_type}</span>
                     <span style={{color:C.gold,minWidth:60}}>{e.count} throws</span>
                     <span style={{color:C.textMuted,minWidth:70}}>{e.implement}</span>
-                    <span style={{color:C.textMuted,minWidth:40}}>{e.intent_level||'—'}</span>
+                    <span title={e.intent_level||undefined} style={{color:C.textMuted,minWidth:90}}>{e.intent_level?intentLabel(e.intent_level).plain:'—'}</span>
                     <span style={{color:C.textDim,flex:1,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{e.notes}</span>
                     <button onClick={()=>deleteEntry(e)} style={{background:'transparent',border:'none',color:C.red,cursor:'pointer',fontSize:11}}>Delete</button>
                   </div>

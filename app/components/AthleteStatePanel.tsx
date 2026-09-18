@@ -1,6 +1,7 @@
 'use client'
 import { useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
+import { gateLabel, stageLabel, tierLabel } from '@/lib/plainLanguage'
 
 const C = {
   bg:'#0d1117',bg2:'#161b22',bg3:'#1c2333',border:'#30363d',
@@ -47,11 +48,11 @@ function Field({label,children}:{label:string,children:React.ReactNode}){
   return <div><label style={lbl}>{label}</label>{children}</div>
 }
 
-function Select({value,onChange,options,placeholder}:{value:string|null,onChange:(v:string|null)=>void,options:string[],placeholder:string}){
+function Select({value,onChange,options,placeholder,labelFor}:{value:string|null,onChange:(v:string|null)=>void,options:string[],placeholder:string,labelFor?:(v:string)=>string}){
   return (
     <select style={inp} value={value||''} onChange={e=>onChange(e.target.value||null)}>
       <option value="">{placeholder}</option>
-      {options.map(o=><option key={o} value={o}>{o}</option>)}
+      {options.map(o=><option key={o} value={o}>{labelFor?labelFor(o):o}</option>)}
     </select>
   )
 }
@@ -109,7 +110,7 @@ export default function AthleteStatePanel({pitcherId}:{pitcherId:string}){
             <span key={b} style={{fontSize:10,color:C.textMuted,background:C.bg3,border:`1px solid ${C.border}`,borderRadius:10,padding:'2px 8px'}}>{b}</span>
           ))}
           {state.gates_passed.length>0&&<span style={{fontSize:10,color:C.teal,background:'rgba(57,211,83,0.08)',border:'1px solid rgba(57,211,83,0.3)',borderRadius:10,padding:'2px 8px'}}>{state.gates_passed.length} gate{state.gates_passed.length!==1?'s':''}</span>}
-          {state.active_change&&<span style={{fontSize:10,color:C.gold,background:C.goldBg,border:`1px solid ${C.goldDim}`,borderRadius:10,padding:'2px 8px'}}>Active change: stage {state.active_change_stage||'?'}</span>}
+          {state.active_change&&<span style={{fontSize:10,color:C.gold,background:C.goldBg,border:`1px solid ${C.goldDim}`,borderRadius:10,padding:'2px 8px'}}>Active change: {state.active_change_stage!=null?stageLabel(state.active_change_stage).plain:'stage ?'} {state.active_change_stage!=null&&<span style={{opacity:0.6}}>({state.active_change_stage})</span>}</span>}
         </div>
       </div>
 
@@ -117,7 +118,7 @@ export default function AthleteStatePanel({pitcherId}:{pitcherId:string}){
         <div style={{marginTop:14,display:'flex',flexDirection:'column',gap:12}}>
           <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(160px,1fr))',gap:10}}>
             <Field label="Training Status"><Select value={state.training_status} onChange={v=>update({training_status:v})} options={TRAINING_STATUS_OPTIONS} placeholder="—"/></Field>
-            <Field label="Equipment Tier"><Select value={state.equipment_tier} onChange={v=>update({equipment_tier:v})} options={EQUIPMENT_TIER_OPTIONS} placeholder="—"/></Field>
+            <Field label="Equipment Tier"><Select value={state.equipment_tier} onChange={v=>update({equipment_tier:v})} options={EQUIPMENT_TIER_OPTIONS} placeholder="—" labelFor={v=>`${tierLabel(v).plain} (${v})`}/></Field>
             <Field label="Throwing Status"><Select value={state.throwing_status} onChange={v=>update({throwing_status:v})} options={THROWING_STATUS_OPTIONS} placeholder="—"/></Field>
             <Field label="Season Phase"><Select value={state.season_phase} onChange={v=>update({season_phase:v})} options={SEASON_PHASE_OPTIONS} placeholder="—"/></Field>
             <Field label="Season Role"><Select value={state.season_role} onChange={v=>update({season_role:v})} options={SEASON_ROLE_OPTIONS} placeholder="—"/></Field>
@@ -140,12 +141,17 @@ export default function AthleteStatePanel({pitcherId}:{pitcherId:string}){
             <div style={{display:'flex',gap:6,flexWrap:'wrap' as const}}>
               {GATE_OPTIONS.map(g=>{
                 const active = state.gates_passed.includes(g)
+                const {plain} = gateLabel(g)
                 return (
-                  <button key={g} onClick={()=>toggleGate(g)} style={{
+                  <button key={g} onClick={()=>toggleGate(g)} title={g} style={{
                     fontSize:11,fontWeight:700,padding:'5px 10px',borderRadius:6,cursor:'pointer',
                     background:active?C.goldBg:C.bg3,color:active?C.gold:C.textMuted,
                     border:`1px solid ${active?C.goldDim:C.border}`,
-                  }}>{g}</button>
+                    display:'flex',flexDirection:'column',alignItems:'center',gap:1,
+                  }}>
+                    <span>{plain}</span>
+                    <span style={{fontSize:9,fontWeight:400,opacity:0.6}}>{g}</span>
+                  </button>
                 )
               })}
             </div>
@@ -158,7 +164,7 @@ export default function AthleteStatePanel({pitcherId}:{pitcherId:string}){
             <Field label="Stage">
               <select style={inp} value={state.active_change_stage??''} onChange={e=>update({active_change_stage:e.target.value?parseInt(e.target.value,10):null})}>
                 <option value="">—</option>
-                {ACTIVE_CHANGE_STAGES.map(s=><option key={s} value={s}>{s}</option>)}
+                {ACTIVE_CHANGE_STAGES.map(s=><option key={s} value={s}>{stageLabel(s).plain} ({s})</option>)}
               </select>
             </Field>
           </div>
