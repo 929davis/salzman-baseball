@@ -27,18 +27,24 @@ function deriveWeeklyHighCNSCeiling(seasonPhase: string | null): number | null {
   return null
 }
 
-// Stage -> intent cap for the one in-flight mechanical change athlete_state tracks. Each
-// stage's cap comes with the one-line reason it's capped there, rendered together so the
-// number never appears without the "why."
-const STAGE_INTENT_CAP: Record<number, { cap: string, reason: string }> = {
-  1: { cap: 'I2', reason: 'intent capped at I2 while the athlete is still acquiring the new movement shape' },
-  2: { cap: 'I3', reason: 'intent capped at I3 until the pattern is repeatable' },
-  3: { cap: 'I4', reason: 'intent capped at I4 during mixed-practice integration' },
-  4: { cap: 'I5', reason: 'intent capped at I5, full competitive intent with no cueing' },
-}
+// Stage -> intent cap for the one in-flight mechanical change athlete_state tracks. The WHY
+// (rationale sentence) used to be concatenated into the rendered line -- moved to a lookup the
+// principles doc explains once, not restated per-prompt (bug 2 below: facts only, no prose
+// that can drift from context).
+const STAGE_INTENT_CAP: Record<number, string> = { 1: 'I2', 2: 'I3', 3: 'I4', 4: 'I5' }
 
 export type GateBlock = { gate: Gate, blocks: string[] }
 export type ExcludedCategory = { category: string, reason: string }
+
+// One High-CNS commitment in the current program -- day + which specific exercise is tagged
+// CNS:'High'. Surfaced so a ceiling violation names removable candidates instead of just a
+// bare "over ceiling" count (bug 1: never report a violation with no resolution path).
+export type HighCNSExposure = { day: string, exerciseName: string, category: string }
+
+export type WeeklyHighCNSViolation = {
+  excess: number // how many exposures need to come out to be back at/under ceiling
+  removeCandidates: HighCNSExposure[]
+}
 
 export type AthleteConstraints = {
   pitcherId: string
@@ -56,6 +62,7 @@ export type AthleteConstraints = {
   // Derived from season_phase (see deriveWeeklyHighCNSCeiling). null only when season_phase
   // itself is null/unrecognized -- not a missing definition anymore.
   weekly_high_cns_ceiling: number | null
+  weekly_high_cns_violation: WeeklyHighCNSViolation | null
   has_team_lift: boolean
   team_lift_heavy_day: string | null
   throwLoad: ThrowLoadResult
@@ -64,7 +71,6 @@ export type AthleteConstraints = {
   // Derived from active_change_stage (see STAGE_INTENT_CAP). null only when there's no active
   // change, or the stage value is missing/outside 1-4.
   active_change_intent_cap: string | null
-  active_change_intent_cap_reason: string | null
   days_since_high_intent_throwing: number | null
   // cmj_results was named as a read source with no specific output field attached to it. This
   // is the most directly relevant computed value available from it (see the report for why).
@@ -141,17 +147,33 @@ export async function computeAthleteConstraints(
     }
   }
 
-  // Weekly high-CNS days already committed in this pitcher's current program.
+  // Weekly high-CNS days already committed in this pitcher's current program, plus WHICH
+  // specific exposures they are (bug 1: a ceiling violation needs to name removable
+  // candidates, not just report a bare count).
   const structuredDays: Record<string, any[]> = (programRow?.structured_days as any) ?? {}
   let weekly_high_cns_committed = 0
+  const highCNSExposures: HighCNSExposure[] = []
   for (const day of DAY_ORDER) {
-    const dayHasHighCNS = Object.keys(structuredDays).some(key => {
-      if (!key.startsWith(day + '___')) return false
+    let dayHasHighCNS = false
+    for (const key of Object.keys(structuredDays)) {
+      if (!key.startsWith(day + '___')) continue
+      const category = key.slice((day + '___').length)
       const items = structuredDays[key]
-      return Array.isArray(items) && items.some(it => it?.cns === 'High')
-    })
+      if (!Array.isArray(items)) continue
+      for (const it of items) {
+        if (it?.cns === 'High') {
+          dayHasHighCNS = true
+          highCNSExposures.push({ day, exerciseName: it?.name ?? '(unnamed)', category })
+        }
+      }
+    }
     if (dayHasHighCNS) weekly_high_cns_committed++
   }
+  const weekly_high_cns_ceiling = deriveWeeklyHighCNSCeiling(athleteStateRow?.season_phase ?? null)
+  const weekly_high_cns_violation: WeeklyHighCNSViolation | null =
+    weekly_high_cns_ceiling != null && weekly_high_cns_committed > weekly_high_cns_ceiling
+      ? { excess: weekly_high_cns_committed - weekly_high_cns_ceiling, removeCandidates: highCNSExposures }
+      : null
 
   // Throw load (acute/chronic/ratio/band) -- see lib/throwLog.ts for the weighting and the
   // 28-day-minimum-history rule.
@@ -179,7 +201,7 @@ export async function computeAthleteConstraints(
   }
 
   const activeChangeStage: number | null = athleteStateRow?.active_change_stage ?? null
-  const stageCap = activeChangeStage != null ? STAGE_INTENT_CAP[activeChangeStage] : undefined
+  const active_change_intent_cap = activeChangeStage != null ? STAGE_INTENT_CAP[activeChangeStage] ?? null : null
 
   return {
     pitcherId,
@@ -194,14 +216,14 @@ export async function computeAthleteConstraints(
     allowed_movement_categories,
     excluded_movement_categories,
     weekly_high_cns_committed,
-    weekly_high_cns_ceiling: deriveWeeklyHighCNSCeiling(athleteStateRow?.season_phase ?? null),
+    weekly_high_cns_ceiling,
+    weekly_high_cns_violation,
     has_team_lift: !!athleteStateRow?.has_team_lift,
     team_lift_heavy_day: athleteStateRow?.has_team_lift ? (athleteStateRow?.team_lift_heavy_day ?? null) : null,
     throwLoad,
     active_change: athleteStateRow?.active_change ?? null,
     active_change_stage: activeChangeStage,
-    active_change_intent_cap: stageCap?.cap ?? null,
-    active_change_intent_cap_reason: stageCap?.reason ?? null,
+    active_change_intent_cap,
     days_since_high_intent_throwing,
     cmj_classification,
     unknownFields: Array.from(new Set(unknownFields)),
@@ -210,7 +232,10 @@ export async function computeAthleteConstraints(
 
 // Pure formatting -- kept separate from computeAthleteConstraints so it's testable/reusable
 // (and so a future non-prompt consumer of this data, e.g. a UI panel, isn't forced through
-// this exact text shape).
+// this exact text shape). Facts only, no explanatory prose (bug 2) -- narration about an
+// assumed context (e.g. "a competitive-phase starter") can contradict this athlete's real
+// state and has been removed; the WHY for any derived number belongs in the principles doc,
+// stated once, not re-narrated per prompt.
 export function renderAthleteConstraintsBlock(c: AthleteConstraints): string {
   const lines: string[] = []
   lines.push('COMPUTED CONSTRAINTS — these are facts about this athlete, not guidance. Do not contradict them.')
@@ -235,7 +260,14 @@ export function renderAthleteConstraintsBlock(c: AthleteConstraints): string {
     lines.push('- Excluded Movement Categories:')
     for (const ex of c.excluded_movement_categories) lines.push(`  - ${ex.category}: ${ex.reason}`)
   }
-  lines.push(`- Weekly High-CNS Days Committed: ${c.weekly_high_cns_committed}${c.weekly_high_cns_ceiling != null ? ` of ${c.weekly_high_cns_ceiling} max (ceiling derived from season_phase; throwing days and team lifts count against it, so a competitive-phase starter's ceiling is usually already mostly consumed)` : ' (season_phase unknown, so no ceiling could be derived)'}`)
+  const ceilingPart = c.weekly_high_cns_ceiling != null ? `of ${c.weekly_high_cns_ceiling} max` : '(season_phase unknown, no ceiling derived)'
+  lines.push(`- Weekly High-CNS Days Committed: ${c.weekly_high_cns_committed} ${ceilingPart}`)
+  if (c.weekly_high_cns_violation) {
+    const v = c.weekly_high_cns_violation
+    lines.push(`  - RULE FAILED: exceeds weekly high-CNS ceiling by ${v.excess}. Do not add another high-CNS exposure this week.`)
+    lines.push(`  - Nearest legal alternative: remove ${v.excess} of the following ${v.removeCandidates.length} committed high-CNS exposure(s) to be back within ceiling:`)
+    for (const exp of v.removeCandidates) lines.push(`    - ${exp.day} / ${exp.category}: ${exp.exerciseName}`)
+  }
   if (c.has_team_lift) lines.push(`- Team Lift Heavy Day: ${c.team_lift_heavy_day ?? 'set, but no day specified'}`)
   const tl = c.throwLoad
   if (tl.hasEnoughHistory) {
@@ -245,10 +277,8 @@ export function renderAthleteConstraintsBlock(c: AthleteConstraints): string {
   }
   if (c.active_change) {
     const stageLabel = c.active_change_stage ?? 'UNKNOWN'
-    const capLine = c.active_change_intent_cap_reason
-      ? `Stage ${stageLabel} — ${c.active_change_intent_cap_reason}.`
-      : `Stage ${stageLabel} — no intent cap could be derived (stage missing or outside 1-4).`
-    lines.push(`- Active Change: "${c.active_change}". ${capLine}`)
+    const capLine = c.active_change_intent_cap ? `Intent Cap: ${c.active_change_intent_cap}` : 'Intent Cap: none derived (stage missing or outside 1-4)'
+    lines.push(`- Active Change: "${c.active_change}". Stage ${stageLabel}. ${capLine}.`)
   } else {
     lines.push('- Active Change: none on record')
   }

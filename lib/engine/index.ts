@@ -21,4 +21,5 @@ export { checkCNSAdjacency, type DayCNSInput, type CNSAdjacencyWarning } from '.
 export {
   computeAthleteConstraints, renderAthleteConstraintsBlock,
   type AthleteConstraints, type GateBlock, type ExcludedCategory,
+  type HighCNSExposure, type WeeklyHighCNSViolation,
 } from './athleteConstraints'
