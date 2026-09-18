@@ -15,7 +15,7 @@ exercise_overrides, recommendation_rules, food_logs, daily_fuel_scores,
 public_cmj_submissions
 
 ## Still to build:
-1. ~~Calendar / week-to-week program history~~ -- built, see "Load-accounting rebuild" below (pending migration)
+1. ~~Calendar / week-to-week program history~~ -- built and migration applied, see "Load-accounting rebuild" below
 2. Coach view of all assessment data per pitcher
 3. Player development profile on coach side
 4. Public CMJ submissions view on coach dashboard
@@ -42,50 +42,40 @@ confirm or revise prescribed load; they never create it.
 - Migration file: `sql/programs_dated_history.sql` (BEGIN/COMMIT-wrapped,
   all-or-nothing).
 
-**Migration status: UNCONFIRMED.** The last handoff on this didn't
-resolve whether it committed or errored -- do not assume either. Before
-touching anything else, run this check and read the real answer off it:
+**Migration APPLIED to live Supabase, verified.** All 19 rows (not 18 --
+the pre-migration count was off by one) landed at `2026-09-14`,
+`carried_forward=false`, `first_edited_at` populated, `created_via='direct'`.
+Identical timestamps across all 19 confirm the single transaction committed
+atomically.
 
-```
-select column_name from information_schema.columns
-where table_name = 'programs' and column_name = 'carried_forward';
-```
+**Verified live:**
+1. Row count/uniqueness: 19 rows, one per pitcher, all at the current Monday.
+2. Adding an exercise and saving updates the current-week row -- does not
+   insert a second row for the same pitcher+week.
+3. Past-week edit blocked with an alert and no repaint (the isCurrentWeek-
+   guard-ordering fix confirmed working live, not just correct in the diff).
 
-Column exists -> migration landed. No rows -> it did not (and `week_of`
-values will still be pre-migration/stale, e.g. `2026-07-20` not a
-recent Monday -- confirmed stale as of the pause point, pitcher Adrian
-Pineda `9388833f-08de-4409-a7c9-d36d64a2b12a`).
-
-**Not yet verified live** (blocked on the migration question above):
-1. All 18 `programs` rows land on this Monday, still one row per pitcher.
-2. Adding an exercise and saving updates the current-week row -- does
-   not insert a second row for the same pitcher+week.
-3. Past-week edit affordances are blocked at the handler level (not
-   just visually hidden) -- AND a refused edit never repaints local
-   state (the isCurrentWeek-guard-ordering fix needs to actually be
-   observed working, not just read as correct in the diff).
-4. An untouched, carried-forward pitcher shows the carried-forward
-   banner in the coach UI and the constraints block tags that week
-   `[carried_forward_untouched]`.
-
-Point 4 needs a deliberate test, not passive waiting -- real pitchers
-were all collapsed to one row each by the backfill, so nothing will
-naturally hit the carried-forward path until next Monday. Planned
-approach (not started, no rows touched yet): use pitcher **Adrian
-Pineda** (`9388833f-08de-4409-a7c9-d36d64a2b12a`, chosen as lowest-cost
-if something goes wrong) --
-1. Back up his current `programs` row to a file (not just chat --
-   confirmed this needs to survive a session boundary).
-2. Insert a synthetic row at last Monday (his current content, as a
+**Not yet verified -- point 4, carried-forward banner/exclusion tag:**
+NOT started, no rows touched. The carried-forward trigger path
+(`loadProgramForWeek`'s copy-forward branch) has zero automated test
+coverage and cannot be exercised live right now -- the backfill collapsed
+every pitcher to exactly one row each (this current week), so no pitcher
+has an empty current week for the rollover to fire against. Earliest
+natural occurrence: next Monday. Designed, reversible alternative to test
+it sooner (not started, no rows touched):
+1. Back up the target pitcher's current `programs` row to a file (not just
+   chat -- needs to survive a session boundary).
+2. Insert a synthetic row at last Monday (their current content, as a
    stand-in "previous week").
-3. Re-stamp (not delete) his real current-week row to NEXT Monday, to
-   empty the current week without destroying data -- check first that
-   no row already exists there (unique constraint).
-4. Select him in the coach UI, verify rollover fires: banner, excluded
+3. Re-stamp (not delete) their real current-week row to NEXT Monday, to
+   empty the current week without destroying data -- check first that no
+   row already exists there (unique constraint now enforces this).
+4. Select them in the coach UI, verify rollover fires: banner, excluded
    tag, `created_via: 'rollover'`.
-5. Delete the two synthetic rows, re-stamp his real row back to this
+5. Delete the two synthetic rows, re-stamp their real row back to this
    Monday.
-6. Confirm his row is byte-identical to the step-1 backup.
+6. Confirm their row is byte-identical to the step-1 backup.
+Candidate pitcher discussed: Adrian Pineda (`9388833f-08de-4409-a7c9-d36d64a2b12a`).
 
 **Next after verification: Step F** -- wire the structural validation
 rules (`lib/engine/*`: deprecated/equipment/gate/throwing-intent/CNS-
@@ -105,6 +95,14 @@ season_role; widen `principles_sections.doc` CHECK to add a third value
 logging) -> G (coach assertions as first-class input, with the
 red-flag/Restricted asymmetry: assertions can set, never clear) -> J
 (new principles section, numbered 0.1-0.6, covering all of the above).
+
+**Open note for Step C, not acted on yet:** a rollover week edited once
+is indistinguishable from a fully written week in the constraints block
+-- same thin-plan problem as the copy-created-row case (`created_via:
+'copy'`), one step removed. A single touched slot on a carried-forward
+week clears the exclusion entirely and reads as a complete plan. Worth
+solving when the ledger (ratcheting the same fix that gave `created_via`
+provenance) gets built in Step C.
 
 ## Key decisions made:
 - Categories: Pre-Throwing, Throwing, Post-Throwing, Main Exercises, Accessory, Conditioning, Recovery
