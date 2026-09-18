@@ -404,6 +404,7 @@ export default function CoachDashboard(){
   const [exerciseImportResult,setExerciseImportResult]=useState<string|null>(null)
   const [showPicker,setShowPicker]=useState(false)
   const [pickerCell,setPickerCell]=useState<{day:string,cat:string}|null>(null)
+  const [addError,setAddError]=useState('')
   const [pickerSearch,setPickerSearch]=useState('')
   const [pickerCNS,setPickerCNS]=useState('All')
   const [pickerCat,setPickerCat]=useState('All')
@@ -889,7 +890,7 @@ export default function CoachDashboard(){
 
   const openPicker=(day:string,cat:string,editItem?:{idx:number,ex:any})=>{
     setPickerCell({day,cat});setPickerSearch('');setPickerCNS('All');setPickerCat(cat)
-    setVideoSaved(false);setShowCustomForm(false)
+    setVideoSaved(false);setShowCustomForm(false);setAddError('')
     if (editItem){
       const ex=EXERCISE_DB.find(e=>e.id===editItem.ex.id)||editItem.ex
       setAddForm({exercise:ex,sets:String(editItem.ex.sets),reps:String(editItem.ex.reps),load:editItem.ex.load||'',notes:editItem.ex.notes||''})
@@ -902,9 +903,40 @@ export default function CoachDashboard(){
   }
 
   const confirmAddExercise=async()=>{
-    if (!addForm||!pickerCell)return
+    if (!addForm||!pickerCell||!selected)return
     if (!isCurrentWeek){alert('This is a past week — read-only. Jump to the current week to make changes.');return}
+    setAddError('')
     const {exercise,sets,reps,load,notes:exNotes}=addForm
+
+    // Step F: the picker was the one place an exercise could reach a program without running
+    // the same structural checks parseAndImportProgram already applies to a bulk paste. Mirrors
+    // that function's pattern exactly -- fresh athlete_state fetch (not AthleteStatePanel's
+    // state, which may not be mounted for this pitcher), same four checks, same engine
+    // functions. Blocks the save on failure rather than silently letting it through.
+    const {data:athleteStateRow}=await supabase.from('athlete_state').select('*').eq('pitcher_id',selected.id).maybeSingle()
+    const engineAthleteState:EngineAthleteState={
+      equipment_tier:athleteStateRow?.equipment_tier??null,
+      throwing_status:athleteStateRow?.throwing_status??null,
+      gates_passed:athleteStateRow?.gates_passed??[],
+    }
+    const exercisePool:EngineExercise[]=buildExercisePool()
+    const slot:EngineSlot={
+      day:pickerCell.day,category:pickerCell.cat,
+      exercise:{
+        id:exercise.id||exercise.exercise_id,name:exercise.name,
+        movement_category:exercise.movement_category??null,equipment_tier:exercise.equipment_tier??null,
+        deprecated:!!exercise.deprecated,throwing_phase:exercise.throwing_phase??null,
+      },
+    }
+    const deprecatedCheck=checkDeprecated(engineAthleteState,slot)
+    if(!deprecatedCheck.ok){setAddError(humanizeReason(deprecatedCheck.reason));return}
+    const equipmentCheck=checkEquipmentTier(engineAthleteState,slot,exercisePool)
+    if(!equipmentCheck.ok){setAddError(humanizeReason(equipmentCheck.reason+(equipmentCheck.suggestion?' '+equipmentCheck.suggestion:'')));return}
+    const gateCheck=checkGateRequirement(engineAthleteState,slot)
+    if(!gateCheck.ok){setAddError(humanizeReason(gateCheck.reason));return}
+    const intentCheck=checkThrowingIntent(engineAthleteState,slot)
+    if(!intentCheck.ok){setAddError(humanizeReason(intentCheck.reason));return}
+
     if (videoInput.trim()&&!exerciseVideos[exercise.id])await saveVideo(exercise.id,videoInput)
     const newItem={id:exercise.id,name:exercise.name,sets:parseInt(sets)||0,reps:parseInt(reps)||0,load:load||'',notes:exNotes||'',cns:exercise.cns,category:exercise.category,pattern:exercise.pattern}
     let newStructured:any
@@ -2079,7 +2111,7 @@ Write next week's program by day and category (Pre-Throwing, Throwing, Post-Thro
                 <div style={{fontSize:14,fontWeight:700,color:C.white}}>{editingProgramItem?'Edit Exercise':'Add Exercise'}</div>
                 {pickerCell&&<div style={{fontSize:11,color:C.textMuted,marginTop:2}}>{pickerCell.day} · <span style={{color:CAT_MAP[pickerCell.cat]?.color||C.textMuted}}>{pickerCell.cat}</span></div>}
               </div>
-              <button onClick={()=>{setShowPicker(false);setAddForm(null);setShowCustomForm(false);setEditingProgramItem(null)}} style={{background:'transparent',border:'none',color:C.textMuted,fontSize:18,cursor:'pointer',lineHeight:1}}>x</button>
+              <button onClick={()=>{setShowPicker(false);setAddForm(null);setShowCustomForm(false);setEditingProgramItem(null);setAddError('')}} style={{background:'transparent',border:'none',color:C.textMuted,fontSize:18,cursor:'pointer',lineHeight:1}}>x</button>
             </div>
             {!addForm&&(
               <>
@@ -2166,6 +2198,7 @@ Write next week's program by day and category (Pre-Throwing, Throwing, Post-Thro
                 <div style={{background:C.bg3,borderRadius:8,padding:'10px 14px',marginBottom:16,fontSize:12,color:C.textMuted}}>
                   Will add: <span style={{color:C.gold,fontWeight:600}}>{addForm.exercise.name} {addForm.sets}x{addForm.reps}{addForm.load?` @ ${addForm.load}%`:''}{addForm.notes?` - ${addForm.notes}`:''}</span>
                 </div>
+                {addError&&<div style={{background:'rgba(248,81,73,0.1)',border:`1px solid ${C.red}`,borderRadius:8,padding:'10px 14px',marginBottom:12,color:C.red,fontSize:12}}>{addError}</div>}
                 <button style={{...S.btn('gold'),width:'100%',padding:'12px',fontSize:14,textAlign:'center' as const}} onClick={confirmAddExercise}>
                   {editingProgramItem?'Save Changes':`Add to ${pickerCell?.day} - ${pickerCell?.cat}`}
                 </button>
