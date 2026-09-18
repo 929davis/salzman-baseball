@@ -3,7 +3,14 @@
 // version: under-counting load and over-crediting capability are the two failure modes that
 // hurt an athlete, and they need opposite resolution rules to both be blocked at once.
 
-export type Source = 'coach_asserted' | 'logged' | 'prescribed' | 'inferred' | 'unknown'
+// carried_forward_untouched: a program row copied forward from a previous week and never
+// edited since. Its structured_days is real data, but it must never count as this week's
+// genuine prescribed load (that would accrue phantom load for a pitcher who's stopped being
+// actively programmed -- the mirror image of the bug this project exists to fix). Callers
+// building resolveLoad candidates must simply omit a carried-forward-untouched row's numbers
+// (pass null, not a value tagged with this source) -- this source exists so the FACT that a
+// row was excluded can still be surfaced in the block, not so it can compete in resolution.
+export type Source = 'coach_asserted' | 'logged' | 'prescribed' | 'inferred' | 'unknown' | 'carried_forward_untouched'
 export type Sourced<T> = { value: T, source: Source }
 
 export function sourced<T>(value: T, source: Source): Sourced<T> {

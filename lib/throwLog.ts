@@ -1,6 +1,7 @@
 // Shared between the throw_log entry/rolling-view UI (app/components/ThrowLogPanel.tsx) and
 // the athlete constraint computation (lib/engine/athleteConstraints.ts) -- one weighting table
 // and one ratio calculation, not two copies to keep in sync.
+import { mondayOf, addDays } from './weekUtils'
 
 export const IMPLEMENT_WEIGHTS: Record<string, number> = {
   '5oz': 1.0,
@@ -37,14 +38,6 @@ export function weightedThrowCount(entry: { count: number, implement: string }):
 
 type RatioInputEntry = { throw_date: string, count: number, implement: string, throw_type?: string }
 
-function mondayOfDateStr(dateStr: string): Date {
-  const d = new Date(dateStr + 'T00:00:00')
-  const dow = d.getDay() // 0=Sun..6=Sat
-  const diffToMonday = dow === 0 ? -6 : 1 - dow
-  d.setDate(d.getDate() + diffToMonday)
-  return d
-}
-
 // Turns each weekly_aggregate entry into 7 synthetic per-day entries (Monday-Sunday of its
 // week, per the fast-entry form's "week-of" date), count split evenly across them, same
 // implement on all 7. Everything else passes through untouched. This is a deliberate
@@ -57,12 +50,10 @@ function expandWeeklyAggregates(entries: RatioInputEntry[]): { throw_date: strin
       expanded.push({ throw_date: e.throw_date, count: e.count, implement: e.implement })
       continue
     }
-    const monday = mondayOfDateStr(e.throw_date)
+    const monday = mondayOf(e.throw_date)
     const perDay = e.count / 7
     for (let i = 0; i < 7; i++) {
-      const d = new Date(monday)
-      d.setDate(d.getDate() + i)
-      expanded.push({ throw_date: d.toISOString().split('T')[0], count: perDay, implement: e.implement })
+      expanded.push({ throw_date: addDays(monday, i), count: perDay, implement: e.implement })
     }
   }
   return expanded
@@ -144,14 +135,6 @@ export function computeWeeklyBuckets(
   asOf.setHours(0, 0, 0, 0)
   const dayMs = 24 * 60 * 60 * 1000
   const cutoff = new Date(asOf.getTime() - 27 * dayMs)
-
-  const mondayOf = (d: Date) => {
-    const copy = new Date(d)
-    const dow = copy.getDay() // 0=Sun..6=Sat
-    const diffToMonday = dow === 0 ? -6 : 1 - dow
-    copy.setDate(copy.getDate() + diffToMonday)
-    return copy.toISOString().split('T')[0]
-  }
 
   const buckets = new Map<string, number>()
   for (const e of expandWeeklyAggregates(entries)) {

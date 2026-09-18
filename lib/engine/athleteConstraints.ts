@@ -11,16 +11,21 @@
 // throwing never silently reads as rest. Every CAPABILITY field is resolved by precedence so a
 // stale/lower-trust source can never override a higher-trust one. See lib/engine/provenance.ts.
 //
-// Scope note (Step B): full ledger-backed MAX resolution (Step A/C) doesn't exist yet -- there
-// is no dated history of past program weeks (programs.week_of never advances; saveProgram()
-// always overwrites the same row -- confirmed by reading every call site). So MAX resolution
-// here only covers what's honestly derivable today: the CURRENT program's Throwing slots
-// (this week's written plan) vs. logged throw_log data in the trailing 7 days -- both
-// genuinely describe "this week," so comparing them is valid. The 28-day CHRONIC figure stays
-// logged-only and is labeled as such until Step C's ledger gives it dated prescribed history
-// too. Prescribed throwing slots also don't carry an implement tag today (structured_days has
-// no implement field) -- prescribed weighted totals below assume the default 1.0 weight until
-// Step A adds real implement tracking to the program schema.
+// Scope note (Step B/A): full ledger-backed MAX resolution (Step C) doesn't exist yet -- so
+// MAX resolution here only covers what's honestly derivable today: THIS WEEK's program row
+// (fetched by exact week_of match, never "latest" -- see Step A, dated program history) vs.
+// logged throw_log data in the trailing 7 days -- both genuinely describe "this week." The
+// 28-day CHRONIC figure stays logged-only and is labeled as such until Step C's ledger gives
+// it dated prescribed history too. Prescribed throwing slots also don't carry an implement tag
+// today (structured_days has no implement field) -- prescribed weighted totals below assume
+// the default 1.0 weight until a future step adds real implement tracking to the program
+// schema.
+//
+// Carried-forward exclusion (Step A): a program row copied forward from a previous week and
+// never edited since (carried_forward=true, first_edited_at=null) must NOT count toward
+// prescribed load -- a pitcher who's stopped being actively programmed would otherwise accrue
+// phantom prescribed load every week forever, the mirror image of the bug this file exists to
+// fix. weekProgramStatus surfaces this explicitly rather than silently zeroing it out.
 //
 // Deliberately does NOT read or restate any principles content -- only computed values from
 // athlete_state, throw_log, cmj_results, and the exercise library.
@@ -31,6 +36,7 @@ import { meetsEquipmentTier } from './equipmentGate'
 import { classifyCMJ } from '../cmj'
 import { computeThrowLoadRatio, type ThrowLoadResult } from '../throwLog'
 import { type Source, type Sourced, sourced, resolveLoad, resolveCapability, tag } from './provenance'
+import { currentWeekOf } from '../weekUtils'
 
 const ALL_GATES: Gate[] = ['G1', 'G2', 'G3', 'G4', 'T1', 'T2', 'T3', 'T4']
 const DAY_ORDER = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
@@ -64,9 +70,16 @@ export type WeeklyHighCNSViolation = {
   removeCandidates: HighCNSExposure[] // every current exposure, most-recently-added last
 }
 
+// A plain fact about the row itself, not a Sourced<T> -- there's nothing to resolve between
+// multiple sources here, it's a direct read of this week's programs row (or its absence).
+// Drives whether prescribed candidates are included in any resolveLoad call below.
+export type WeekProgramStatus = 'edited' | 'carried_forward_untouched' | 'no_program'
+
 export type AthleteConstraints = {
   pitcherId: string
   athleteStateFound: boolean
+  weekOf: string
+  weekProgramStatus: WeekProgramStatus
   training_status: Sourced<string | null>
   equipment_tier: Sourced<EquipmentTier | null>
   throwing_status: Sourced<string | null>
@@ -124,13 +137,24 @@ export async function computeAthleteConstraints(
   exercisePool: EngineExercise[],
 ): Promise<AthleteConstraints> {
   const unknownFields: string[] = []
+  const weekOf = currentWeekOf()
 
   const [{ data: athleteStateRow }, { data: throwLogRows }, { data: cmjRows }, { data: programRow }] = await Promise.all([
     supabase.from('athlete_state').select('*').eq('pitcher_id', pitcherId).maybeSingle(),
     supabase.from('throw_log').select('throw_date,count,implement,intent_level,throw_type').eq('pitcher_id', pitcherId).order('throw_date', { ascending: false }),
     supabase.from('cmj_results').select('*').eq('pitcher_id', pitcherId).order('test_date', { ascending: false }).limit(1),
-    supabase.from('programs').select('structured_days').eq('pitcher_id', pitcherId).order('week_of', { ascending: false }).limit(1).maybeSingle(),
+    // Exact match on THIS week's row -- never "latest." If this week hasn't been touched yet,
+    // there is no prescription for this week, full stop; falling back to a past week's row
+    // would silently substitute an old prescription for a current fact, exactly the failure
+    // mode this file exists to eliminate.
+    supabase.from('programs').select('structured_days,carried_forward,first_edited_at').eq('pitcher_id', pitcherId).eq('week_of', weekOf).maybeSingle(),
   ])
+
+  const weekProgramStatus: WeekProgramStatus =
+    !programRow ? 'no_program'
+      : (programRow.carried_forward && !programRow.first_edited_at) ? 'carried_forward_untouched'
+      : 'edited'
+  const prescribedExcluded = weekProgramStatus !== 'edited'
 
   const athleteStateFound = !!athleteStateRow
   if (!athleteStateFound) {
@@ -219,11 +243,16 @@ export async function computeAthleteConstraints(
     }
     if (dayHasHighCNS) weekly_high_cns_committed_count++
   }
-  const weekly_high_cns_committed = sourced(weekly_high_cns_committed_count, 'prescribed' as Source)
+  // Excluded (carried-forward-untouched or no program yet): report 0, tagged so the exclusion
+  // itself is visible rather than looking like a genuine "nothing high-CNS this week" decision.
+  const weekly_high_cns_committed = prescribedExcluded
+    ? sourced(0, 'carried_forward_untouched' as Source)
+    : sourced(weekly_high_cns_committed_count, 'prescribed' as Source)
   const weekly_high_cns_ceiling = deriveWeeklyHighCNSCeiling(athleteStateRow?.season_phase ?? null)
+  const effectiveHighCNSCount = prescribedExcluded ? 0 : weekly_high_cns_committed_count
   const weekly_high_cns_violation: WeeklyHighCNSViolation | null =
-    weekly_high_cns_ceiling != null && weekly_high_cns_committed_count > weekly_high_cns_ceiling
-      ? { excess: weekly_high_cns_committed_count - weekly_high_cns_ceiling, removeCandidates: highCNSExposures }
+    weekly_high_cns_ceiling != null && effectiveHighCNSCount > weekly_high_cns_ceiling
+      ? { excess: effectiveHighCNSCount - weekly_high_cns_ceiling, removeCandidates: highCNSExposures }
       : null
 
   // Throw load: MAX-resolve the ACUTE (7d) figure between logged throw_log entries and this
@@ -233,7 +262,11 @@ export async function computeAthleteConstraints(
   const loggedThrowLoad = computeThrowLoadRatio(throwEntries)
   const resolvedAcute = resolveLoad([
     sourced(loggedThrowLoad.acute7d, 'logged' as Source),
-    sourced(prescribedThrowTotal, 'prescribed' as Source),
+    // Omit the prescribed candidate entirely when excluded -- it must not compete in MAX at
+    // all, not just lose on value (a carried-forward row's prescribedThrowTotal could easily
+    // exceed logged reality for a pitcher who's stopped throwing, which is exactly the phantom
+    // load this exclusion prevents).
+    ...(prescribedExcluded ? [] : [sourced(prescribedThrowTotal, 'prescribed' as Source)]),
   ])
   // throwLoad stays exactly what lib/throwLog.ts computed -- untouched, logged-only, ratio and
   // all. resolvedAcute is the separate MAX-resolved figure. The two are DELIBERATELY not
@@ -247,7 +280,7 @@ export async function computeAthleteConstraints(
 
   const weekly_i4_i5_count = resolveLoad([
     sourced(loggedThrowLoad.hasEnoughHistory || throwEntries.length > 0 ? countLoggedI4I5LastWeek(throwEntries) : 0, 'logged' as Source),
-    sourced(prescribedI4I5Count, 'prescribed' as Source),
+    ...(prescribedExcluded ? [] : [sourced(prescribedI4I5Count, 'prescribed' as Source)]),
   ])
 
   // Days since the most recent I4/I5 throwing exposure on record (any distance back, not just
@@ -279,6 +312,8 @@ export async function computeAthleteConstraints(
   return {
     pitcherId,
     athleteStateFound,
+    weekOf,
+    weekProgramStatus,
     training_status: capField(athleteStateRow?.training_status ?? null),
     equipment_tier: capField<EquipmentTier>(athleteTier),
     throwing_status: capField(athleteStateRow?.throwing_status ?? null),
@@ -332,6 +367,13 @@ export function renderAthleteConstraintsBlock(c: AthleteConstraints): string {
   lines.push('')
   if (!c.athleteStateFound) {
     lines.push('⚠ No athlete_state row exists for this pitcher yet -- every capability field below is UNKNOWN, not "not applicable."')
+  }
+  if (c.weekProgramStatus === 'no_program') {
+    lines.push(`- This Week's Program (${c.weekOf}): none written yet [no_program]. No prescribed load exists for this week -- every LOAD field below is logged-only until a program is written.`)
+  } else if (c.weekProgramStatus === 'carried_forward_untouched') {
+    lines.push(`- This Week's Program (${c.weekOf}): carried forward from a previous week, not yet edited [carried_forward_untouched]. Its content is NOT counted as this week's prescribed load -- editing it once will confirm it as real.`)
+  } else {
+    lines.push(`- This Week's Program (${c.weekOf}): written and edited this week [edited].`)
   }
   lines.push(`- Training Status: ${c.training_status.value ?? 'UNKNOWN'} ${tag(c.training_status.source)}`)
   lines.push(`- Equipment Tier: ${c.equipment_tier.value ?? 'UNKNOWN'} ${tag(c.equipment_tier.source)}`)

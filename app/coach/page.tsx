@@ -26,6 +26,7 @@ import PrinciplesSectionsEditor from '@/app/components/PrinciplesSectionsEditor'
 import { parseTime, calcCMJFn, classifyCMJ } from '@/lib/cmj'
 import { CATEGORY_ORDER, CATEGORY_COLORS } from '@/lib/exerciseCategories'
 import { computeSpeedPowerGuardrail } from '@/lib/speedPowerVolume'
+import { currentWeekOf, addWeeks } from '@/lib/weekUtils'
 
 const C = {
   bg:'#0d1117',bg2:'#161b22',bg3:'#1c2333',border:'#30363d',
@@ -344,6 +345,7 @@ export default function CoachDashboard(){
   const [view,setView]=useState('roster')
   const [loading,setLoading]=useState(true)
   const [program,setProgram]=useState<any>(null)
+  const [viewingWeekOf,setViewingWeekOf]=useState<string>(currentWeekOf())
   const [structuredDays,setStructuredDays]=useState<any>({})
   const [logs,setLogs]=useState<any[]>([])
   const [cmjResults,setCmjResults]=useState<any[]>([])
@@ -456,13 +458,56 @@ export default function CoachDashboard(){
     init()
   },[])
 
+  // Fetches THIS week specifically (exact week_of match) -- never "latest." If no row exists
+  // for the current week, copies the most recent PRIOR week's structured_days forward as a
+  // starting template (carried_forward:true, first_edited_at:null) so the coach isn't starting
+  // from zero every week -- but that copied content must not count as real prescribed load
+  // until it's actually edited (see lib/engine/athleteConstraints.ts's carried-forward
+  // exclusion). Past weeks with nothing written are never synthesized -- only the current week
+  // auto-copies forward.
+  const loadProgramForWeek=async(pitcherId:string,weekOf:string)=>{
+    setViewingWeekOf(weekOf)
+    const {data:row}=await supabase.from('programs').select('*').eq('pitcher_id',pitcherId).eq('week_of',weekOf).maybeSingle()
+    if (row){
+      setProgram(row);setStructuredDays(row.structured_days||{});setCellNotes(row.days||{})
+      return
+    }
+    if (weekOf!==currentWeekOf()){
+      setProgram(null);setStructuredDays({});setCellNotes({})
+      return
+    }
+    const {data:prevRow}=await supabase.from('programs').select('structured_days,days')
+      .eq('pitcher_id',pitcherId).lt('week_of',weekOf).order('week_of',{ascending:false}).limit(1).maybeSingle()
+    if (!prevRow){
+      // Never programmed before -- leave blank; saveProgram's insert path creates the first
+      // real (non-carried-forward) row on the coach's first edit.
+      setProgram(null);setStructuredDays({});setCellNotes({})
+      return
+    }
+    const {data:created}=await supabase.from('programs').insert({
+      pitcher_id:pitcherId,week_of:weekOf,
+      structured_days:prevRow.structured_days||{},days:prevRow.days||{},
+      carried_forward:true,first_edited_at:null,
+    }).select().single()
+    setProgram(created||null);setStructuredDays(created?.structured_days||{});setCellNotes(created?.days||{})
+  }
+
+  const navigateWeek=async(delta:number)=>{
+    if (!selected)return
+    await loadProgramForWeek(selected.id,addWeeks(viewingWeekOf,delta))
+  }
+  const jumpToCurrentWeek=async()=>{
+    if (!selected)return
+    await loadProgramForWeek(selected.id,currentWeekOf())
+  }
+
   const selectPitcher=async(p:any)=>{
     setSelected(p);setTab('overview');setView('roster')
     const sevenDaysAgo=new Date(Date.now()-7*24*60*60*1000).toISOString().split('T')[0]
-    const [logsRes,cmjRes,progRes,foodRes,fuelRes,weekFuelRes,throwRes,armCareRes]=await Promise.all([
+    const [logsRes,cmjRes,,foodRes,fuelRes,weekFuelRes,throwRes,armCareRes]=await Promise.all([
       supabase.from('session_logs').select('*').eq('pitcher_id',p.id).order('log_date',{ascending:false}),
       supabase.from('cmj_results').select('*').eq('pitcher_id',p.id).order('test_date',{ascending:false}),
-      supabase.from('programs').select('*').eq('pitcher_id',p.id).order('week_of',{ascending:false}).limit(1),
+      loadProgramForWeek(p.id,currentWeekOf()),
       supabase.from('food_logs').select('*').eq('pitcher_id',p.id).eq('log_date',today).order('created_at'),
       supabase.from('daily_fuel_scores').select('*').eq('pitcher_id',p.id).eq('log_date',today).maybeSingle(),
       supabase.from('daily_fuel_scores').select('*').eq('pitcher_id',p.id).gte('log_date',sevenDaysAgo).order('log_date'),
@@ -471,8 +516,6 @@ export default function CoachDashboard(){
     ])
     setLogs(logsRes.data||[])
     setCmjResults(cmjRes.data||[])
-    const prog=progRes.data?.[0]||null
-    setProgram(prog);setStructuredDays(prog?.structured_days||{});setCellNotes(prog?.days||{})
     setTodayFoodLogs(foodRes.data||[])
     setTodayFuelScore(fuelRes.data||null)
     setWeekFuelScores(weekFuelRes.data||[])
@@ -710,14 +753,24 @@ export default function CoachDashboard(){
     setImportResult('Added '+added+' exercise'+(added!==1?'s':'')+'.'+skippedMsg+warnMsg)
   }
 
+  const isCurrentWeek=viewingWeekOf===currentWeekOf()
+
   const saveProgram=async(structured:any,notes:any)=>{
     if (!selected)return
-    const weekOf=new Date().toISOString().split('T')[0]
+    if (!isCurrentWeek){alert('This is a past week — read-only. Jump to the current week to make changes.');return}
     if (program){
-      await supabase.from('programs').update({structured_days:structured,days:notes}).eq('id',program.id)
-      setProgram((p:any)=>({...p,structured_days:structured,days:notes}))
+      const patch:any={structured_days:structured,days:notes}
+      // First real edit on a carried-forward, never-touched row clears the ledger exclusion --
+      // see lib/engine/athleteConstraints.ts. Every OTHER edit path in this file routes through
+      // saveProgram, so this is the one place that needs to catch it.
+      if (program.carried_forward&&!program.first_edited_at) patch.first_edited_at=new Date().toISOString()
+      await supabase.from('programs').update(patch).eq('id',program.id)
+      setProgram((p:any)=>({...p,...patch}))
     } else {
-      const {data}=await supabase.from('programs').insert({pitcher_id:selected.id,week_of:weekOf,structured_days:structured,days:notes}).select().single()
+      const {data}=await supabase.from('programs').insert({
+        pitcher_id:selected.id,week_of:viewingWeekOf,structured_days:structured,days:notes,
+        carried_forward:false,first_edited_at:new Date().toISOString(),
+      }).select().single()
       if (data){setProgram(data)}
     }
   }
@@ -845,12 +898,24 @@ export default function CoachDashboard(){
   const copyExerciseToPitcher=async(ex:any,targetPitcher:any,day:string,cat:string)=>{
     if(!targetPitcher||!day||!cat) return
     setCopySaving(true)
-    const {data:prog}=await supabase.from('programs').select('*').eq('pitcher_id',targetPitcher.id).order('week_of',{ascending:false}).limit(1).maybeSingle()
-    if(!prog){setCopySaving(false);alert('No program found for that pitcher');return}
+    // THIS WEEK's row for the target, explicitly -- never "latest." This is a real edit
+    // happening right now, so any row it touches or creates is never carried_forward.
+    const weekOf=currentWeekOf()
+    const {data:prog}=await supabase.from('programs').select('*').eq('pitcher_id',targetPitcher.id).eq('week_of',weekOf).maybeSingle()
     const key=`${day}___${cat}`
-    const current=prog.structured_days?.[key]||[]
-    const updated={...prog.structured_days,[key]:[...current,{id:ex.id,name:ex.name,sets:ex.sets,reps:ex.reps,load:ex.load||'',notes:ex.notes||'',cns:ex.cns||''}]}
-    await supabase.from('programs').update({structured_days:updated}).eq('id',prog.id)
+    const newItem={id:ex.id,name:ex.name,sets:ex.sets,reps:ex.reps,load:ex.load||'',notes:ex.notes||'',cns:ex.cns||''}
+    if (prog){
+      const current=prog.structured_days?.[key]||[]
+      const updated={...prog.structured_days,[key]:[...current,newItem]}
+      const patch:any={structured_days:updated}
+      if (prog.carried_forward&&!prog.first_edited_at) patch.first_edited_at=new Date().toISOString()
+      await supabase.from('programs').update(patch).eq('id',prog.id)
+    } else {
+      await supabase.from('programs').insert({
+        pitcher_id:targetPitcher.id,week_of:weekOf,structured_days:{[key]:[newItem]},days:{},
+        carried_forward:false,first_edited_at:new Date().toISOString(),
+      })
+    }
     setCopySaving(false)
     setCopyModal(null)
     setCopyToPitcher(null)
@@ -1621,6 +1686,14 @@ Write next week's program by day and category (Pre-Throwing, Throwing, Post-Thro
 
               {tab==='program'&&(
                 <div>
+                  <div style={{display:'flex',gap:10,alignItems:'center',marginBottom:12,padding:'8px 14px',background:isCurrentWeek?C.bg2:'rgba(232,184,75,0.08)',border:`1px solid ${isCurrentWeek?C.border:C.goldDim}`,borderRadius:8}}>
+                    <button onClick={()=>navigateWeek(-1)} style={{...S.btn(),padding:'5px 10px'}}>◂ Prev</button>
+                    <div style={{fontSize:12,fontWeight:700,color:C.white}}>Week of {viewingWeekOf}</div>
+                    <button onClick={()=>navigateWeek(1)} style={{...S.btn(),padding:'5px 10px'}}>Next ▸</button>
+                    {!isCurrentWeek&&<button onClick={jumpToCurrentWeek} style={{...S.btn('gold'),padding:'5px 10px'}}>Jump to Current</button>}
+                    {!isCurrentWeek&&<span style={{fontSize:11,color:C.gold,fontWeight:700}}>Read-only — past week</span>}
+                    {isCurrentWeek&&program?.carried_forward&&!program?.first_edited_at&&<span style={{fontSize:11,color:C.textMuted}}>Carried forward from last week, not yet edited — excluded from prescribed load until you make a change</span>}
+                  </div>
                   <div style={{display:'flex',gap:12,flexWrap:'wrap' as const,marginBottom:16,padding:'10px 14px',background:C.bg2,border:`1px solid ${C.border}`,borderRadius:8,alignItems:'center'}}>
                     <span style={{fontSize:10,color:C.textDim,fontWeight:700,textTransform:'uppercase' as const,letterSpacing:'1px',marginRight:4}}>Categories:</span>
                     {CATEGORIES.map(cat=>(
@@ -1637,10 +1710,10 @@ Write next week's program by day and category (Pre-Throwing, Throwing, Post-Thro
                         </div>
                       ))}
                     </div>
-                    <button style={S.btn('gold')} onClick={()=>{setCoachNoteText('');setCoachNoteModal(true)}}>Claude</button>
-                    <button style={{...S.btn(),background:'rgba(88,166,255,0.1)',color:'#58a6ff',border:'1px solid rgba(88,166,255,0.3)'}} onClick={()=>{setImportModal(true);setImportResult(null)}}>Import</button>
+                    <button disabled={!isCurrentWeek} style={S.btn('gold')} onClick={()=>{setCoachNoteText('');setCoachNoteModal(true)}}>Claude</button>
+                    <button disabled={!isCurrentWeek} style={{...S.btn(),background:'rgba(88,166,255,0.1)',color:'#58a6ff',border:'1px solid rgba(88,166,255,0.3)'}} onClick={()=>{setImportModal(true);setImportResult(null)}}>Import</button>
                     <button onClick={copyWeekToClipboard} style={S.btn()}>{copySuccess?'✓ Copied':'Copy Week'}</button>
-                    <button onClick={clearWeek} style={{...S.btn(),background:'rgba(248,81,73,0.1)',color:C.red,border:'1px solid rgba(248,81,73,0.3)'}}>Clear Week</button>
+                    <button disabled={!isCurrentWeek} onClick={clearWeek} style={{...S.btn(),background:'rgba(248,81,73,0.1)',color:C.red,border:'1px solid rgba(248,81,73,0.3)'}}>Clear Week</button>
                   </div>
                   {promptSectionSummary&&<div style={{fontSize:11,color:C.textMuted,marginTop:-8,marginBottom:12}}>Last Claude prompt — {promptSectionSummary}</div>}
                   <div style={{overflowX:'auto' as const}}>
@@ -1688,17 +1761,19 @@ Write next week's program by day and category (Pre-Throwing, Throwing, Post-Thro
                                       {ex.notes&&<div style={{fontSize:9,color:C.textDim,fontStyle:'italic',marginTop:1}}>{ex.notes}</div>}
                                       {exerciseVideos[ex.id]&&<a href={exerciseVideos[ex.id]} target="_blank" rel="noopener noreferrer" style={{fontSize:9,color:C.blue,display:'block',marginTop:2}}>Video</a>}
                                     </div>
-                                    <button onClick={()=>openPicker(day,cat.key,{idx:i,ex})} style={{background:'transparent',border:'none',color:C.gold,cursor:'pointer',fontSize:9,padding:'0 2px',lineHeight:1,flexShrink:0}}>edit</button>
-                                    <button onClick={()=>setCopyModal({ex,fromKey:key})} style={{background:'transparent',border:'none',color:C.blue,cursor:'pointer',fontSize:9,padding:'0 2px',lineHeight:1,flexShrink:0}}>copy</button>
-                                    <button onClick={()=>removeExercise(key,i)} style={{background:'transparent',border:'none',color:C.textDim,cursor:'pointer',fontSize:11,padding:'0 2px',lineHeight:1,flexShrink:0}}>x</button>
+                                    {isCurrentWeek&&<button onClick={()=>openPicker(day,cat.key,{idx:i,ex})} style={{background:'transparent',border:'none',color:C.gold,cursor:'pointer',fontSize:9,padding:'0 2px',lineHeight:1,flexShrink:0}}>edit</button>}
+                                    {isCurrentWeek&&<button onClick={()=>setCopyModal({ex,fromKey:key})} style={{background:'transparent',border:'none',color:C.blue,cursor:'pointer',fontSize:9,padding:'0 2px',lineHeight:1,flexShrink:0}}>copy</button>}
+                                    {isCurrentWeek&&<button onClick={()=>removeExercise(key,i)} style={{background:'transparent',border:'none',color:C.textDim,cursor:'pointer',fontSize:11,padding:'0 2px',lineHeight:1,flexShrink:0}}>x</button>}
                                   </div>
                                 ))}
-                                {note&&!isExpanded&&<div style={{fontSize:9,color:C.textDim,fontStyle:'italic',marginTop:exercises.length>0?3:0,cursor:'pointer'}} onClick={()=>setExpandedCell(key)}>{note.length>40?note.slice(0,40)+'...':note}</div>}
-                                {isExpanded&&<textarea autoFocus style={{width:'100%',background:C.bg3,border:`1px solid ${cat.border}`,borderRadius:4,padding:'4px 6px',fontSize:10,color:C.text,resize:'none' as const,outline:'none',minHeight:52,boxSizing:'border-box' as const,marginTop:3,fontFamily:'system-ui'}} value={note} onChange={e=>updateCellNote(day,cat.key,e.target.value)} onBlur={()=>setExpandedCell(null)} placeholder="Coaching note..."/>}
-                                <div style={{display:'flex',gap:3,marginTop:4}}>
-                                  <button onClick={()=>openPicker(day,cat.key)} style={{flex:1,background:'transparent',border:`1px dashed ${C.border}`,borderRadius:4,color:C.textDim,fontSize:9,padding:'3px 0',cursor:'pointer',textAlign:'center' as const}}>+ exercise</button>
-                                  <button onClick={()=>setExpandedCell(isExpanded?null:key)} style={{background:'transparent',border:`1px dashed ${C.border}`,borderRadius:4,color:C.textDim,fontSize:9,padding:'3px 5px',cursor:'pointer'}}>note</button>
-                                </div>
+                                {note&&!isExpanded&&<div style={{fontSize:9,color:C.textDim,fontStyle:'italic',marginTop:exercises.length>0?3:0,cursor:isCurrentWeek?'pointer':'default'}} onClick={()=>isCurrentWeek&&setExpandedCell(key)}>{note.length>40?note.slice(0,40)+'...':note}</div>}
+                                {isExpanded&&isCurrentWeek&&<textarea autoFocus style={{width:'100%',background:C.bg3,border:`1px solid ${cat.border}`,borderRadius:4,padding:'4px 6px',fontSize:10,color:C.text,resize:'none' as const,outline:'none',minHeight:52,boxSizing:'border-box' as const,marginTop:3,fontFamily:'system-ui'}} value={note} onChange={e=>updateCellNote(day,cat.key,e.target.value)} onBlur={()=>setExpandedCell(null)} placeholder="Coaching note..."/>}
+                                {isCurrentWeek&&(
+                                  <div style={{display:'flex',gap:3,marginTop:4}}>
+                                    <button onClick={()=>openPicker(day,cat.key)} style={{flex:1,background:'transparent',border:`1px dashed ${C.border}`,borderRadius:4,color:C.textDim,fontSize:9,padding:'3px 0',cursor:'pointer',textAlign:'center' as const}}>+ exercise</button>
+                                    <button onClick={()=>setExpandedCell(isExpanded?null:key)} style={{background:'transparent',border:`1px dashed ${C.border}`,borderRadius:4,color:C.textDim,fontSize:9,padding:'3px 5px',cursor:'pointer'}}>note</button>
+                                  </div>
+                                )}
                               </div>
                             )
                           })}

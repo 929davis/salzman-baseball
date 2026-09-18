@@ -139,6 +139,74 @@ describe('computeAthleteConstraints — asymmetric resolution', () => {
   })
 })
 
+describe('computeAthleteConstraints — carried-forward-untouched exclusion', () => {
+  it('excludes a carried-forward, never-edited program from prescribed load entirely', async () => {
+    const supabase = fakeSupabase({
+      athlete_state: { data: baseAthleteState, error: null },
+      // Copied forward from a previous week, never edited (first_edited_at null) -- even
+      // though it has real content (80 prescribed throws, a high-CNS day), none of it may
+      // count as this week's genuine prescribed load.
+      programs: {
+        data: {
+          structured_days: {
+            Monday___Throwing: [{ name: 'Bullpen', cns: 'Low', count: 80, intent_level: 'I4' }],
+            Tuesday___Lifting: [{ name: 'Depth Jump', cns: 'High' }],
+          },
+          carried_forward: true,
+          first_edited_at: null,
+        },
+        error: null,
+      },
+      throw_log: { data: [], error: null },
+      cmj_results: { data: [], error: null },
+    })
+    const c = await computeAthleteConstraints(supabase, 'p1', emptyPool)
+    expect(c.weekProgramStatus).toBe('carried_forward_untouched')
+    expect(c.resolvedAcute7d.value).toBe(0)
+    expect(c.resolvedAcute7d.source).toBe('logged') // nothing logged either -> resolveLoad's own fallback picks 'logged' side (0), not 'prescribed'
+    expect(c.weekly_high_cns_committed.value).toBe(0)
+    expect(c.weekly_high_cns_committed.source).toBe('carried_forward_untouched')
+    expect(c.weekly_high_cns_violation).toBeNull()
+
+    const block = renderAthleteConstraintsBlock(c)
+    expect(block).toContain('carried_forward_untouched')
+    expect(block).toContain('NOT counted as this week')
+  })
+
+  it('counts a carried-forward program once it has been edited', async () => {
+    const supabase = fakeSupabase({
+      athlete_state: { data: baseAthleteState, error: null },
+      programs: {
+        data: {
+          structured_days: { Monday___Throwing: [{ name: 'Bullpen', cns: 'Low', count: 80, intent_level: 'I3' }] },
+          carried_forward: true,
+          first_edited_at: new Date().toISOString(), // the coach touched it
+        },
+        error: null,
+      },
+      throw_log: { data: [], error: null },
+      cmj_results: { data: [], error: null },
+    })
+    const c = await computeAthleteConstraints(supabase, 'p1', emptyPool)
+    expect(c.weekProgramStatus).toBe('edited')
+    expect(c.resolvedAcute7d.value).toBe(80)
+    expect(c.resolvedAcute7d.source).toBe('prescribed')
+  })
+
+  it('reports no_program (not a phantom zero) when no row exists for this week at all', async () => {
+    const supabase = fakeSupabase({
+      athlete_state: { data: baseAthleteState, error: null },
+      programs: { data: null, error: null }, // .maybeSingle() with no matching row
+      throw_log: { data: [], error: null },
+      cmj_results: { data: [], error: null },
+    })
+    const c = await computeAthleteConstraints(supabase, 'p1', emptyPool)
+    expect(c.weekProgramStatus).toBe('no_program')
+    const block = renderAthleteConstraintsBlock(c)
+    expect(block).toContain('no_program')
+  })
+})
+
 describe('computeAthleteConstraints — ratio withheld on mismatched resolution', () => {
   it('withholds the acute:chronic ratio when acute resolved from prescribed data', async () => {
     const supabase = fakeSupabase({
