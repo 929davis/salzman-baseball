@@ -30,6 +30,19 @@ const baseAthleteState = {
 
 const emptyPool: EngineExercise[] = []
 
+// The code under test parses throw_date as local midnight (`new Date(dateStr + 'T00:00:00')`)
+// and compares against a local "now" -- so test fixtures must build dates the same way.
+// `.toISOString()` is UTC and can land on a different calendar day than local "today" (it did,
+// in this timezone, at the time these tests were first written), silently shifting every date
+// by one and making throw entries look future-dated or misdated relative to `asOf`.
+function localDateStr(d: Date): string {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+}
+function daysAgo(n: number): string {
+  const d = new Date(); d.setDate(d.getDate() - n)
+  return localDateStr(d)
+}
+
 describe('computeAthleteConstraints — high-CNS ceiling violation (bug 1)', () => {
   it('reports a violation with the failed rule and named removable candidates, not a silent number', async () => {
     const supabase = fakeSupabase({
@@ -49,7 +62,7 @@ describe('computeAthleteConstraints — high-CNS ceiling violation (bug 1)', () 
       cmj_results: { data: [], error: null },
     })
     const c = await computeAthleteConstraints(supabase, 'p1', emptyPool)
-    expect(c.weekly_high_cns_committed).toBe(4)
+    expect(c.weekly_high_cns_committed.value).toBe(4)
     expect(c.weekly_high_cns_ceiling).toBe(3)
     expect(c.weekly_high_cns_violation).not.toBeNull()
     expect(c.weekly_high_cns_violation!.excess).toBe(1)
@@ -88,5 +101,85 @@ describe('renderAthleteConstraintsBlock — facts only, no narrative prose (bug 
     expect(block.toLowerCase()).not.toContain('still acquiring the new movement shape')
     // The fact itself (the cap) must still be present -- only the narrated reason is gone.
     expect(block).toContain('Intent Cap: I3')
+  })
+})
+
+describe('computeAthleteConstraints — asymmetric resolution', () => {
+  it('carries prescribed load when it exceeds logged load (the case from the task brief)', async () => {
+    const supabase = fakeSupabase({
+      athlete_state: { data: baseAthleteState, error: null },
+      // Program prescribes 80 throws this week (one bullpen, Monday); nothing close to that
+      // was logged -- only 20 acute throws on record.
+      programs: { data: { structured_days: { Monday___Throwing: [{ name: 'Bullpen', cns: 'Low', count: 80, intent_level: 'I3' }] } }, error: null },
+      throw_log: { data: [{ throw_date: daysAgo(0), count: 20, implement: '5oz', intent_level: 'I3' }], error: null },
+      cmj_results: { data: [], error: null },
+    })
+    const c = await computeAthleteConstraints(supabase, 'p1', emptyPool)
+    expect(c.resolvedAcute7d.value).toBe(80)
+    expect(c.resolvedAcute7d.source).toBe('prescribed')
+    expect(c.throwLoad.acute7d).toBe(20) // the pure logged figure is untouched
+  })
+
+  it('changes nothing for an athlete who logs fully (logged already meets or exceeds prescribed)', async () => {
+    const today = daysAgo(0)
+    const supabase = fakeSupabase({
+      athlete_state: { data: baseAthleteState, error: null },
+      // Prescribed 80; this athlete actually logged 100 (did the work and then some).
+      programs: { data: { structured_days: { Monday___Throwing: [{ name: 'Bullpen', cns: 'Low', count: 80, intent_level: 'I3' }] } }, error: null },
+      throw_log: { data: [{ throw_date: today, count: 100, implement: '5oz', intent_level: 'I3' }], error: null },
+      cmj_results: { data: [], error: null },
+    })
+    const c = await computeAthleteConstraints(supabase, 'p1', emptyPool)
+    // The resolved figure is exactly what a logged-only computation would already have given --
+    // a full logger sees identical numbers to before this change, just correctly tagged.
+    expect(c.resolvedAcute7d.value).toBe(100)
+    expect(c.resolvedAcute7d.source).toBe('logged')
+    expect(c.throwLoad.acute7d).toBe(100)
+    expect(c.ratioWithheldReason).toBeNull()
+  })
+})
+
+describe('computeAthleteConstraints — ratio withheld on mismatched resolution', () => {
+  it('withholds the acute:chronic ratio when acute resolved from prescribed data', async () => {
+    const supabase = fakeSupabase({
+      athlete_state: { data: baseAthleteState, error: null },
+      programs: { data: { structured_days: { Monday___Throwing: [{ name: 'Bullpen', cns: 'Low', count: 80, intent_level: 'I3' }] } }, error: null },
+      // 28+ days of light logging so hasEnoughHistory is true and a ratio COULD have been
+      // printed if this test were only checking the old (pre-fix) gate.
+      throw_log: {
+        data: Array.from({ length: 30 }, (_, i) => ({
+          throw_date: daysAgo(i),
+          count: 10, implement: '5oz', intent_level: 'I2',
+        })),
+        error: null,
+      },
+      cmj_results: { data: [], error: null },
+    })
+    const c = await computeAthleteConstraints(supabase, 'p1', emptyPool)
+    expect(c.resolvedAcute7d.source).toBe('prescribed') // 80 prescribed beats ~70 logged acute
+    expect(c.ratioWithheldReason).not.toBeNull()
+    const block = renderAthleteConstraintsBlock(c)
+    expect(block).toContain('WITHHELD')
+    expect(block).not.toMatch(/Acute:Chronic Ratio: \d/) // no numeric ratio printed
+  })
+
+  it('shows a normal ratio when acute resolves from logged data (both sides consistent)', async () => {
+    const supabase = fakeSupabase({
+      athlete_state: { data: baseAthleteState, error: null },
+      programs: { data: { structured_days: {} }, error: null }, // nothing prescribed
+      throw_log: {
+        data: Array.from({ length: 30 }, (_, i) => ({
+          throw_date: daysAgo(i),
+          count: 20, implement: '5oz', intent_level: 'I2',
+        })),
+        error: null,
+      },
+      cmj_results: { data: [], error: null },
+    })
+    const c = await computeAthleteConstraints(supabase, 'p1', emptyPool)
+    expect(c.resolvedAcute7d.source).toBe('logged')
+    expect(c.ratioWithheldReason).toBeNull()
+    const block = renderAthleteConstraintsBlock(c)
+    expect(block).toMatch(/Acute:Chronic Ratio: \d/)
   })
 })

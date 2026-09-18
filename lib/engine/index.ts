@@ -23,3 +23,6 @@ export {
   type AthleteConstraints, type GateBlock, type ExcludedCategory,
   type HighCNSExposure, type WeeklyHighCNSViolation,
 } from './athleteConstraints'
+export {
+  type Source, type Sourced, sourced, resolveLoad, resolveCapability, tag,
+} from './provenance'
