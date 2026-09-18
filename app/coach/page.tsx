@@ -81,6 +81,18 @@ const formatPrescriptionPlain=(ex:{sets?:number|null,reps?:number|null,count?:nu
   return {main:`${ex.sets}x${ex.reps}${ex.load?` @ ${ex.load}%`:''}`,code:null}
 }
 
+// The lib/engine/* rule files (gateRequirement, equipmentGate, throwingIntentGate) produce
+// their own reason strings with raw codes embedded ("requires gate G1", "tagged E2", "I4
+// throwing intent"), surfaced to the coach via parseAndImportProgram's skipped[] summary below.
+// Not touching those files -- wrapping the string at its one display site instead, same
+// plain-label-primary/code-secondary pattern as everywhere else in this file. Generic token
+// replacement rather than matching each rule's exact phrasing, so it doesn't silently stop
+// working if a reason string's wording changes later.
+const humanizeReason=(reason:string):string=>reason
+  .replace(/\b(G[1-4]|T[1-4])\b/g,(m)=>`${gateLabel(m).plain} (${m})`)
+  .replace(/\b(E[1-3])\b/g,(m)=>`${tierLabel(m).plain} (${m})`)
+  .replace(/\b(I[1-5])\b/g,(m)=>`${intentLabel(m).plain} (${m})`)
+
 const serializeWeek=(structured:any)=>{
   const blocks:string[]=[]
   for(const day of DAYS){
@@ -760,7 +772,7 @@ export default function CoachDashboard(){
     setStructuredDays(newStructured)
     setImportSaving(false)
     setImportText('')
-    const skippedMsg=skipped.length>0?' Skipped '+skipped.length+': '+skipped.slice(0,3).join(', ')+(skipped.length>3?'...':'')+'.':''
+    const skippedMsg=skipped.length>0?' Skipped '+skipped.length+': '+skipped.slice(0,3).map(humanizeReason).join(', ')+(skipped.length>3?'...':'')+'.':''
     // Advisory only -- this never blocks or removes anything already added above, unlike every
     // skipped[] reason, which is a real rejection.
     const warnMsg=cnsWarnings.length>0?' ⚠ High-CNS days back to back: '+cnsWarnings.map(w=>`${w.day1}/${w.day2}`).join(', ')+'.':''
