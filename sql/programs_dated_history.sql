@@ -11,9 +11,22 @@
 -- is the load of record" only holds per-week if there's a real, addressable row per week --
 -- this migration is what makes that true.
 
+-- All-or-nothing: Postgres DDL is transactional, so if the CHECK or UNIQUE constraint below
+-- fails, the backfill UPDATE rolls back too -- never left with re-stamped week_of values and
+-- no constraints to show for it.
+begin;
+
 alter table programs
   add column if not exists carried_forward boolean not null default false,
-  add column if not exists first_edited_at timestamptz;
+  add column if not exists first_edited_at timestamptz,
+  -- Descriptive origin, separate from carried_forward/first_edited_at (which govern ledger
+  -- exclusion). A row created via copyExerciseToPitcher counts toward load immediately (it's a
+  -- real, coach-initiated action -- see the discussion this replaced an earlier "exclude it"
+  -- idea with) but must be visibly distinguishable from a genuinely written weekly program, so
+  -- the constraints block can say "this is a one-slot week from a copy, not a full plan" rather
+  -- than let a single copied exercise read as if it were the whole week's programming.
+  add column if not exists created_via text not null default 'direct'
+    check (created_via in ('direct', 'rollover', 'copy'));
 
 -- Backfill first, so existing rows already conform before the constraints below are added.
 -- Every existing row's week_of is stale, but its content is a live, actively-maintained
@@ -36,3 +49,5 @@ alter table programs
 
 alter table programs
   add constraint programs_pitcher_week_unique unique (pitcher_id, week_of);
+
+commit;

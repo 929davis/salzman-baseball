@@ -487,7 +487,7 @@ export default function CoachDashboard(){
     const {data:created}=await supabase.from('programs').insert({
       pitcher_id:pitcherId,week_of:weekOf,
       structured_days:prevRow.structured_days||{},days:prevRow.days||{},
-      carried_forward:true,first_edited_at:null,
+      carried_forward:true,first_edited_at:null,created_via:'rollover',
     }).select().single()
     setProgram(created||null);setStructuredDays(created?.structured_days||{});setCellNotes(created?.days||{})
   }
@@ -769,7 +769,7 @@ export default function CoachDashboard(){
     } else {
       const {data}=await supabase.from('programs').insert({
         pitcher_id:selected.id,week_of:viewingWeekOf,structured_days:structured,days:notes,
-        carried_forward:false,first_edited_at:new Date().toISOString(),
+        carried_forward:false,first_edited_at:new Date().toISOString(),created_via:'direct',
       }).select().single()
       if (data){setProgram(data)}
     }
@@ -877,6 +877,7 @@ export default function CoachDashboard(){
 
   const confirmAddExercise=async()=>{
     if (!addForm||!pickerCell)return
+    if (!isCurrentWeek){alert('This is a past week — read-only. Jump to the current week to make changes.');return}
     const {exercise,sets,reps,load,notes:exNotes}=addForm
     if (videoInput.trim()&&!exerciseVideos[exercise.id])await saveVideo(exercise.id,videoInput)
     const newItem={id:exercise.id,name:exercise.name,sets:parseInt(sets)||0,reps:parseInt(reps)||0,load:load||'',notes:exNotes||'',cns:exercise.cns,category:exercise.category,pattern:exercise.pattern}
@@ -913,7 +914,7 @@ export default function CoachDashboard(){
     } else {
       await supabase.from('programs').insert({
         pitcher_id:targetPitcher.id,week_of:weekOf,structured_days:{[key]:[newItem]},days:{},
-        carried_forward:false,first_edited_at:new Date().toISOString(),
+        carried_forward:false,first_edited_at:new Date().toISOString(),created_via:'copy',
       })
     }
     setCopySaving(false)
@@ -925,18 +926,21 @@ export default function CoachDashboard(){
   }
 
   const removeExercise=async(key:string,idx:number)=>{
+    if (!isCurrentWeek){alert('This is a past week — read-only. Jump to the current week to make changes.');return}
     const updated={...structuredDays,[key]:(structuredDays[key]||[]).filter((_:any,i:number)=>i!==idx)}
     setStructuredDays(updated);await saveProgram(updated,cellNotes)
   }
 
   const clearWeek=async()=>{
     if (!program)return
+    if (!isCurrentWeek){alert('This is a past week — read-only. Jump to the current week to make changes.');return}
     if (!window.confirm(`Clear all exercises for ${selected?.full_name||'this pitcher'}'s current week? This cannot be undone.`))return
     setStructuredDays({});setCellNotes({})
     await saveProgram({},{})
   }
 
   const updateCellNote=async(day:string,cat:string,val:string)=>{
+    if (!isCurrentWeek){alert('This is a past week — read-only. Jump to the current week to make changes.');return}
     const key=`${day}___${cat}`;const updated={...cellNotes,[key]:val}
     setCellNotes(updated);await saveProgram(structuredDays,updated)
   }

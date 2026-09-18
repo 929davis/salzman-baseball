@@ -80,6 +80,8 @@ export type AthleteConstraints = {
   athleteStateFound: boolean
   weekOf: string
   weekProgramStatus: WeekProgramStatus
+  weekCreatedVia: 'direct' | 'rollover' | 'copy' | null
+  weekSlotCount: number
   training_status: Sourced<string | null>
   equipment_tier: Sourced<EquipmentTier | null>
   throwing_status: Sourced<string | null>
@@ -147,7 +149,7 @@ export async function computeAthleteConstraints(
     // there is no prescription for this week, full stop; falling back to a past week's row
     // would silently substitute an old prescription for a current fact, exactly the failure
     // mode this file exists to eliminate.
-    supabase.from('programs').select('structured_days,carried_forward,first_edited_at').eq('pitcher_id', pitcherId).eq('week_of', weekOf).maybeSingle(),
+    supabase.from('programs').select('structured_days,carried_forward,first_edited_at,created_via').eq('pitcher_id', pitcherId).eq('week_of', weekOf).maybeSingle(),
   ])
 
   const weekProgramStatus: WeekProgramStatus =
@@ -155,6 +157,12 @@ export async function computeAthleteConstraints(
       : (programRow.carried_forward && !programRow.first_edited_at) ? 'carried_forward_untouched'
       : 'edited'
   const prescribedExcluded = weekProgramStatus !== 'edited'
+  // Descriptive only -- does NOT affect exclusion (a copy-created row is coach-initiated and
+  // counts toward load like any other edit; see the discussion this replaced an "exclude
+  // copies" idea with). What it does is let the render surface "this is a single-slot week
+  // from a copy, not a written program" instead of a copied exercise reading as the whole
+  // week's plan with no way to tell.
+  const weekCreatedVia: 'direct' | 'rollover' | 'copy' | null = programRow?.created_via ?? null
 
   const athleteStateFound = !!athleteStateRow
   if (!athleteStateFound) {
@@ -223,6 +231,7 @@ export async function computeAthleteConstraints(
   const highCNSExposures: HighCNSExposure[] = []
   let prescribedThrowTotal = 0
   let prescribedI4I5Count = 0
+  let weekSlotCount = 0
   for (const day of DAY_ORDER) {
     let dayHasHighCNS = false
     for (const key of Object.keys(structuredDays)) {
@@ -230,6 +239,7 @@ export async function computeAthleteConstraints(
       const category = key.slice((day + '___').length)
       const items = structuredDays[key]
       if (!Array.isArray(items)) continue
+      weekSlotCount += items.length
       for (const it of items) {
         if (it?.cns === 'High') {
           dayHasHighCNS = true
@@ -314,6 +324,8 @@ export async function computeAthleteConstraints(
     athleteStateFound,
     weekOf,
     weekProgramStatus,
+    weekCreatedVia,
+    weekSlotCount,
     training_status: capField(athleteStateRow?.training_status ?? null),
     equipment_tier: capField<EquipmentTier>(athleteTier),
     throwing_status: capField(athleteStateRow?.throwing_status ?? null),
@@ -372,8 +384,14 @@ export function renderAthleteConstraintsBlock(c: AthleteConstraints): string {
     lines.push(`- This Week's Program (${c.weekOf}): none written yet [no_program]. No prescribed load exists for this week -- every LOAD field below is logged-only until a program is written.`)
   } else if (c.weekProgramStatus === 'carried_forward_untouched') {
     lines.push(`- This Week's Program (${c.weekOf}): carried forward from a previous week, not yet edited [carried_forward_untouched]. Its content is NOT counted as this week's prescribed load -- editing it once will confirm it as real.`)
+  } else if (c.weekCreatedVia === 'copy') {
+    // Counted honestly (this row is NOT excluded -- see provenance.ts and the discussion this
+    // replaced an "exclude copies" idea with), but must not read as a full week's plan when
+    // it's really one exercise from a copy-to-pitcher action. weekSlotCount says exactly how
+    // much exists so the ceiling/load math above is legible, not mysterious.
+    lines.push(`- This Week's Program (${c.weekOf}): ${c.weekSlotCount} slot(s) total, created via a single-exercise copy [copy] -- NOT a full written program. Load fields above reflect exactly these ${c.weekSlotCount} slot(s), counted honestly, not a complete week's plan.`)
   } else {
-    lines.push(`- This Week's Program (${c.weekOf}): written and edited this week [edited].`)
+    lines.push(`- This Week's Program (${c.weekOf}): written and edited this week [edited], ${c.weekSlotCount} slot(s) total.`)
   }
   lines.push(`- Training Status: ${c.training_status.value ?? 'UNKNOWN'} ${tag(c.training_status.source)}`)
   lines.push(`- Equipment Tier: ${c.equipment_tier.value ?? 'UNKNOWN'} ${tag(c.equipment_tier.source)}`)

@@ -139,6 +139,37 @@ describe('computeAthleteConstraints — asymmetric resolution', () => {
   })
 })
 
+describe('computeAthleteConstraints — copy-created row provenance', () => {
+  it('counts a copy-created row honestly but flags it as a single-slot week, not a full program', async () => {
+    const supabase = fakeSupabase({
+      athlete_state: { data: baseAthleteState, error: null },
+      programs: {
+        data: {
+          structured_days: { Tuesday___Lifting: [{ name: 'Depth Jump', cns: 'High' }] },
+          carried_forward: false,
+          first_edited_at: new Date().toISOString(),
+          created_via: 'copy',
+        },
+        error: null,
+      },
+      throw_log: { data: [], error: null },
+      cmj_results: { data: [], error: null },
+    })
+    const c = await computeAthleteConstraints(supabase, 'p1', emptyPool)
+    // Counted honestly -- NOT excluded, unlike carried-forward-untouched.
+    expect(c.weekProgramStatus).toBe('edited')
+    expect(c.weekly_high_cns_committed.value).toBe(1)
+    expect(c.weekly_high_cns_committed.source).toBe('prescribed')
+    expect(c.weekSlotCount).toBe(1)
+    expect(c.weekCreatedVia).toBe('copy')
+
+    const block = renderAthleteConstraintsBlock(c)
+    expect(block).toContain('[copy]')
+    expect(block).toContain('NOT a full written program')
+    expect(block).toContain('1 slot')
+  })
+})
+
 describe('computeAthleteConstraints — carried-forward-untouched exclusion', () => {
   it('excludes a carried-forward, never-edited program from prescribed load entirely', async () => {
     const supabase = fakeSupabase({
