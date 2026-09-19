@@ -1,5 +1,5 @@
 'use client'
-import { useEffect, useState, useCallback } from 'react'
+import { useEffect, useState, useCallback, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { CARD_TEXT_MAX_LENGTH, THREAD_SEGMENT_MAX_LENGTH, THREAD_MIN_SEGMENTS, THREAD_MAX_SEGMENTS } from '@/lib/social/card-template'
@@ -97,6 +97,16 @@ export default function SocialPage() {
   const [recent, setRecent] = useState<Post[]>([])
   const [recentError, setRecentError] = useState<string | null>(null)
   const [statsLoading, setStatsLoading] = useState<string | null>(null)
+  // Bug 1: sourceText and segments only ever persisted on an explicit button click (and for
+  // segments, only once threadValid) -- a coach could type real content into several slides and
+  // lose all of it on a closed tab or crash. Debounced autosave below writes both to the
+  // existing social_posts row independent of any button/validity, same as caption/photo uploads
+  // already do. autosaveNote is a quiet indicator, separate from the StatusBanner used for
+  // explicit actions (publish, manual save, errors) -- firing that banner every 1.5s while
+  // someone types would be its own kind of noise.
+  const [autosaveNote, setAutosaveNote] = useState<'idle' | 'saving' | 'saved'>('idle')
+  const savedSourceTextRef = useRef<string>('')
+  const savedSegmentsRef = useRef<string[]>([])
 
   useEffect(() => {
     const init = async () => {
@@ -134,6 +144,10 @@ export default function SocialPage() {
     setPostStatus('draft')
     setCardVersion(0)
     setAction({ phase: 'idle' })
+    // Keep the autosave effects from firing a spurious write for a value that just got reset
+    // programmatically, not typed by a coach.
+    savedSourceTextRef.current = ''
+    savedSegmentsRef.current = []
   }
 
   const loadIntoComposer = (p: Post) => {
@@ -144,6 +158,8 @@ export default function SocialPage() {
     setPhotoUrls(Array.isArray(p.photo_urls) ? p.photo_urls : [])
     setCaption(p.caption || '')
     setPostStatus(p.status)
+    savedSourceTextRef.current = p.source_text || ''
+    savedSegmentsRef.current = Array.isArray(p.segments) ? p.segments : []
     setCardVersion(v => v + 1)
     setAction({ phase: 'idle' })
     window.scrollTo({ top: 0, behavior: 'smooth' })
@@ -175,6 +191,7 @@ export default function SocialPage() {
       setPostId(data.id)
       setPostStatus(data.status)
     }
+    savedSourceTextRef.current = sourceText
     setCardVersion(v => v + 1)
     setAction({
       phase: 'ok',
@@ -190,9 +207,56 @@ export default function SocialPage() {
     setAction({ phase: 'saving' })
     const { error } = await supabase.from('social_posts').update({ segments, post_type: 'thread' }).eq('id', postId)
     if (error) { setAction({ phase: 'error', message: `Failed to save thread parts: ${error.message}` }); return }
+    savedSegmentsRef.current = segments
     setCardVersion(v => v + 1)
     setAction({ phase: 'ok', message: 'Thread parts saved.' })
   }
+
+  // Debounced autosave for sourceText -- 1.5s after typing stops, independent of the "Save
+  // Draft" button. Creates the row on first write if none exists yet (same insert-or-update
+  // branching as saveDraft), so the very first thing a coach types is covered too, not just
+  // edits to an already-saved draft.
+  useEffect(() => {
+    if (sourceText === savedSourceTextRef.current) return
+    const timer = setTimeout(async () => {
+      setAutosaveNote('saving')
+      if (postId) {
+        const { error } = await supabase.from('social_posts').update({ source_text: sourceText, post_type: mode }).eq('id', postId)
+        if (error) { setAutosaveNote('idle'); return }
+      } else {
+        if (!sourceText.trim()) { setAutosaveNote('idle'); return }
+        const { data, error } = await supabase.from('social_posts').insert({ source_text: sourceText, post_type: mode }).select().maybeSingle()
+        if (error || !data) { setAutosaveNote('idle'); return }
+        setPostId(data.id)
+        setPostStatus(data.status)
+        loadRecent()
+      }
+      savedSourceTextRef.current = sourceText
+      setCardVersion(v => v + 1)
+      setAutosaveNote('saved')
+    }, 1500)
+    return () => clearTimeout(timer)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sourceText])
+
+  // Debounced autosave for segments -- same pattern, update-only (the row always already
+  // exists by the time segments are editable at all: that section only renders once postId is
+  // set). Independent of threadValid -- a coach can be mid-way through typing slide 3 of 6,
+  // nowhere near valid yet, and this still saves what's there.
+  useEffect(() => {
+    if (!postId) return
+    if (JSON.stringify(segments) === JSON.stringify(savedSegmentsRef.current)) return
+    const timer = setTimeout(async () => {
+      setAutosaveNote('saving')
+      const { error } = await supabase.from('social_posts').update({ segments, post_type: 'thread' }).eq('id', postId)
+      if (error) { setAutosaveNote('idle'); return }
+      savedSegmentsRef.current = segments
+      setCardVersion(v => v + 1)
+      setAutosaveNote('saved')
+    }, 1500)
+    return () => clearTimeout(timer)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [segments, postId])
 
   const updateSegment = (i: number, value: string) => {
     setSegments(segs => segs.map((s, idx) => idx === i ? value : s))
@@ -351,6 +415,8 @@ export default function SocialPage() {
               {mode === 'single'
                 ? `${sourceText.length} / ${CARD_TEXT_MAX_LENGTH} characters${overLength ? ' — too long for a legible card, shorten it' : ''}`
                 : `${sourceText.length} characters`}
+              {autosaveNote === 'saving' && <span style={{ marginLeft: 8, color: C.textDim }}>Saving...</span>}
+              {autosaveNote === 'saved' && <span style={{ marginLeft: 8, color: C.teal }}>Autosaved</span>}
             </span>
             <button style={btn('gold', !sourceText.trim() || (mode === 'single' && overLength))} disabled={!sourceText.trim() || (mode === 'single' && overLength)} onClick={saveDraft}>
               {postId ? 'Save' : 'Save Draft'}
@@ -380,7 +446,11 @@ export default function SocialPage() {
             )}
 
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 8 }}>
-              <button style={smallBtn('default', segments.length >= THREAD_MAX_SEGMENTS)} disabled={segments.length >= THREAD_MAX_SEGMENTS} onClick={addSegment}>+ Add Part</button>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <button style={smallBtn('default', segments.length >= THREAD_MAX_SEGMENTS)} disabled={segments.length >= THREAD_MAX_SEGMENTS} onClick={addSegment}>+ Add Part</button>
+                {autosaveNote === 'saving' && <span style={{ fontSize: 11, color: C.textDim }}>Saving...</span>}
+                {autosaveNote === 'saved' && <span style={{ fontSize: 11, color: C.teal }}>Autosaved</span>}
+              </div>
               <button style={btn('gold', !threadValid)} disabled={!threadValid} onClick={saveSegments}>Save Thread Parts</button>
             </div>
             {!threadValid && (

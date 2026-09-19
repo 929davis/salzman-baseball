@@ -36,6 +36,16 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
   const { id } = await params
   const slideParam = new URL(req.url).searchParams.get('slide')
 
+  // Same guard every other route in this feature already has (publish.ts, stats.ts) -- this
+  // route was the one place missing it, and a missing/misconfigured env var here crashed as an
+  // uncaught exception (createClient throws synchronously on an undefined URL), surfacing as a
+  // generic framework 500 with no indication of the real cause. Fail with a clear message
+  // instead.
+  if (!process.env.SUPABASE_URL || !process.env.SUPABASE_SERVICE_KEY) {
+    console.error('social card: SUPABASE_URL or SUPABASE_SERVICE_KEY is not configured on the server')
+    return new Response('SUPABASE_URL or SUPABASE_SERVICE_KEY is not configured on the server.', { status: 500 })
+  }
+
   const supabase = admin()
   const { data: row, error } = await supabase
     .from('social_posts')
