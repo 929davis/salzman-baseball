@@ -46,16 +46,27 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
     return new Response('SUPABASE_URL or SUPABASE_SERVICE_KEY is not configured on the server.', { status: 500 })
   }
 
-  const supabase = admin()
-  const { data: row, error } = await supabase
-    .from('social_posts')
-    .select('source_text, post_type, segments')
-    .eq('id', id)
-    .maybeSingle()
-
-  if (error) {
-    console.error('social card: failed to read row', id, error)
-    return new Response(`Database error: ${error.message}`, { status: 500 })
+  // The env-var presence check above only rules out a MISSING value -- a present-but-wrong one
+  // (bad URL, truncated/wrong key, wrong project) can still make createClient() or the query
+  // itself throw synchronously rather than resolve with a clean {error}, and that was
+  // previously uncaught here, surfacing as the same generic framework 500 with the real cause
+  // invisible. Wrapped so any such throw returns the actual error message instead.
+  let row: { source_text: string | null, post_type: string | null, segments: unknown } | null
+  try {
+    const supabase = admin()
+    const { data, error } = await supabase
+      .from('social_posts')
+      .select('source_text, post_type, segments')
+      .eq('id', id)
+      .maybeSingle()
+    if (error) {
+      console.error('social card: failed to read row', id, error)
+      return new Response(`Database error: ${error.message}`, { status: 500 })
+    }
+    row = data
+  } catch (err: any) {
+    console.error('social card: Supabase client/query threw', id, err)
+    return new Response(`Supabase query failed: ${err?.message || String(err)}`, { status: 500 })
   }
   if (!row) {
     return new Response('No post found for this id.', { status: 404 })
