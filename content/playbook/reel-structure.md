@@ -3,9 +3,12 @@ title: "Reel Structure"
 order: 2
 ---
 
-Placeholder — replace with your actual reel structure notes.
+## The 50-second skeleton
 
-1. Hook (0-1.5s)
-2. Setup / context
-3. Payoff
-4. CTA
+| Time | What goes here | Framework doing the work |
+|---|---|---|
+| 0–3s | Accusation audit or contrarian claim | Hook + Certainty in method |
+| 3–10s | The specific pitcher and the specific data | Certainty in method |
+| 10–35s | The mechanism, shown not asserted | Value equation: perceived likelihood |
+| 35–43s | What this means for the viewer's own delivery | Value equation: dream outcome, short time delay |
+| 43–50s | The identical ask, same words every time | Volume + Certainty that now is right |

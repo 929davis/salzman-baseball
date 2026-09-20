@@ -29,7 +29,14 @@ export default async function PlaybookPage() {
     <main style={{ background: C.bg, minHeight: '100vh', color: C.text, fontFamily: 'system-ui, sans-serif' }}>
       <PlaybookNav items={navItems} />
 
-      <div style={{ maxWidth: 720, margin: '0 auto', padding: '0 16px 40px' }}>
+      <div className="playbook-content" style={{ maxWidth: 720, margin: '0 auto', padding: '0 16px 40px' }}>
+        {/* Scoped (not global) so a raw <table> from rendered Markdown -- e.g. the reel-structure
+            timing table -- is actually readable on a phone: bordered cells, no zoom needed. */}
+        <style>{`
+          .playbook-content table { border-collapse: collapse; width: 100%; font-size: 13px; }
+          .playbook-content th, .playbook-content td { border: 1px solid ${C.border}; padding: 8px 10px; text-align: left; vertical-align: top; }
+          .playbook-content th { color: ${C.gold}; font-weight: 700; }
+        `}</style>
         <h1 style={{ fontSize: 20, fontWeight: 800, color: C.gold, margin: '4px 0 16px' }}>
           Content / Funnel Playbook
         </h1>
@@ -78,7 +85,11 @@ export default async function PlaybookPage() {
                 ))}
               </div>
             ) : (
-              <div dangerouslySetInnerHTML={{ __html: section.html }} />
+              // overflowX:auto -- a wide table (e.g. the reel-structure timing table) scrolls
+              // horizontally within its own box on a phone instead of breaking page layout.
+              <div style={{ overflowX: 'auto', WebkitOverflowScrolling: 'touch' }}>
+                <div dangerouslySetInnerHTML={{ __html: section.html }} />
+              </div>
             )}
           </CollapsibleSection>
         ))}
