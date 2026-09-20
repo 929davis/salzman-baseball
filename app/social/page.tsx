@@ -368,7 +368,10 @@ export default function SocialPage() {
       <div style={{ maxWidth: 640, margin: '0 auto' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
           <button onClick={() => router.push('/coach')} style={{ background: 'transparent', border: 'none', color: C.textMuted, fontSize: 12, cursor: 'pointer', padding: 0 }}>← Back to Coach Dashboard</button>
-          <button onClick={resetComposer} style={smallBtn()}>+ New Post</button>
+          <div style={{ display: 'flex', gap: 8 }}>
+            <button onClick={() => router.push('/social/playbook')} style={smallBtn()}>Playbook</button>
+            <button onClick={resetComposer} style={smallBtn()}>+ New Post</button>
+          </div>
         </div>
         <div style={{ fontSize: 22, fontWeight: 700, color: C.gold, marginBottom: 4 }}>X → Instagram</div>
         <div style={{ fontSize: 13, color: C.textMuted, marginBottom: 20 }}>Paste something you posted on X, get a matching card, write your caption, and publish. Or write out a thread and publish it as a carousel. Nothing posts without you clicking Publish.</div>
