@@ -718,8 +718,12 @@ export default function CoachDashboard(){
         currentDay=parts[0].charAt(0).toUpperCase()+parts[0].slice(1).toLowerCase()
         parts=parts.slice(1)
       }
-      if(!currentDay) continue
-      if(parts.length<3) continue
+      // Both of these used to be silent `continue`s -- a paste that failed either check for
+      // every single line produced "Added 0 exercises." with nothing else, no way to tell why.
+      // Report the actual line content (truncated) so a real failure is diagnosable from the
+      // result message alone instead of requiring someone to read this source file.
+      if(!currentDay){skipped.push(`No day set yet, ignored: "${line.slice(0,60)}"`);continue}
+      if(parts.length<3){skipped.push(`Couldn't split into fields (found ${parts.length} using "|"): "${line.slice(0,60)}"`);continue}
       const [catRaw,exName,prescription]=parts
       // Accept the old "Conditioning" header for backward compatibility with pasted text
       // from before the rename — every exercise that used to live there is Speed/Power now.
