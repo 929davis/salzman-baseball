@@ -708,8 +708,17 @@ export default function CoachDashboard(){
         currentDay=line.charAt(0).toUpperCase()+line.slice(1).toLowerCase()
         continue
       }
+      let parts=line.split('|').map((p:string)=>p.trim())
+      // Two accepted layouts: the day on its own header line above a block of
+      // "Category | Exercise | Prescription" rows (checked above), or the day repeated inline
+      // as the first field of every row ("MONDAY | Category | Exercise | Prescription") --
+      // both are real formats a coach pastes in practice. Detect the inline-day shape by its
+      // extra leading field rather than requiring one specific layout.
+      if(parts.length>=4&&VALID_DAYS.includes(parts[0].toUpperCase())){
+        currentDay=parts[0].charAt(0).toUpperCase()+parts[0].slice(1).toLowerCase()
+        parts=parts.slice(1)
+      }
       if(!currentDay) continue
-      const parts=line.split('|').map((p:string)=>p.trim())
       if(parts.length<3) continue
       const [catRaw,exName,prescription]=parts
       // Accept the old "Conditioning" header for backward compatibility with pasted text
