@@ -786,7 +786,10 @@ export default function CoachDashboard(){
     setStructuredDays(newStructured)
     setImportSaving(false)
     setImportText('')
-    const skippedMsg=skipped.length>0?' Skipped '+skipped.length+': '+skipped.slice(0,3).map(humanizeReason).join(', ')+(skipped.length>3?'...':'')+'.':''
+    // Full list, not just the first 3 -- a paste is a bounded, human-typed week (dozens of
+    // lines at most), and truncating the one piece of diagnostic output this feature has was
+    // actively hiding information a coach needs to fix their own paste.
+    const skippedMsg=skipped.length>0?' Skipped '+skipped.length+': '+skipped.map(humanizeReason).join(', ')+'.':''
     // Advisory only -- this never blocks or removes anything already added above, unlike every
     // skipped[] reason, which is a real rejection.
     const warnMsg=cnsWarnings.length>0?' ⚠ High-CNS days back to back: '+cnsWarnings.map(w=>`${w.day1}/${w.day2}`).join(', ')+'.':''
