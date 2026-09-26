@@ -8,6 +8,7 @@ import AthleticBenchmarks from '@/app/components/AthleticBenchmarks'
 import ProgressOverview from '@/app/components/ProgressOverview'
 import MiniSparkline from '@/app/components/MiniSparkline'
 import ArmCareSummary from '@/app/components/ArmCareSummary'
+import PitchMechanics2D from '@/app/components/PitchMechanics2D'
 import ThrowingPrinciples from '@/app/components/ThrowingPrinciples'
 import TestVideoLink from '@/app/components/TestVideoLink'
 import { useTestVideos } from '@/lib/testVideos'
@@ -142,19 +143,24 @@ export default function PitcherDashboard(){
   const [loading,setLoading]=useState(true)
   const [logForm,setLogForm]=useState({date:new Date().toISOString().split('T')[0],velocity:'',weightLifted:'',sprintTime:'',pitchCount:'',highEffortThrows:'',feeling:7,soreness:[] as string[],readiness:'',notes:''})
   const [logSaved,setLogSaved]=useState(false)
+  const [logSaveError,setLogSaveError]=useState('')
 
   // Food log state
   const [mealType,setMealType]=useState('Regular Meal')
   const [mealForm,setMealForm]=useState<any>(BLANK_MEAL)
   const [mealSaved,setMealSaved]=useState(false)
+  const [mealSaveError,setMealSaveError]=useState('')
   const [waterOz,setWaterOz]=useState('')
   const [waterSaved,setWaterSaved]=useState(false)
+  const [waterSaveError,setWaterSaveError]=useState('')
   const [showGuidelines,setShowGuidelines]=useState(false)
 
   // Assessment forms
   const [cmjForm,setCmjForm]=useState({date:new Date().toISOString().split('T')[0],bodyweight:'',weightUnit:'lbs',fps:'240',startTime:'',takeoffTime:'',landingTime:'',notes:''})
   const [cmjResult,setCmjResult]=useState<any>(null)
   const [cmjErr,setCmjErr]=useState('')
+  const [cmjSaved,setCmjSaved]=useState(false)
+  const [cmjSaveError,setCmjSaveError]=useState('')
   const [assessTab,setAssessTab]=useState('cmj')
 
   const today=new Date().toISOString().split('T')[0]
@@ -210,13 +216,19 @@ export default function PitcherDashboard(){
 
   const submitLog=async()=>{
     if (!profile)return
-    await supabase.from('session_logs').insert({
+    setLogSaveError('')
+    const {error}=await supabase.from('session_logs').insert({
       pitcher_id:profile.id,log_date:logForm.date,
       velocity:parseFloat(logForm.velocity)||null,weight_lifted:parseFloat(logForm.weightLifted)||null,
       sprint_time:parseFloat(logForm.sprintTime)||null,pitch_count:parseInt(logForm.pitchCount)||null,
       high_effort_throws:parseInt(logForm.highEffortThrows)||null,feeling:logForm.feeling,
       soreness:logForm.soreness,readiness:logForm.readiness||null,notes:logForm.notes||null
     })
+    if (error){
+      console.error('pitcher dashboard: failed to save session log',error)
+      setLogSaveError('Could not save — check your connection and try again. Your entry has not been lost.')
+      return
+    }
     const {data}=await supabase.from('session_logs').select('*').eq('pitcher_id',profile.id).order('log_date',{ascending:false}).limit(20)
     setLogs(data||[])
     setLogForm({date:new Date().toISOString().split('T')[0],velocity:'',weightLifted:'',sprintTime:'',pitchCount:'',highEffortThrows:'',feeling:7,soreness:[],readiness:'',notes:''})
@@ -231,11 +243,12 @@ export default function PitcherDashboard(){
 
   const saveMeal=async()=>{
     if (!mealForm.description.trim()||!profile)return
+    setMealSaveError('')
     const p=parseFloat(mealForm.protein)||0
     const c=parseFloat(mealForm.carbs)||0
     const f=parseFloat(mealForm.fat)||0
     const scores=scoreMeal(p,c,f,mealForm.giOption,mealForm.proMetabolicFoods,mealType)
-    const {data:meal}=await supabase.from('food_logs').insert({
+    const {data:meal,error:mealError}=await supabase.from('food_logs').insert({
       pitcher_id:profile.id,log_date:today,meal_type:mealType,
       meal_description:mealForm.description,
       estimated_protein:p,estimated_carbs:c,estimated_fat:f,
@@ -243,35 +256,53 @@ export default function PitcherDashboard(){
       food_quality_score:scores.foodQualityScore,timing_score:scores.timingScore,
       pro_metabolic_foods:mealForm.proMetabolicFoods,
     }).select().single()
-    if (meal){
-      const newFoodLogs=[...foodLogs,meal]
-      setFoodLogs(newFoodLogs)
-      const dayScores=scoreFuelDay(newFoodLogs)
-      await supabase.from('daily_fuel_scores').upsert({
-        pitcher_id:profile.id,log_date:today,
-        macro_score:dayScores.macro,quality_score:dayScores.quality,
-        glycemic_score:dayScores.glycemic,timing_score:dayScores.timing,
-        total_score:dayScores.total,water_oz:dailyFuelScore?.water_oz||0
-      },{onConflict:'pitcher_id,log_date'})
-      setDailyFuelScore((prev:any)=>({...prev,...dayScores,total_score:dayScores.total}))
-      setWeekFuelScores((prev:any[])=>{
-        const others=prev.filter(s=>s.log_date!==today)
-        return [...others,{log_date:today,total_score:dayScores.total}].sort((a,b)=>a.log_date.localeCompare(b.log_date))
-      })
+    if (mealError||!meal){
+      console.error('pitcher dashboard: failed to save meal',mealError)
+      setMealSaveError('Could not save — check your connection and try again. Your entry has not been lost.')
+      return
     }
+    const newFoodLogs=[...foodLogs,meal]
+    setFoodLogs(newFoodLogs)
+    const dayScores=scoreFuelDay(newFoodLogs)
+    const {error:fuelError}=await supabase.from('daily_fuel_scores').upsert({
+      pitcher_id:profile.id,log_date:today,
+      macro_score:dayScores.macro,quality_score:dayScores.quality,
+      glycemic_score:dayScores.glycemic,timing_score:dayScores.timing,
+      total_score:dayScores.total,water_oz:dailyFuelScore?.water_oz||0
+    },{onConflict:'pitcher_id,log_date'})
+    if (fuelError){
+      // The meal itself is safely saved (food_logs write above succeeded) -- only the
+      // day's aggregate score failed to update. Don't claim a clean success, but don't
+      // discard the meal form either, since re-submitting would create a duplicate meal.
+      console.error('pitcher dashboard: meal saved but daily fuel score failed to update',fuelError)
+      setMealForm(BLANK_MEAL)
+      setMealSaveError("Meal saved, but today's fuel score didn't update — refresh to check it.")
+      return
+    }
+    setDailyFuelScore((prev:any)=>({...prev,...dayScores,total_score:dayScores.total}))
+    setWeekFuelScores((prev:any[])=>{
+      const others=prev.filter(s=>s.log_date!==today)
+      return [...others,{log_date:today,total_score:dayScores.total}].sort((a,b)=>a.log_date.localeCompare(b.log_date))
+    })
     setMealForm(BLANK_MEAL)
     setMealSaved(true);setTimeout(()=>setMealSaved(false),2000)
   }
 
   const saveWater=async()=>{
     if (!waterOz||!profile)return
+    setWaterSaveError('')
     const scores=scoreFuelDay(foodLogs)
-    await supabase.from('daily_fuel_scores').upsert({
+    const {error}=await supabase.from('daily_fuel_scores').upsert({
       pitcher_id:profile.id,log_date:today,
       macro_score:scores.macro,quality_score:scores.quality,
       glycemic_score:scores.glycemic,timing_score:scores.timing,
       total_score:scores.total,water_oz:parseFloat(waterOz)
     },{onConflict:'pitcher_id,log_date'})
+    if (error){
+      console.error('pitcher dashboard: failed to save water intake',error)
+      setWaterSaveError('Could not save — check your connection and try again.')
+      return
+    }
     setDailyFuelScore((prev:any)=>({...prev,water_oz:parseFloat(waterOz)}))
     setWaterSaved(true);setTimeout(()=>setWaterSaved(false),2000)
   }
@@ -287,10 +318,11 @@ export default function PitcherDashboard(){
   }
   const saveCMJ=async()=>{
     if (!cmjResult||!profile)return
+    setCmjSaveError('')
     const bw=parseFloat(cmjForm.bodyweight)
     const massKg=cmjForm.weightUnit==='lbs'?bw*0.453592:bw
     const fps=parseFloat(cmjForm.fps)
-    await supabase.from('cmj_results').insert({
+    const {error}=await supabase.from('cmj_results').insert({
       pitcher_id:profile.id,test_date:cmjForm.date,bodyweight:bw,weight_unit:cmjForm.weightUnit,
       fps:parseInt(cmjForm.fps),start_frame:Math.round(parseTime(cmjForm.startTime)*fps),
       takeoff_frame:Math.round(parseTime(cmjForm.takeoffTime)*fps),landing_frame:Math.round(parseTime(cmjForm.landingTime)*fps),
@@ -298,9 +330,15 @@ export default function PitcherDashboard(){
       peak_power_per_kg:cmjResult.peakPowerPerKg,takeoff_velocity:cmjResult.takeoffVelocity,
       explosive_index:cmjResult.explosiveIndex,estimated_velocity:cmjResult.estimatedVelocity,notes:cmjForm.notes||null
     })
+    if (error){
+      console.error('pitcher dashboard: failed to save CMJ result',error)
+      setCmjSaveError('Could not save — check your connection and try again. Your result is still shown above.')
+      return
+    }
     const {data}=await supabase.from('cmj_results').select('*').eq('pitcher_id',profile.id).order('test_date',{ascending:false})
     setCmjResults(data||[]);setCmjResult(null)
     setCmjForm({date:new Date().toISOString().split('T')[0],bodyweight:'',weightUnit:'lbs',fps:'240',startTime:'',takeoffTime:'',landingTime:'',notes:''})
+    setCmjSaved(true);setTimeout(()=>setCmjSaved(false),2000)
   }
 
   const latestCMJ=cmjResults[0]
@@ -533,6 +571,7 @@ export default function PitcherDashboard(){
                 <button onClick={saveWater} style={{background:C.blue,color:C.bg,border:'none',borderRadius:8,padding:'12px 16px',fontSize:13,fontWeight:700,cursor:'pointer',flexShrink:0}}>Save</button>
               </div>
               {waterSaved&&<div style={{fontSize:12,color:C.teal,marginTop:6}}>✓ Water logged</div>}
+              {waterSaveError&&<div style={{fontSize:12,color:C.red,marginTop:6,padding:'8px 10px',background:'rgba(248,81,73,0.1)',borderRadius:8}}>{waterSaveError}</div>}
               {dailyFuelScore?.water_oz>0&&<div style={{fontSize:12,color:C.textMuted,marginTop:6}}>Today: {dailyFuelScore.water_oz} oz</div>}
             </div>
 
@@ -605,6 +644,7 @@ export default function PitcherDashboard(){
 
               <button style={btn('gold')} onClick={saveMeal} disabled={!mealForm.description.trim()}>Save Meal</button>
               {mealSaved&&<div style={{textAlign:'center',color:C.teal,fontSize:13,fontWeight:600,marginTop:8}}>✓ Meal saved!</div>}
+              {mealSaveError&&<div style={{textAlign:'center',color:C.red,fontSize:13,fontWeight:600,marginTop:8,padding:'10px',background:'rgba(248,81,73,0.1)',borderRadius:8}}>{mealSaveError}</div>}
             </div>
 
             {/* Today's meals */}
@@ -665,7 +705,7 @@ export default function PitcherDashboard(){
             <div style={{fontSize:18,fontWeight:700,color:C.white,marginBottom:4}}>Assessments</div>
             <div style={{fontSize:12,color:C.textMuted,marginBottom:16}}>Film at 240 FPS · Open in Photos · Edit · Scrub to find timestamps</div>
             <div style={{display:'flex',gap:6,marginBottom:16,overflowX:'auto' as const,paddingBottom:4}}>
-              {[{id:'cmj',label:'CMJ'},{id:'arm_care',label:'Arm Care'},{id:'benchmarks',label:'Benchmarks'}].map(t=>(
+              {[{id:'cmj',label:'CMJ'},{id:'arm_care',label:'Arm Care'},{id:'benchmarks',label:'Benchmarks'},{id:'mechanics',label:'Mechanics'}].map(t=>(
                 <button key={t.id} onClick={()=>setAssessTab(t.id)} style={{background:assessTab===t.id?C.gold:C.bg3,color:assessTab===t.id?C.bg:C.textMuted,border:`1px solid ${assessTab===t.id?C.gold:C.border}`,borderRadius:8,padding:'8px 14px',fontSize:12,fontWeight:assessTab===t.id?700:400,cursor:'pointer',whiteSpace:'nowrap' as const,flexShrink:0}}>{t.label}</button>
               ))}
             </div>
@@ -704,6 +744,8 @@ export default function PitcherDashboard(){
                       ))}
                     </div>
                     <button style={{...btn('gold'),marginTop:0}} onClick={saveCMJ}>Save to Profile</button>
+                    {cmjSaved&&<div style={{textAlign:'center',color:C.teal,fontSize:13,fontWeight:600,marginTop:8}}>✓ Saved!</div>}
+                    {cmjSaveError&&<div style={{textAlign:'center',color:C.red,fontSize:13,fontWeight:600,marginTop:8,padding:'10px',background:'rgba(248,81,73,0.1)',borderRadius:8}}>{cmjSaveError}</div>}
                   </div>
                 )}
                 {cmjResults.length>1&&(()=>{
@@ -753,6 +795,10 @@ export default function PitcherDashboard(){
             {assessTab==='benchmarks'&&profile&&(
               <AthleticBenchmarks pitcherId={profile.id} cmjResults={cmjResults}/>
             )}
+
+            {assessTab==='mechanics'&&profile&&(
+              <PitchMechanics2D pitcherId={profile.id}/>
+            )}
           </div>
         )}
 
@@ -792,6 +838,7 @@ export default function PitcherDashboard(){
               <textarea style={{...inp,minHeight:80,resize:'vertical' as const}} placeholder="How did the session feel?" value={logForm.notes} onChange={e=>setLogForm(f=>({...f,notes:e.target.value}))}/>
               <button style={btn('gold')} onClick={submitLog}>Save Entry</button>
               {logSaved&&<div style={{textAlign:'center',color:C.teal,fontSize:14,fontWeight:600,marginTop:8}}>✓ Saved!</div>}
+              {logSaveError&&<div style={{textAlign:'center',color:C.red,fontSize:14,fontWeight:600,marginTop:8,padding:'10px',background:'rgba(248,81,73,0.1)',borderRadius:8}}>{logSaveError}</div>}
             </div>
             {logs.length>0&&(
               <div>
