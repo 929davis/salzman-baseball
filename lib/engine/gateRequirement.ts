@@ -28,6 +28,20 @@ const THROWING_PHASE_GATE_REQUIREMENTS: Record<string, Gate> = {
   Bounce: 'G2',
 }
 
+// Human-readable name per gate, matching the principles doc's §3.3 criteria table -- used
+// anywhere a bare gate code (e.g. "G3") would otherwise be shown to a coach with no way to
+// tell what it means without cross-referencing that section.
+export const GATE_LABELS: Record<Gate, string> = {
+  G1: 'Loaded Jumps / Advanced Plyometrics',
+  G2: 'Single-Leg Plyometrics',
+  G3: 'Depth Jumps / KEAT',
+  G4: 'Drop Heights Above 18 Inches',
+  T1: 'Throwing Gate T1',
+  T2: 'Throwing Gate T2',
+  T3: 'Throwing Gate T3',
+  T4: 'Throwing Gate T4',
+}
+
 // Exposed separately from checkGateRequirement so callers that need to know WHAT a gate
 // unlocks (e.g. athleteConstraints.ts building a "gates not passed, and what each blocks"
 // list) can resolve any given exercise's requirement without re-deriving this lookup order

@@ -1029,16 +1029,55 @@ export default function CoachDashboard(){
     const effVelocity=getEffectiveVelocity(selected,cmjResults)||null
     const armFlagStatuses=computeArmCareFlagStatuses(armCareTests[0]||null,effVelocity)
 
-    // Context tags used to decide which non-engine-rule principles_sections are relevant to
-    // THIS pitcher right now -- built only from data the app already has. See the audit's
-    // "athlete-context fields buildPrompt would need" note for what's still missing (age/level,
-    // season phase, injury history, equipment access -- none of which exist on profiles today).
+    // Computed, not narrative -- athlete_state/throw_log/cmj_results/the exercise library run
+    // through lib/engine/athleteConstraints.ts, never the principles text. Moved ahead of
+    // contextTags (below) because contextTags now needs season_phase/throwing_status/
+    // active_change off this same object.
+    const constraints=selected?await computeAthleteConstraints(supabase,selected.id,buildExercisePool()):null
+    const constraintsBlock=constraints?renderAthleteConstraintsBlock(constraints):'COMPUTED CONSTRAINTS — no pitcher selected.'
+
+    // Real-content check against the live principles_sections tag vocabulary (queried directly,
+    // not assumed) as of this fix: arm_care, athlete_setup, background, calendar, conditioning,
+    // deload, diagnostics, in_season, lifting, movement_change, off_season, recovery,
+    // return_to_throw, templates, testing, throwing, velocity_block. No gate-scoped tags
+    // (G1-G4/T1-T4) exist anywhere yet, so gates_passed has nothing to map onto today --
+    // deliberately not inventing a tag convention with zero content to match it.
+    const SEASON_PHASE_TAGS:Record<string,string[]>={
+      transition:['off_season'],
+      general_prep:['off_season'],
+      specific_prep:['off_season'],
+      // 'first_transition' isn't a tag that exists on any row today (confirmed) -- the actual
+      // first-transition content (e.g. the off-season-week template) is tagged off_season only.
+      // Emit both: off_season for real matches now, first_transition so this becomes correct
+      // automatically if/when sections get tagged more precisely.
+      first_transition:['off_season','first_transition'],
+      competitive:['in_season'],
+    }
+    const seasonPhaseTags=constraints?.season_phase.value?(SEASON_PHASE_TAGS[constraints.season_phase.value]||[]):[]
+    // Same reasoning as above: 'restricted' isn't a real tag yet either -- the matching real
+    // content lives under 'return_to_throw'. Emit both.
+    const restrictedTags=constraints?.throwing_status.value==='restricted'?['restricted','return_to_throw']:[]
+    const movementChangeTags=constraints?.active_change.value?['movement_change']:[]
+
+    // Context tags used to decide which non-always-include principles_sections are relevant to
+    // THIS pitcher right now.
     const contextTags:string[]=[
       classification.toLowerCase().replace(/\s+/g,'_'),
       restOwed>0?'rest_owed':'cleared_to_throw',
       ...(armFlagStatuses.includes('Flag')?['arm_care_flag']:[]),
       ...(armFlagStatuses.includes('Caution')?['arm_care_caution']:[]),
+      ...seasonPhaseTags,
+      ...restrictedTags,
+      ...movementChangeTags,
     ]
+
+    // Last week's actual prescribed program (not this week's, which may be blank or a carried-
+    // forward copy) -- so the AI can see what was already run and avoid repeating the same
+    // exercise selection two weeks running (principles §5.2's training-monotony warning was
+    // previously unenforceable: nothing in the prompt showed prior weeks at all).
+    const {data:lastWeekRow}=await supabase.from('programs').select('structured_days')
+      .eq('pitcher_id',selected?.id).eq('week_of',addWeeks(currentWeekOf(),-1)).maybeSingle()
+    const lastWeekSerialized=lastWeekRow?.structured_days?serializeWeek(lastWeekRow.structured_days):''
 
     // Fetched fresh at click-time (not from page-level state) so a section edited moments ago
     // in the Principles tab is guaranteed to be reflected in the prompt.
@@ -1047,15 +1086,10 @@ export default function CoachDashboard(){
     const selection=selectPrinciplesSections(sections,contextTags,PRINCIPLES_PROMPT_CHAR_BUDGET)
     const principlesBlock=formatPrinciplesForPrompt(selection,PRINCIPLES_PROMPT_CHAR_BUDGET)
 
-    // Computed, not narrative -- athlete_state/throw_log/cmj_results/the exercise library run
-    // through lib/engine/athleteConstraints.ts, never the principles text.
-    const constraints=selected?await computeAthleteConstraints(supabase,selected.id,buildExercisePool()):null
-    const constraintsBlock=constraints?renderAthleteConstraintsBlock(constraints):'COMPUTED CONSTRAINTS — no pitcher selected.'
-
     // "So I can see what the AI was actually given" -- logged to console for detail, and
     // surfaced as a short visible line next to the Claude button (see render below).
     console.log('[buildPrompt] context tags:',contextTags)
-    console.log('[buildPrompt] sections included:',selection.included.map(s=>`${s.doc} ${s.section_number} — ${s.title}${s.is_engine_rule?' (engine rule)':''}`))
+    console.log('[buildPrompt] sections included:',selection.included.map(s=>`${s.doc} ${s.section_number} — ${s.title}${s.always_include?' (always-include)':''}`))
     if (selection.omitted.length>0) console.log('[buildPrompt] sections omitted (over budget):',selection.omitted.map(s=>`${s.doc} ${s.section_number} — ${s.title}`))
     console.log('[buildPrompt] computed constraints:',constraints)
     setPromptSectionSummary(summarizePrinciplesSelection(selection))
@@ -1082,10 +1116,13 @@ ${recentLogs.map((l:any)=>`  ${l.log_date}: vel=${l.velocity||'—'}mph, feeling
 
 ${constraintsBlock}
 
+LAST WEEK'S PROGRAM:
+${lastWeekSerialized||'None on record.'}
+
 TRAINING PRINCIPLES (${selection.included.length} section(s), ~${selection.totalChars.toLocaleString()} chars):
 ${principlesBlock||'No principles sections yet.'}
 
-Write next week's program by day and category (Pre-Throwing, Throwing, Post-Throwing, Speed/Power, Main Exercises, Accessory, Recovery). Use format: "Exercise Name SxR @ X%"`
+Write next week's program by day and category (Pre-Throwing, Throwing, Post-Throwing, Speed/Power, Main Exercises, Accessory, Recovery). Use format: "Exercise Name SxR @ RPE X" (use a percentage instead only when a real 1RM is on file for that lift). Do not repeat the same primary exercise in the same slot two weeks running unless you are progressing its load or intent — compare against last week's program above.`
     navigator.clipboard.writeText(prompt).catch(()=>{})
     window.open('https://claude.ai','_blank')
     alert('Prompt copied! Paste into Claude.')

@@ -15,8 +15,6 @@ create table if not exists athlete_state (
   throwing_status text,      -- 'building' | 'developing' | 'competing' | 'restricted'
   season_phase text,         -- 'transition' | 'general_prep' | 'specific_prep' | 'first_transition' | 'competitive'
   season_role text,          -- 'starter' | 'reliever'
-  has_team_lift boolean not null default false,
-  team_lift_heavy_day text,  -- day name, nullable
   gates_passed text[] not null default '{}', -- 'G1'..'G4', 'T1'..'T4'
   active_change text,        -- the one in-flight mechanical change, nullable
   active_change_stage int,   -- 1-4, nullable

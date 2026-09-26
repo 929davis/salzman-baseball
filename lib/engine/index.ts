@@ -15,7 +15,7 @@
 export * from './types'
 export { checkEquipmentTier, meetsEquipmentTier } from './equipmentGate'
 export { checkDeprecated } from './deprecatedGate'
-export { checkGateRequirement, resolveRequiredGate } from './gateRequirement'
+export { checkGateRequirement, resolveRequiredGate, GATE_LABELS } from './gateRequirement'
 export { checkThrowingIntent } from './throwingIntentGate'
 export { checkCNSAdjacency, type DayCNSInput, type CNSAdjacencyWarning } from './cnsAdjacency'
 export {

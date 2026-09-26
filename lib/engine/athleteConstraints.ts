@@ -31,7 +31,7 @@
 // athlete_state, throw_log, cmj_results, and the exercise library.
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { EngineAthleteState, EngineExercise, Gate, EquipmentTier } from './types'
-import { resolveRequiredGate } from './gateRequirement'
+import { resolveRequiredGate, GATE_LABELS } from './gateRequirement'
 import { meetsEquipmentTier } from './equipmentGate'
 import { classifyCMJ } from '../cmj'
 import { computeThrowLoadRatio, type ThrowLoadResult } from '../throwLog'
@@ -96,8 +96,6 @@ export type AthleteConstraints = {
   // itself is null/unrecognized -- not a missing definition anymore.
   weekly_high_cns_ceiling: number | null
   weekly_high_cns_violation: WeeklyHighCNSViolation | null
-  has_team_lift: boolean
-  team_lift_heavy_day: string | null
   // throwLoad is the PURE logged computation, untouched -- acute7d/chronicWeeklyAvg28d/ratio/
   // band/hasEnoughHistory exactly as lib/throwLog.ts computes them from throw_log alone.
   // resolvedAcute7d is the MAX-resolved figure (logged vs. this week's prescribed Throwing
@@ -166,7 +164,7 @@ export async function computeAthleteConstraints(
 
   const athleteStateFound = !!athleteStateRow
   if (!athleteStateFound) {
-    unknownFields.push('training_status', 'equipment_tier', 'throwing_status', 'season_phase', 'season_role', 'gates_passed', 'has_team_lift', 'team_lift_heavy_day', 'active_change', 'active_change_stage')
+    unknownFields.push('training_status', 'equipment_tier', 'throwing_status', 'season_phase', 'season_role', 'gates_passed', 'active_change', 'active_change_stage')
   } else {
     if (athleteStateRow.training_status == null) unknownFields.push('training_status')
     if (athleteStateRow.equipment_tier == null) unknownFields.push('equipment_tier')
@@ -338,8 +336,6 @@ export async function computeAthleteConstraints(
     weekly_high_cns_committed,
     weekly_high_cns_ceiling,
     weekly_high_cns_violation,
-    has_team_lift: !!athleteStateRow?.has_team_lift,
-    team_lift_heavy_day: athleteStateRow?.has_team_lift ? (athleteStateRow?.team_lift_heavy_day ?? null) : null,
     throwLoad,
     resolvedAcute7d: resolvedAcute,
     ratioWithheldReason,
@@ -398,11 +394,12 @@ export function renderAthleteConstraintsBlock(c: AthleteConstraints): string {
   lines.push(`- Throwing Status: ${c.throwing_status.value ?? 'UNKNOWN'} ${tag(c.throwing_status.source)}`)
   lines.push(`- Season Phase: ${c.season_phase.value ?? 'UNKNOWN'} ${tag(c.season_phase.source)}`)
   lines.push(`- Season Role: ${c.season_role.value ?? 'UNKNOWN'} ${tag(c.season_role.source)}`)
-  lines.push(`- Gates Passed: ${c.gates_passed.length > 0 ? c.gates_passed.join(', ') : 'none'}`)
+  const gateLabel = (g: string) => GATE_LABELS[g as Gate] ? `${g} (${GATE_LABELS[g as Gate]})` : g
+  lines.push(`- Gates Passed: ${c.gates_passed.length > 0 ? c.gates_passed.map(gateLabel).join(', ') : 'none'}`)
   if (c.gates_not_passed.length > 0) {
     lines.push('- Gates NOT Passed:')
     for (const g of c.gates_not_passed) {
-      lines.push(`  - ${g.gate}: blocks ${g.blocks.length > 0 ? g.blocks.join(', ') : '(nothing currently wired to this gate)'}`)
+      lines.push(`  - ${g.gate} (${GATE_LABELS[g.gate]}): blocks ${g.blocks.length > 0 ? g.blocks.join(', ') : '(nothing currently wired to this gate)'}`)
     }
   }
   lines.push(`- Allowed Movement Categories: ${c.allowed_movement_categories.length > 0 ? c.allowed_movement_categories.join(', ') : 'none'}`)
@@ -418,7 +415,6 @@ export function renderAthleteConstraintsBlock(c: AthleteConstraints): string {
     lines.push(`  - Nearest legal alternative: remove ${v.excess} of the following ${v.removeCandidates.length} committed high-CNS exposure(s) to be back within ceiling:`)
     for (const exp of v.removeCandidates) lines.push(`    - ${exp.day} / ${exp.category}: ${exp.exerciseName}`)
   }
-  if (c.has_team_lift) lines.push(`- Team Lift Heavy Day: ${c.team_lift_heavy_day ?? 'set, but no day specified'}`)
   const tl = c.throwLoad
   lines.push(`- Throw Load, Acute (7d): ${c.resolvedAcute7d.value} ${tag(c.resolvedAcute7d.source)}`)
   lines.push(`- Throw Load, Chronic Weekly Avg (28d): ${tl.chronicWeeklyAvg28d} [logged]`)

@@ -25,7 +25,7 @@ function fakeSupabase(responses: Record<string, { data: any, error: null }>) {
 const baseAthleteState = {
   training_status: 'intermediate', equipment_tier: 'E1', throwing_status: 'developing',
   season_phase: 'general_prep', season_role: 'starter', gates_passed: [],
-  active_change: null, active_change_stage: null, has_team_lift: false, team_lift_heavy_day: null,
+  active_change: null, active_change_stage: null,
 }
 
 const emptyPool: EngineExercise[] = []

@@ -19,7 +19,6 @@ const EQUIPMENT_TIER_OPTIONS = ['E1','E2','E3']
 const THROWING_STATUS_OPTIONS = ['building','developing','competing','restricted']
 const SEASON_PHASE_OPTIONS = ['transition','general_prep','specific_prep','first_transition','competitive']
 const SEASON_ROLE_OPTIONS = ['starter','reliever']
-const HEAVY_DAYS = ['Monday','Tuesday','Wednesday','Thursday','Friday','Saturday','Sunday']
 const GATE_OPTIONS = ['G1','G2','G3','G4','T1','T2','T3','T4']
 const ACTIVE_CHANGE_STAGES = [1,2,3,4]
 
@@ -30,8 +29,6 @@ type AthleteState = {
   throwing_status: string | null
   season_phase: string | null
   season_role: string | null
-  has_team_lift: boolean
-  team_lift_heavy_day: string | null
   gates_passed: string[]
   active_change: string | null
   active_change_stage: number | null
@@ -40,7 +37,7 @@ type AthleteState = {
 
 const blank = (pitcherId:string):AthleteState => ({
   pitcher_id:pitcherId, training_status:null, equipment_tier:null, throwing_status:null,
-  season_phase:null, season_role:null, has_team_lift:false, team_lift_heavy_day:null,
+  season_phase:null, season_role:null,
   gates_passed:[], active_change:null, active_change_stage:null, updated_at:null,
 })
 
@@ -122,18 +119,6 @@ export default function AthleteStatePanel({pitcherId}:{pitcherId:string}){
             <Field label="Throwing Status"><Select value={state.throwing_status} onChange={v=>update({throwing_status:v})} options={THROWING_STATUS_OPTIONS} placeholder="—"/></Field>
             <Field label="Season Phase"><Select value={state.season_phase} onChange={v=>update({season_phase:v})} options={SEASON_PHASE_OPTIONS} placeholder="—"/></Field>
             <Field label="Season Role"><Select value={state.season_role} onChange={v=>update({season_role:v})} options={SEASON_ROLE_OPTIONS} placeholder="—"/></Field>
-          </div>
-
-          <div style={{display:'flex',alignItems:'flex-end',gap:14}}>
-            <label style={{display:'flex',alignItems:'center',gap:6,fontSize:12,color:C.textMuted}}>
-              <input type="checkbox" checked={state.has_team_lift} onChange={e=>update({has_team_lift:e.target.checked,team_lift_heavy_day:e.target.checked?state.team_lift_heavy_day:null})}/>
-              Has team lift
-            </label>
-            {state.has_team_lift && (
-              <div style={{width:160}}>
-                <Field label="Heavy Day"><Select value={state.team_lift_heavy_day} onChange={v=>update({team_lift_heavy_day:v})} options={HEAVY_DAYS} placeholder="—"/></Field>
-              </div>
-            )}
           </div>
 
           <div>
