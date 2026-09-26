@@ -1,0 +1,76 @@
+-- Splits "is_engine_rule" into two independent concepts that had been conflated:
+--
+--   is_engine_rule -- unchanged meaning, KEPT as pure metadata: marks a section as
+--     deterministic / a candidate for eventual lib/engine implementation (like the CNS
+--     ceiling check already is). No longer read by buildPrompt for inclusion -- see
+--     lib/principlesSections.ts.
+--
+--   always_include (new) -- the actual "show this to the model on every single prompt,
+--     regardless of athlete context" flag that selectPrinciplesSections now gates on.
+--
+-- Root cause this fixes: every one of the 58 rows marked is_engine_rule=true was being
+-- unconditionally included in every buildPrompt call, for every athlete, regardless of season
+-- phase, throwing status, or anything else -- confirmed live against a real pitcher
+-- (Austin Mora): 85,689 characters of always-included content against a stated 40,000-char
+-- budget, with zero tag-matched sections ever getting a chance to compete for the remaining
+-- space. Sections like 5.3/5.4/16.1 (the annual calendar) were reaching every prompt whether
+-- or not they applied to the athlete's actual phase, while genuinely phase-specific content
+-- was permanently crowded out.
+--
+-- The always_include=true set below is a curated first pass, not a mechanical migration of
+-- existing is_engine_rule values -- picking which content is truly universal (applies to every
+-- athlete regardless of phase/status) is a content judgment about Coach Salzman's own
+-- principles doc, not something to infer silently. Selection criteria applied: safety-critical
+-- (can't be conditionally excluded without injury risk), purely definitional/structural
+-- (framework used to interpret every other section), or explicitly stated in the doc's own
+-- text as applying regardless of context. Everything else that was is_engine_rule=true reverts
+-- to tag-matched-only inclusion -- most of it already carries a real topical tag (off_season,
+-- throwing, movement_change, etc.) and will only reach a prompt when that tag actually applies,
+-- once buildPrompt's contextTags carries real athlete-state-derived tags (see the buildPrompt
+-- change accompanying this migration).
+--
+-- REVIEW THIS LIST. It is Claude's first pass at "what's actually universal," not a final
+-- editorial decision -- flag anything that should move either direction.
+--
+--   3.2   Equipment tier                          -- definitional; every substitution ladder
+--                                                     decision depends on it
+--   3.3   Readiness gates                         -- definitional; gate criteria referenced
+--                                                     throughout, regardless of phase
+--   4.2   The load table                          -- definitional; used for every single
+--                                                     load/rep prescription
+--   4.3   Load by exercise class                  -- definitional; same reason as 4.2
+--   4.5   Exercise selection and order             -- structural; governs every session
+--   4.6   Frequency — the CNS budget              -- safety-critical; the weekly high-CNS
+--                                                     ceiling applies every week, every phase
+--   4.7   One primary quality per phase            -- structural; governs how every phase is
+--                                                     organized
+--   4.8   Progression, deload, and regression       -- safety-critical; deload triggers apply
+--                                                     regardless of phase
+--   5.2   The governing theory                     -- foundational framework every other
+--                                                     progression/deload decision reasons from
+--   8.4   Arm care volume — the computable formula -- doc's own text: "ours regardless of what
+--                                                     the school programs" -- explicitly
+--                                                     universal
+--   9.1   Template structure                       -- structural metadata for the lifting
+--                                                     template, used every week
+--   12.1  Intent scale                             -- definitional; I1-I5 vocabulary used
+--                                                     throughout every throwing prescription
+--   13.7  One change at a time — hard rule          -- safety-critical constraint; must be
+--                                                     enforced even to confirm a SECOND change
+--                                                     isn't being silently started
+--   17.2  Red flags — stop throwing                 -- safety-critical; must never be
+--                                                     conditionally excluded
+--   19.1  Structure                                 -- structural metadata for the throwing
+--                                                     template, used every week
+--
+-- 15 sections, 19,098 characters combined -- leaves ~20,900 chars of the 40,000 budget for
+-- tag-matched situational content once buildPrompt's contextTags actually carries athlete
+-- state (season_phase, throwing_status, active_change).
+
+alter table principles_sections add column if not exists always_include boolean not null default false;
+
+update principles_sections set always_include = true
+where section_number in ('3.2','3.3','4.2','4.3','4.5','4.6','4.7','4.8','5.2','8.4','9.1','12.1','13.7','17.2','19.1');
+
+-- Not executed automatically -- run manually in the Supabase SQL Editor after reviewing, same
+-- as every other migration in this directory.

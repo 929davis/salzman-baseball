@@ -9,7 +9,15 @@ export type PrinciplesSection = {
   section_number: string
   title: string
   body: string
+  // Pure metadata: marks a section as deterministic / a candidate for eventual lib/engine
+  // implementation. Deliberately NOT read by selectPrinciplesSections -- see always_include.
   is_engine_rule: boolean
+  // The actual "show this to the model on every prompt regardless of athlete context" flag.
+  // Was previously (incorrectly) conflated with is_engine_rule -- every is_engine_rule=true
+  // row was unconditionally included in every prompt, which produced 85,689 chars of
+  // always-included content against a 40,000 budget for a real pitcher, crowding out every
+  // tag-matched situational section. See sql/principles_always_include.sql.
+  always_include: boolean
   tags: string[]
   sort_order: number
   updated_at: string | null
@@ -25,25 +33,25 @@ export type PrinciplesSelection = {
   totalChars: number              // sum of included sections' body length
 }
 
-// Rule: every is_engine_rule section is always included, no matter what. Every other section
+// Rule: every always_include section is always included, no matter what. Every other section
 // is included only if at least one of its tags appears in contextTags. If the combined body
-// text of everything that qualifies exceeds charBudget, the lowest-sort_order NON-engine
-// sections are dropped first until it fits (engine-rule sections are never dropped for budget
-// -- if engine-rule content alone exceeds the budget, that's a real "your rules got too long"
-// problem for a human to notice and fix, not something to silently truncate).
+// text of everything that qualifies exceeds charBudget, the lowest-sort_order NON-always-include
+// sections are dropped first until it fits (always_include sections are never dropped for
+// budget -- if that content alone exceeds the budget, that's a real "your always-include set
+// got too long" problem for a human to notice and fix, not something to silently truncate).
 export function selectPrinciplesSections(
   sections: PrinciplesSection[],
   contextTags: string[],
   charBudget: number = PRINCIPLES_PROMPT_CHAR_BUDGET,
 ): PrinciplesSelection {
-  const engineRules = sections.filter(s => s.is_engine_rule)
+  const alwaysInclude = sections.filter(s => s.always_include)
   const contextMatched = sections
-    .filter(s => !s.is_engine_rule && s.tags.some(t => contextTags.includes(t)))
+    .filter(s => !s.always_include && s.tags.some(t => contextTags.includes(t)))
     .sort((a, b) => a.sort_order - b.sort_order)
 
-  const engineChars = engineRules.reduce((sum, s) => sum + s.body.length, 0)
-  let runningChars = engineChars
-  const included: PrinciplesSection[] = [...engineRules]
+  const alwaysIncludeChars = alwaysInclude.reduce((sum, s) => sum + s.body.length, 0)
+  let runningChars = alwaysIncludeChars
+  const included: PrinciplesSection[] = [...alwaysInclude]
   const omitted: PrinciplesSection[] = []
 
   for (const s of contextMatched) {
@@ -73,8 +81,8 @@ export function formatPrinciplesForPrompt(selection: PrinciplesSelection, charBu
 
 // Short summary for the "which sections was the AI actually given" UI line and console log.
 export function summarizePrinciplesSelection(selection: PrinciplesSelection): string {
-  const engineCount = selection.included.filter(s => s.is_engine_rule).length
-  const contextCount = selection.included.length - engineCount
+  const alwaysCount = selection.included.filter(s => s.always_include).length
+  const contextCount = selection.included.length - alwaysCount
   const omittedNote = selection.omitted.length > 0 ? `, ${selection.omitted.length} omitted (budget)` : ''
-  return `${selection.included.length} section(s) included (${engineCount} engine-rule, ${contextCount} context)${omittedNote}`
+  return `${selection.included.length} section(s) included (${alwaysCount} always-include, ${contextCount} context)${omittedNote}`
 }
