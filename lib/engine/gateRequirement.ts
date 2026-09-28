@@ -36,10 +36,10 @@ export const GATE_LABELS: Record<Gate, string> = {
   G2: 'Single-Leg Plyometrics',
   G3: 'Depth Jumps / KEAT',
   G4: 'Drop Heights Above 18 Inches',
-  T1: 'Throwing Gate T1',
-  T2: 'Throwing Gate T2',
-  T3: 'Throwing Gate T3',
-  T4: 'Throwing Gate T4',
+  T1: 'High-Intent Throwing (I4/I5)',
+  T2: 'Weighted Implements',
+  T3: 'Pulldowns / Velocity Testing',
+  T4: 'High-Intent Mechanical Change',
 }
 
 // Exposed separately from checkGateRequirement so callers that need to know WHAT a gate

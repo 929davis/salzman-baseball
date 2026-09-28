@@ -20,7 +20,7 @@ import {
 } from '@/lib/armCare'
 import { restDaysRequired, daysUntilClearToThrow, DAILY_MAX_PITCHES, PITCH_SMART_NOTES } from '@/lib/pitchSmart'
 import { THROWERS_TEN, THROWERS_TEN_SETS, THROWERS_TEN_REPS } from '@/lib/throwersTen'
-import { selectPrinciplesSections, formatPrinciplesForPrompt, summarizePrinciplesSelection, PRINCIPLES_PROMPT_CHAR_BUDGET, type PrinciplesSection } from '@/lib/principlesSections'
+import { bundleAllPrinciples, formatPrinciplesForPrompt, summarizePrinciples, type PrinciplesSection } from '@/lib/principlesSections'
 import { checkDeprecated, checkEquipmentTier, checkGateRequirement, checkThrowingIntent, checkCNSAdjacency, computeAthleteConstraints, renderAthleteConstraintsBlock, type EngineAthleteState, type EngineExercise, type EngineSlot } from '@/lib/engine'
 import PrinciplesSectionsEditor from '@/app/components/PrinciplesSectionsEditor'
 import { parseTime, calcCMJFn, classifyCMJ } from '@/lib/cmj'
@@ -63,9 +63,17 @@ const DAYS = ['Monday','Tuesday','Wednesday','Thursday','Friday','Saturday','Sun
 // throwing entry ("35 @ I4", see parseAndImportProgram) has no sets/reps at all -- ex.count is
 // set instead, and this is the one place both shapes get rendered consistently rather than
 // each call site assuming every entry has sets/reps.
+// Load is either a bare %1RM number (append "%") or an RPE token like "RPE 7" (render as-is) --
+// a real test run showed every RPE-formatted load silently losing its "%" and becoming
+// "RPE 7%" once this always assumed %1RM. Only bare-digit loads get the "%" suffix now.
+const formatLoadSuffix=(load?:string|null)=>{
+  if(!load) return ''
+  return /^\d+%?$/.test(load)?` @ ${load.replace(/%$/,'')}%`:` @ ${load}`
+}
+
 const formatPrescription=(ex:{sets?:number|null,reps?:number|null,count?:number|null,load?:string|null,intent_level?:string|null})=>{
   if(ex.count!=null) return `${ex.count}${ex.intent_level?` @ ${ex.intent_level}`:''}`
-  return `${ex.sets}x${ex.reps}${ex.load?` @ ${ex.load}%`:''}`
+  return `${ex.sets}x${ex.reps}${formatLoadSuffix(ex.load)}`
 }
 
 // Display-only sibling of formatPrescription -- that one's output round-trips through
@@ -78,7 +86,7 @@ const formatPrescriptionPlain=(ex:{sets?:number|null,reps?:number|null,count?:nu
     if(ex.intent_level) return {main:`${ex.count} throws — ${intentLabel(ex.intent_level).plain}`,code:ex.intent_level}
     return {main:`${ex.count} throws`,code:null}
   }
-  return {main:`${ex.sets}x${ex.reps}${ex.load?` @ ${ex.load}%`:''}`,code:null}
+  return {main:`${ex.sets}x${ex.reps}${formatLoadSuffix(ex.load)}`,code:null}
 }
 
 // The lib/engine/* rule files (gateRequirement, equipmentGate, throwingIntentGate) produce
@@ -729,12 +737,14 @@ export default function CoachDashboard(){
       // from before the rename — every exercise that used to live there is Speed/Power now.
       const cat=catRaw==='Conditioning'?'Speed/Power':catRaw
       if(!VALID_CATS.includes(cat)){skipped.push('Bad category: '+catRaw);continue}
-      // Two accepted shapes. Sets-and-reps ("3x10 @ 75%" or "3x10 @ I4") for everything, plus a
-      // bare count ("35 @ I4") for Throwing slots only -- a bullpen is a pitch count, not sets
-      // and reps, and sets-and-reps was the wrong shape for it. The "@" slot in the SxR form
-      // takes either a numeric %1RM token or an I1-I5 throwing-intent token, told apart by
-      // shape, since a throwing line was never going to use %1RM anyway.
-      const setsRepsMatch=prescription.match(/(\d+)\s*x\s*(\d+)(?:\s*@\s*(\d+%?|I[1-5]))?/i)
+      // Two accepted shapes. Sets-and-reps ("3x10 @ RPE 7", "3x10 @ 75%", or "3x10 @ I4") for
+      // everything, plus a bare count ("35 @ I4") for Throwing slots only -- a bullpen is a
+      // pitch count, not sets and reps, and sets-and-reps was the wrong shape for it. The "@"
+      // slot in the SxR form takes an RPE token, a numeric %1RM token, or an I1-I5
+      // throwing-intent token, told apart by shape. RPE was added after a real test run showed
+      // every RPE-formatted line (the format §4.1/§4.2 actually prescribe) silently losing its
+      // load on import -- the regex only ever accepted %1RM or I-level, never RPE.
+      const setsRepsMatch=prescription.match(/(\d+)\s*x\s*(\d+)(?:\s*@\s*(RPE\s*\d+|\d+%?|I[1-5]))?/i)
       const bareCountMatch=(!setsRepsMatch&&cat==='Throwing')?prescription.match(/(\d+)\s*@\s*(I[1-5])/i):null
       if(!setsRepsMatch&&!bareCountMatch){skipped.push('Bad prescription: '+prescription);continue}
       let sets:number|null=null,reps:number|null=null,count:number|null=null,load='',intent_level:string|null=null
@@ -1026,73 +1036,53 @@ export default function CoachDashboard(){
     const {classification}=classifyCMJ(lastCMJ)
     const rule=recommendationRules.find(r=>r.classification===classification)
     const recentLogs=logs.slice(0,7)
-    const effVelocity=getEffectiveVelocity(selected,cmjResults)||null
-    const armFlagStatuses=computeArmCareFlagStatuses(armCareTests[0]||null,effVelocity)
 
     // Computed, not narrative -- athlete_state/throw_log/cmj_results/the exercise library run
-    // through lib/engine/athleteConstraints.ts, never the principles text. Moved ahead of
-    // contextTags (below) because contextTags now needs season_phase/throwing_status/
-    // active_change off this same object.
+    // through lib/engine/athleteConstraints.ts, never the principles text.
     const constraints=selected?await computeAthleteConstraints(supabase,selected.id,buildExercisePool()):null
     const constraintsBlock=constraints?renderAthleteConstraintsBlock(constraints):'COMPUTED CONSTRAINTS — no pitcher selected.'
 
-    // Real-content check against the live principles_sections tag vocabulary (queried directly,
-    // not assumed) as of this fix: arm_care, athlete_setup, background, calendar, conditioning,
-    // deload, diagnostics, in_season, lifting, movement_change, off_season, recovery,
-    // return_to_throw, templates, testing, throwing, velocity_block. No gate-scoped tags
-    // (G1-G4/T1-T4) exist anywhere yet, so gates_passed has nothing to map onto today --
-    // deliberately not inventing a tag convention with zero content to match it.
-    const SEASON_PHASE_TAGS:Record<string,string[]>={
-      transition:['off_season'],
-      general_prep:['off_season'],
-      specific_prep:['off_season'],
-      // 'first_transition' isn't a tag that exists on any row today (confirmed) -- the actual
-      // first-transition content (e.g. the off-season-week template) is tagged off_season only.
-      // Emit both: off_season for real matches now, first_transition so this becomes correct
-      // automatically if/when sections get tagged more precisely.
-      first_transition:['off_season','first_transition'],
-      competitive:['in_season'],
-    }
-    const seasonPhaseTags=constraints?.season_phase.value?(SEASON_PHASE_TAGS[constraints.season_phase.value]||[]):[]
-    // Same reasoning as above: 'restricted' isn't a real tag yet either -- the matching real
-    // content lives under 'return_to_throw'. Emit both.
-    const restrictedTags=constraints?.throwing_status.value==='restricted'?['restricted','return_to_throw']:[]
-    const movementChangeTags=constraints?.active_change.value?['movement_change']:[]
-
-    // Context tags used to decide which non-always-include principles_sections are relevant to
-    // THIS pitcher right now.
-    const contextTags:string[]=[
-      classification.toLowerCase().replace(/\s+/g,'_'),
-      restOwed>0?'rest_owed':'cleared_to_throw',
-      ...(armFlagStatuses.includes('Flag')?['arm_care_flag']:[]),
-      ...(armFlagStatuses.includes('Caution')?['arm_care_caution']:[]),
-      ...seasonPhaseTags,
-      ...restrictedTags,
-      ...movementChangeTags,
-    ]
-
-    // Last week's actual prescribed program (not this week's, which may be blank or a carried-
-    // forward copy) -- so the AI can see what was already run and avoid repeating the same
-    // exercise selection two weeks running (principles §5.2's training-monotony warning was
-    // previously unenforceable: nothing in the prompt showed prior weeks at all).
+    // Last week's actual prescribed program relative to the week being written. buildPrompt
+    // always writes "next week" relative to today, so "last week" for that purpose is the
+    // CURRENT week (currentWeekOf()), not the week before it -- fetching addWeeks(-1) was an
+    // off-by-one that showed "None on record" even when this week had a real written program,
+    // confirmed against a real pitcher (Austin Mora, 2026-09-26 test run).
     const {data:lastWeekRow}=await supabase.from('programs').select('structured_days')
-      .eq('pitcher_id',selected?.id).eq('week_of',addWeeks(currentWeekOf(),-1)).maybeSingle()
+      .eq('pitcher_id',selected?.id).eq('week_of',currentWeekOf()).maybeSingle()
     const lastWeekSerialized=lastWeekRow?.structured_days?serializeWeek(lastWeekRow.structured_days):''
 
-    // Fetched fresh at click-time (not from page-level state) so a section edited moments ago
-    // in the Principles tab is guaranteed to be reflected in the prompt.
+    // Real exercise names only -- grounds the AI against BUILT_IN_EXERCISES + custom_exercises
+    // instead of it inventing plausible-sounding names from the principles doc's example lists
+    // (§9.2 names categories and a few examples per tier, not the full real library). A real
+    // test run invented "Front Squat", "Zone 2 Bike", and "Rower Intervals" -- none exist in
+    // the library, so all three would silently fail parseAndImportProgram's exact-name match
+    // and get skipped on paste. Grouped by the exercise's own `category` field (the same
+    // Pre-Throwing/Throwing/Post-Throwing/Speed-Power/Main/Accessory/Recovery categories the
+    // program itself uses) so the AI can pick a real name for the slot it's already writing.
+    const allExercisesForPrompt=[...BUILT_IN_EXERCISES,...customExercises].filter((e:any)=>!e.deprecated)
+    const exerciseLibraryBlock=CATEGORY_ORDER.map(cat=>{
+      const names=allExercisesForPrompt.filter((e:any)=>e.category===cat).map((e:any)=>e.name).sort()
+      return names.length>0?`${cat}: ${names.join(', ')}`:null
+    }).filter(Boolean).join('\n')
+
+    // Full principles document, every section, every time -- no tag-based selection or char
+    // budget. The doc is ~88,000 chars, comfortably within any modern model's context window,
+    // and selective inclusion produced the same silent-drop bug twice (most recently 56,466
+    // always-included chars against a 40,000 budget, meaning zero situational sections could
+    // ever fit). The computed constraints block above already tells the AI which parts of the
+    // document apply to this athlete right now -- it doesn't need sections pre-filtered on its
+    // behalf. Fetched fresh at click-time (not from page-level state) so an edit made moments
+    // ago in the Principles tab is guaranteed to be reflected here.
     const {data:sectionRows}=await supabase.from('principles_sections').select('*')
     const sections=(sectionRows||[]) as PrinciplesSection[]
-    const selection=selectPrinciplesSections(sections,contextTags,PRINCIPLES_PROMPT_CHAR_BUDGET)
-    const principlesBlock=formatPrinciplesForPrompt(selection,PRINCIPLES_PROMPT_CHAR_BUDGET)
+    const bundle=bundleAllPrinciples(sections)
+    const principlesBlock=formatPrinciplesForPrompt(bundle)
 
     // "So I can see what the AI was actually given" -- logged to console for detail, and
     // surfaced as a short visible line next to the Claude button (see render below).
-    console.log('[buildPrompt] context tags:',contextTags)
-    console.log('[buildPrompt] sections included:',selection.included.map(s=>`${s.doc} ${s.section_number} — ${s.title}${s.always_include?' (always-include)':''}`))
-    if (selection.omitted.length>0) console.log('[buildPrompt] sections omitted (over budget):',selection.omitted.map(s=>`${s.doc} ${s.section_number} — ${s.title}`))
+    console.log('[buildPrompt] principles sections sent:',bundle.sections.length,'~',bundle.totalChars,'chars')
     console.log('[buildPrompt] computed constraints:',constraints)
-    setPromptSectionSummary(summarizePrinciplesSelection(selection))
+    setPromptSectionSummary(summarizePrinciples(bundle))
 
     // One-time context handed over at click-time, not logged anywhere -- the fix for this
     // prompt otherwise having no memory of anything Davis knows but hasn't (and won't) put
@@ -1107,7 +1097,7 @@ PITCHER DATA:
 - Avg Velocity: ${selected?.avg_velocity||'—'} mph
 - Weekly Pitches: ${selected?.weekly_pitches||'—'} | HE Throws: ${selected?.weekly_high_effort||'—'}
 - Last Outing: ${lastPitchSession?`${lastPitchSession.pitch_count} pitches on ${lastPitchSession.log_date} (Pitch Smart: ${restDaysRequired(lastPitchSession.pitch_count)} day(s) rest, ${restOwed} still owed)`:'No pitch count logged'}
-${lastCMJ?`- CMJ: Jump ${lastCMJ.jump_height_in?.toFixed(1)}in | RSI ${lastCMJ.rsi_mod?.toFixed(2)} | PP/kg ${lastCMJ.peak_power_per_kg?.toFixed(1)} W/kg`:'- No CMJ data'}
+${lastCMJ?`- CMJ: Jump ${lastCMJ.jump_height_in?.toFixed(1)}in | RSImod ${lastCMJ.rsi_mod?.toFixed(2)} | PP/kg ${lastCMJ.peak_power_per_kg?.toFixed(1)} W/kg`:'- No CMJ data'}
 - Neuro Classification: ${classification}
 ${rule?`- Training Emphasis: ${rule.emphasis} | Load Range: ${rule.load_range}`:''}
 
@@ -1119,10 +1109,13 @@ ${constraintsBlock}
 LAST WEEK'S PROGRAM:
 ${lastWeekSerialized||'None on record.'}
 
-TRAINING PRINCIPLES (${selection.included.length} section(s), ~${selection.totalChars.toLocaleString()} chars):
+EXERCISE LIBRARY (use only these exact names — do not invent a name that isn't here; if nothing fits, say so instead of guessing, and it can be added to the library):
+${exerciseLibraryBlock||'No exercises available.'}
+
+TRAINING PRINCIPLES (${bundle.sections.length} section(s), ~${bundle.totalChars.toLocaleString()} chars):
 ${principlesBlock||'No principles sections yet.'}
 
-Write next week's program by day and category (Pre-Throwing, Throwing, Post-Throwing, Speed/Power, Main Exercises, Accessory, Recovery). Use format: "Exercise Name SxR @ RPE X" (use a percentage instead only when a real 1RM is on file for that lift). Do not repeat the same primary exercise in the same slot two weeks running unless you are progressing its load or intent — compare against last week's program above.`
+Write next week's program by day and category (Pre-Throwing, Throwing, Post-Throwing, Speed/Power, Main Exercises, Accessory, Recovery), using only exercise names from the EXERCISE LIBRARY above. Format lifting lines as "Exercise Name SxR @ RPE X" (a percentage instead only when a real 1RM is on file). Format throwing lines as "Exercise Name SxR @ I-level" (e.g. "@ I2"). Format speed-limited/ballistic Speed-Power lines (jumps, throws) as "Exercise Name SxR @ X%" using the bodyweight-percentage load bands from the load-by-exercise-class table. Do not repeat the same primary exercise in the same slot two weeks running unless you are progressing its load or intent — compare against last week's program above. If you move which day carries which session type away from the relevant week template (e.g. moving which days are high-CNS or which days carry throwing), say why in a coach note — don't rearrange it silently.`
     navigator.clipboard.writeText(prompt).catch(()=>{})
     window.open('https://claude.ai','_blank')
     alert('Prompt copied! Paste into Claude.')
