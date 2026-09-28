@@ -370,6 +370,7 @@ export default function SocialPage() {
           <button onClick={() => router.push('/coach')} style={{ background: 'transparent', border: 'none', color: C.textMuted, fontSize: 12, cursor: 'pointer', padding: 0 }}>← Back to Coach Dashboard</button>
           <div style={{ display: 'flex', gap: 8 }}>
             <button onClick={() => router.push('/social/playbook')} style={smallBtn()}>Playbook</button>
+            <button onClick={() => router.push('/social/radar')} style={smallBtn()}>Question Radar</button>
             <button onClick={resetComposer} style={smallBtn()}>+ New Post</button>
           </div>
         </div>
