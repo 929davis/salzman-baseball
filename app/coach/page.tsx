@@ -493,6 +493,8 @@ export default function CoachDashboard(){
   const [exerciseImportText,setExerciseImportText]=useState('')
   const [exerciseImportSaving,setExerciseImportSaving]=useState(false)
   const [exerciseImportResult,setExerciseImportResult]=useState<string|null>(null)
+  const [backfillRunning,setBackfillRunning]=useState(false)
+  const [backfillResult,setBackfillResult]=useState<string|null>(null)
   const [showPicker,setShowPicker]=useState(false)
   const [pickerCell,setPickerCell]=useState<{day:string,cat:string}|null>(null)
   const [addError,setAddError]=useState('')
@@ -965,6 +967,45 @@ export default function CoachDashboard(){
     const flaggedMsg=flagged.length>0?` Flagged ${flagged.length}: ${flagged.slice(0,6).join('; ')}${flagged.length>6?'…':''}.`:''
     setExerciseImportResult(`${flagged.length===0?'✅':'⚠️'} Added ${added} exercise${added!==1?'s':''}.${flaggedMsg}`)
     if (added>0&&flagged.length===0)setExerciseImportText('')
+  }
+
+  // One-time repair for programs saved before descriptions were persisted into program items
+  // (see confirmAddExercise/copyExerciseToPitcher/parseAndImportProgram) -- fills in any exercise
+  // that's missing a description but has one in the current library, by exact id match. Never
+  // overwrites a description that's already present. Safe to run more than once: a second run
+  // finds nothing left to fill and reports 0 touched. Runs under the coach's own session via the
+  // regular client, not a service key -- "programs coach update" RLS policy already allows a
+  // coach to update any pitcher's row (see sql/rls_pitcher_isolation.sql).
+  const backfillExerciseDescriptions=async()=>{
+    if (!window.confirm('Fill in missing exercise descriptions across every pitcher\'s saved programs? This only adds a description where one is currently blank -- it never changes sets/reps/load/notes or overwrites an existing description.')) return
+    setBackfillRunning(true)
+    setBackfillResult(null)
+    const descById=new Map<string,string>()
+    EXERCISE_DB.forEach(e=>{ if (e.description) descById.set(e.id,e.description) })
+    const {data:programs,error:fetchErr}=await supabase.from('programs').select('id,structured_days')
+    if (fetchErr||!programs){setBackfillResult(`❌ Could not load programs: ${fetchErr?.message||'unknown error'}`);setBackfillRunning(false);return}
+    let programsTouched=0,itemsUpdated=0,failed=0
+    for (const prog of programs){
+      if (!prog.structured_days) continue
+      let changed=false
+      const updated:Record<string,unknown>={}
+      for (const [key,items] of Object.entries(prog.structured_days as Record<string,unknown>)){
+        if (!Array.isArray(items)){updated[key]=items;continue}
+        updated[key]=items.map((item)=>{
+          if ((!item.description||item.description==='')&&item.id&&descById.has(item.id)){
+            changed=true;itemsUpdated++
+            return {...item,description:descById.get(item.id)}
+          }
+          return item
+        })
+      }
+      if (changed){
+        const {error:updErr}=await supabase.from('programs').update({structured_days:updated}).eq('id',prog.id)
+        if (updErr){failed++} else {programsTouched++}
+      }
+    }
+    setBackfillRunning(false)
+    setBackfillResult(`${failed>0?'⚠️':'✅'} Filled in ${itemsUpdated} description${itemsUpdated!==1?'s':''} across ${programsTouched} program${programsTouched!==1?'s':''}.${failed>0?` ${failed} program${failed!==1?'s':''} failed to save -- rerun to retry just those.`:''}`)
   }
 
   const deleteCustomExercise=async(exercise_id:string)=>{
@@ -2043,10 +2084,12 @@ Write next week's program by day and category (Pre-Throwing, Throwing, Post-Thro
                   <div style={{fontSize:13,color:C.textMuted}}>{EXERCISE_DB.length} exercises · {customExercises.length} custom · {Object.keys(overrides).length} overrides</div>
                 </div>
                 <div style={{display:'flex',gap:8}}>
+                  <button onClick={backfillExerciseDescriptions} disabled={backfillRunning} style={{...S.btn(),padding:'9px 16px'}} title="Fills in missing exercise descriptions in every pitcher's saved programs from the current library. Safe to run more than once.">{backfillRunning?'Backfilling...':'Backfill Descriptions'}</button>
                   <button onClick={()=>{setExerciseImportModal(true);setExerciseImportResult(null)}} style={{...S.btn(),padding:'9px 16px'}}>+ Bulk Import</button>
                   <button onClick={()=>{setShowCustomForm(true);setCustomForm(BLANK_CUSTOM)}} style={{...S.btn('gold'),padding:'9px 16px'}}>+ New Exercise</button>
                 </div>
               </div>
+              {backfillResult&&<div style={{fontSize:12,color:backfillResult.startsWith('✅')?'#39d353':backfillResult.startsWith('⚠️')?'#f0883e':'#f85149',marginBottom:16,lineHeight:1.5}}>{backfillResult}</div>}
 
               {showCustomForm&&(
                 <div style={{...S.card,border:'1px solid rgba(232,184,75,0.3)',marginBottom:16}}>
