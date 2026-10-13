@@ -505,7 +505,8 @@ export default function PitcherDashboard(){
                             <div key={i} style={{padding:'8px 10px',background:C.bg3,borderRadius:8,marginBottom:6,borderLeft:`3px solid ${catCol}`}}>
                               <div style={{fontSize:13,fontWeight:600,color:C.white,marginBottom:2}}>{ex.name}</div>
                               <div style={{fontSize:12,color:catCol,fontWeight:600}}>{prescription}</div>
-                              {ex.notes&&<div style={{fontSize:11,color:C.textMuted,marginTop:2,fontStyle:'italic'}}>{ex.notes}</div>}
+                              {ex.description&&<div style={{fontSize:11,color:C.textDim,marginTop:3,lineHeight:1.5}}>{ex.description}</div>}
+                              {ex.notes&&<div style={{fontSize:11,color:C.textMuted,marginTop:2,fontStyle:'italic'}}>{"Coach's note: "}{ex.notes}</div>}
                               {exerciseVideos[ex.id]&&<a href={exerciseVideos[ex.id]} target="_blank" rel="noopener noreferrer" style={{fontSize:11,color:C.blue,marginTop:4,display:'inline-block',textDecoration:'none'}}>▶ Watch Video</a>}
                             </div>
                             )

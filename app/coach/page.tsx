@@ -864,7 +864,7 @@ export default function CoachDashboard(){
 
       const key=currentDay+'___'+cat
       const current=newStructured[key]||[]
-      newStructured[key]=[...current,{id:match.id||match.exercise_id,name:match.name,sets,reps,count,load,notes:'',cns:match.cns||'',intent_level}]
+      newStructured[key]=[...current,{id:match.id||match.exercise_id,name:match.name,sets,reps,count,load,notes:'',cns:match.cns||'',intent_level,description:match.description||''}]
       added++
     }
 
@@ -1047,7 +1047,7 @@ export default function CoachDashboard(){
     if(!intentCheck.ok){setAddError(humanizeReason(intentCheck.reason));return}
 
     if (videoInput.trim()&&!exerciseVideos[exercise.id])await saveVideo(exercise.id,videoInput)
-    const newItem={id:exercise.id,name:exercise.name,sets:parseInt(sets)||0,reps:parseInt(reps)||0,load:load||'',notes:exNotes||'',cns:exercise.cns,category:exercise.category,pattern:exercise.pattern}
+    const newItem={id:exercise.id,name:exercise.name,sets:parseInt(sets)||0,reps:parseInt(reps)||0,load:load||'',notes:exNotes||'',cns:exercise.cns,category:exercise.category,pattern:exercise.pattern,description:exercise.description||''}
     let newStructured:any
     if (editingProgramItem){
       const list=[...(structuredDays[editingProgramItem.key]||[])]
@@ -1071,7 +1071,7 @@ export default function CoachDashboard(){
     const weekOf=currentWeekOf()
     const {data:prog}=await supabase.from('programs').select('*').eq('pitcher_id',targetPitcher.id).eq('week_of',weekOf).maybeSingle()
     const key=`${day}___${cat}`
-    const newItem={id:ex.id,name:ex.name,sets:ex.sets,reps:ex.reps,load:ex.load||'',notes:ex.notes||'',cns:ex.cns||''}
+    const newItem={id:ex.id,name:ex.name,sets:ex.sets,reps:ex.reps,load:ex.load||'',notes:ex.notes||'',cns:ex.cns||'',description:ex.description||''}
     if (prog){
       const current=prog.structured_days?.[key]||[]
       const updated={...prog.structured_days,[key]:[...current,newItem]}
