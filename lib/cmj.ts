@@ -15,13 +15,17 @@ export const calcJumpHeight=(takeoff:number,landing:number)=>{
   return (9.81*ft*ft)/8*39.3701
 }
 
-// Coefficients recalibrated against Driveline's OpenBiomechanics dataset (444 college
-// pitchers, "high_performance" subset). We have no force plate, so peak power/kg (ppkg) and
-// RSI-mod (rsi) were derived from a simulated flight-time pipeline rather than measured
-// directly, then regressed against that dataset's velocity using the Sayers equation for
-// power estimation. Cross-validated R²≈0.19, typical error ±5.3 mph — a rough estimate, not
-// a validated model. (The public no-login CMJ demo that used to feed a re-fitting dataset
-// was removed -- re-fitting would need a new real data source if pursued later.)
+// Refit against Driveline's OpenBiomechanics "high_performance" dataset, College-level
+// pitchers only (n=272, athlete-grouped train/test split, 30 resamples): jump height, peak
+// power/kg (Sayers equation, since we have no force plate), and body weight. Cross-validated
+// MAE≈3.9 mph, R²≈0.20 -- a real but modest improvement over predicting the population mean
+// (MAE≈4.8 mph). RSI-Mod was tested and dropped: it added no predictive value in this dataset.
+// Known gap: a 2024 peer-reviewed study (Sakurai, Qiao, Szymanski & Crotin, JSCR 38(7)) found
+// concentric impulse in the first 100ms (CI-100) correlates with fastball velocity at r≈0.71
+// in D1 pitchers specifically -- stronger than anything fit here. CI-100 requires a force
+// plate and isn't in this dataset, so it's excluded. This output is a video-estimated model
+// prediction, not a measurement -- treat it as provisional, not authoritative.
+export const CMJ_VELOCITY_MODEL_MAE_MPH=3.9
 export const calcCMJFn=({startTime,takeoffTime,landingTime,massKg}:{startTime:number,takeoffTime:number,landingTime:number,massKg:number})=>{
   const ft=landingTime-takeoffTime
   const ttt=takeoffTime-startTime
@@ -33,8 +37,9 @@ export const calcCMJFn=({startTime,takeoffTime,landingTime,massKg}:{startTime:nu
   const ppkg=pp/massKg
   const tv=Math.sqrt(2*9.81*jh)
   const ei=rsi*ppkg
-  const ev=18.684+(0.9543*ppkg)+(93.1773*rsi)+(-1.3367*ei)
-  return{flightTime:ft,jumpHeightIn:jhi,rsiMod:rsi,peakPowerPerKg:ppkg,takeoffVelocity:tv,explosiveIndex:ei,estimatedVelocity:ev}
+  const massLbs=massKg*2.20462
+  const ev=49.17+(0.123*jhc)+(0.291*ppkg)+(0.0626*massLbs)
+  return{flightTime:ft,jumpHeightIn:jhi,rsiMod:rsi,peakPowerPerKg:ppkg,takeoffVelocity:tv,explosiveIndex:ei,estimatedVelocity:ev,estimatedVelocityMarginMph:CMJ_VELOCITY_MODEL_MAE_MPH}
 }
 
 // ---------------------------------------------------------------------------

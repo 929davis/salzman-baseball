@@ -11,7 +11,7 @@ import PitchMechanics2D from '@/app/components/PitchMechanics2D'
 import ThrowingPrinciples from '@/app/components/ThrowingPrinciples'
 import TestVideoLink from '@/app/components/TestVideoLink'
 import { useTestVideos } from '@/lib/testVideos'
-import { parseTime, calcCMJFn, classifyCMJ } from '@/lib/cmj'
+import { parseTime, calcCMJFn, classifyCMJ, CMJ_VELOCITY_MODEL_MAE_MPH } from '@/lib/cmj'
 import { CATEGORY_ORDER, CATEGORY_COLORS } from '@/lib/exerciseCategories'
 import { intentLabel } from '@/lib/plainLanguage'
 
@@ -707,8 +707,9 @@ export default function PitcherDashboard(){
                 </div>
                 {cmjResult&&(
                   <div style={{...card,border:'1px solid rgba(163,113,247,0.4)',background:'rgba(163,113,247,0.06)',textAlign:'center'}}>
-                    <div style={{fontSize:11,color:C.purple,fontWeight:700,textTransform:'uppercase' as const,letterSpacing:'1px',marginBottom:8}}>Estimated Velocity Capacity</div>
-                    <div style={{fontSize:56,fontWeight:700,color:C.white,letterSpacing:'-2px',marginBottom:8}}>{cmjResult.estimatedVelocity.toFixed(1)}<span style={{fontSize:18,color:C.textMuted,fontWeight:400}}> MPH</span></div>
+                    <div style={{fontSize:11,color:C.purple,fontWeight:700,textTransform:'uppercase' as const,letterSpacing:'1px',marginBottom:8}}>Model-Predicted Velocity Capacity</div>
+                    <div style={{fontSize:56,fontWeight:700,color:C.white,letterSpacing:'-2px',marginBottom:4}}>{cmjResult.estimatedVelocity.toFixed(1)}<span style={{fontSize:18,color:C.textMuted,fontWeight:400}}> MPH</span></div>
+                    <div style={{fontSize:12,color:C.textMuted,marginBottom:8}}>±{cmjResult.estimatedVelocityMarginMph.toFixed(1)} mph · video-estimated, not a measurement</div>
                     <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8,marginBottom:12}}>
                       {[{l:'Jump Height',v:`${cmjResult.jumpHeightIn.toFixed(1)} in`},{l:'RSI-Mod',v:cmjResult.rsiMod.toFixed(2)},{l:'Peak Power/kg',v:`${cmjResult.peakPowerPerKg.toFixed(1)} W/kg`},{l:'Flight Time',v:`${cmjResult.flightTime.toFixed(3)}s`}].map(m=>(
                         <div key={m.l} style={{background:'rgba(163,113,247,0.08)',borderRadius:8,padding:'10px'}}>
@@ -748,7 +749,7 @@ export default function PitcherDashboard(){
                       <div key={i} style={card}>
                         <div style={{display:'flex',justifyContent:'space-between',marginBottom:8}}>
                           <span style={{fontSize:13,color:C.textMuted}}>{r.test_date}</span>
-                          <span style={{fontSize:16,fontWeight:700,color:C.purple}}>{r.estimated_velocity?.toFixed(1)} mph</span>
+                          <span style={{fontSize:16,fontWeight:700,color:C.purple}}>{r.estimated_velocity?.toFixed(1)} mph<span style={{fontSize:11,color:C.textMuted,fontWeight:400}}> (±{CMJ_VELOCITY_MODEL_MAE_MPH.toFixed(1)})</span></span>
                         </div>
                         <div style={{display:'flex',gap:12,flexWrap:'wrap' as const}}>
                           <span style={{fontSize:12,color:C.gold}}>↑ {r.jump_height_in?.toFixed(1)} in</span>
