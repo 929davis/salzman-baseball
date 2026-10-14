@@ -12,12 +12,6 @@ import ThrowLogPanel from '@/app/components/ThrowLogPanel'
 import MiniSparkline from '@/app/components/MiniSparkline'
 import TestVideoLink from '@/app/components/TestVideoLink'
 import { useTestVideos } from '@/lib/testVideos'
-import { angleAt } from '@/lib/angles'
-import {
-  calcStrengthVelocityRatio, calcBodyweightPct, bodyweightPctStatus,
-  calcRomAsymmetry, computeArmCareTrends, computeArmCareFlagStatuses, computeWorkloadArmHealthCallout, THREE_TIER_COLORS,
-  getRecoveryModifier,
-} from '@/lib/armCare'
 import { restDaysRequired, daysUntilClearToThrow, DAILY_MAX_PITCHES, PITCH_SMART_NOTES } from '@/lib/pitchSmart'
 import { THROWERS_TEN, THROWERS_TEN_SETS, THROWERS_TEN_REPS } from '@/lib/throwersTen'
 import { bundleAllPrinciples, formatPrinciplesForPrompt, summarizePrinciples, type PrinciplesSection } from '@/lib/principlesSections'
@@ -25,7 +19,6 @@ import { checkDeprecated, checkEquipmentTier, checkGateRequirement, checkThrowin
 import PrinciplesSectionsEditor from '@/app/components/PrinciplesSectionsEditor'
 import { parseTime, calcCMJFn, classifyCMJ } from '@/lib/cmj'
 import { CATEGORY_ORDER, CATEGORY_COLORS } from '@/lib/exerciseCategories'
-import { computeSpeedPowerGuardrail } from '@/lib/speedPowerVolume'
 import { currentWeekOf, addWeeks } from '@/lib/weekUtils'
 import { intentLabel, gateLabel, stageLabel, tierLabel } from '@/lib/plainLanguage'
 
@@ -448,16 +441,7 @@ export default function CoachDashboard(){
   const [throwEntries, setThrowEntries] = useState<any[]>([])
   const [showThrowEntries,setShowThrowEntries]=useState(false)
   const [newThrowEntry,setNewThrowEntry]=useState({label:'',weekly_count:'',surface:'',effort_tier:''})
-  const [armCareTests,setArmCareTests]=useState<any[]>([])
-  const [armCareModal,setArmCareModal]=useState(false)
-  const [showArmCareHistory,setShowArmCareHistory]=useState(false)
   const [showThrowersTen,setShowThrowersTen]=useState(false)
-  const [armCareSaving,setArmCareSaving]=useState(false)
-  const [armCareForm,setArmCareForm]=useState({
-    test_type:'baseline_max',er_load_lbs:'',ir_load_lbs:'',er_hold_seconds:'',ir_hold_seconds:'',
-    er_rom_deg:'',ir_rom_deg:'',bodyweight_lbs:'',notes:'',
-  })
-  const [romCalc,setRomCalc]=useState<{side:'er'|'ir'|null,p1:{x:string,y:string},p2:{x:string,y:string},p3:{x:string,y:string}}>({side:null,p1:{x:'',y:''},p2:{x:'',y:''},p3:{x:'',y:''}})
   const [tab,setTab]=useState('overview')
   const [view,setView]=useState('roster')
   const [loading,setLoading]=useState(true)
@@ -624,7 +608,7 @@ export default function CoachDashboard(){
   const selectPitcher=async(p:any)=>{
     setSelected(p);setTab('overview');setView('roster')
     const sevenDaysAgo=new Date(Date.now()-7*24*60*60*1000).toISOString().split('T')[0]
-    const [logsRes,cmjRes,,foodRes,fuelRes,weekFuelRes,throwRes,armCareRes]=await Promise.all([
+    const [logsRes,cmjRes,,foodRes,fuelRes,weekFuelRes,throwRes]=await Promise.all([
       supabase.from('session_logs').select('*').eq('pitcher_id',p.id).order('log_date',{ascending:false}),
       supabase.from('cmj_results').select('*').eq('pitcher_id',p.id).order('test_date',{ascending:false}),
       loadProgramForWeek(p.id,currentWeekOf()),
@@ -632,7 +616,6 @@ export default function CoachDashboard(){
       supabase.from('daily_fuel_scores').select('*').eq('pitcher_id',p.id).eq('log_date',today).maybeSingle(),
       supabase.from('daily_fuel_scores').select('*').eq('pitcher_id',p.id).gte('log_date',sevenDaysAgo).order('log_date'),
       supabase.from('throw_volume_entries').select('*').eq('pitcher_id',p.id).order('created_at'),
-      supabase.from('arm_care_tests').select('*').eq('pitcher_id',p.id).order('created_at',{ascending:false}),
     ])
     setLogs(logsRes.data||[])
     setCmjResults(cmjRes.data||[])
@@ -640,38 +623,6 @@ export default function CoachDashboard(){
     setTodayFuelScore(fuelRes.data||null)
     setWeekFuelScores(weekFuelRes.data||[])
     setThrowEntries(throwRes.data||[])
-    setArmCareTests(armCareRes.data||[])
-  }
-
-  const refetchArmCareTests=async()=>{
-    if (!selected)return
-    const {data}=await supabase.from('arm_care_tests').select('*').eq('pitcher_id',selected.id).order('created_at',{ascending:false})
-    setArmCareTests(data||[])
-  }
-
-  const saveArmCareTest=async()=>{
-    if (!selected)return
-    setArmCareSaving(true)
-    const num=(s:string)=>s.trim()===''?null:parseFloat(s)
-    await supabase.from('arm_care_tests').insert({
-      pitcher_id:selected.id,test_type:armCareForm.test_type,
-      er_load_lbs:num(armCareForm.er_load_lbs),ir_load_lbs:num(armCareForm.ir_load_lbs),
-      er_hold_seconds:num(armCareForm.er_hold_seconds),ir_hold_seconds:num(armCareForm.ir_hold_seconds),
-      er_rom_deg:num(armCareForm.er_rom_deg),ir_rom_deg:num(armCareForm.ir_rom_deg),
-      bodyweight_lbs:num(armCareForm.bodyweight_lbs),notes:armCareForm.notes||null,
-    })
-    await refetchArmCareTests()
-    setArmCareSaving(false);setArmCareModal(false)
-    setArmCareForm({test_type:'baseline_max',er_load_lbs:'',ir_load_lbs:'',er_hold_seconds:'',ir_hold_seconds:'',er_rom_deg:'',ir_rom_deg:'',bodyweight_lbs:'',notes:''})
-    setRomCalc({side:null,p1:{x:'',y:''},p2:{x:'',y:''},p3:{x:'',y:''}})
-  }
-
-  const applyRomCalc=()=>{
-    if (!romCalc.side)return
-    const p=(pt:{x:string,y:string})=>({x:parseFloat(pt.x)||0,y:parseFloat(pt.y)||0})
-    const deg=angleAt(p(romCalc.p1),p(romCalc.p2),p(romCalc.p3))
-    setArmCareForm(f=>({...f,[romCalc.side==='er'?'er_rom_deg':'ir_rom_deg']:deg.toFixed(1)}))
-    setRomCalc({side:null,p1:{x:'',y:''},p2:{x:'',y:''},p3:{x:'',y:''}})
   }
 
   const refetchThrowEntries=async()=>{
@@ -1355,12 +1306,6 @@ Write next week's program by day and category (Pre-Throwing, Throwing, Post-Thro
             const rule=recommendationRules.find(r=>r.classification===classification)
             const cmjRecommendation=getRecommendation(classification)
             const todayScore=todayFuelScore?.total_score||0
-            // Shared by the Program tab's Speed/Power guardrail — same recoveryModifier the
-            // Arm Care card's foot-lb target already uses, so a pitcher who hasn't bounced
-            // back from a prior outing gets a lower jump ceiling too, not just a lower
-            // recovery-work target.
-            const speedPowerRecoveryModifier=getRecoveryModifier(armCareTests)
-            const speedPowerArmCareStatuses=computeArmCareFlagStatuses(armCareTests[0]||null,getEffectiveVelocity(selected,cmjResults)||null)
 
             return(
             <div>
@@ -1452,38 +1397,20 @@ Write next week's program by day and category (Pre-Throwing, Throwing, Post-Thro
                     ))}
                   </div>
 
-                  {/* Arm Care */}
+                  {/* Workload / Rest — split out from the old Arm Care card. The arm-care
+                      test logging, trends, and workload-vs-arm-health flag that used to live
+                      here were removed (will be replaced); Pitch Smart rest status and the
+                      Thrower's Ten reference don't depend on arm_care_tests data, so they stay. */}
                   {(()=>{
-                    const recoveryModifier=getRecoveryModifier(armCareTests)
                     const lastPitchSession=logs.find((l:any)=>l.pitch_count!=null)||null
                     const daysOwed=lastPitchSession?daysUntilClearToThrow(lastPitchSession.pitch_count,lastPitchSession.log_date):0
                     const requiredRest=lastPitchSession?restDaysRequired(lastPitchSession.pitch_count):0
-                    const latestTest=armCareTests[0]||null
-                    const svr=latestTest?calcStrengthVelocityRatio(latestTest.er_load_lbs,latestTest.ir_load_lbs,getEffectiveVelocity(selected,cmjResults)||null):null
-                    const erPct=latestTest?calcBodyweightPct(latestTest.er_load_lbs,latestTest.bodyweight_lbs):null
-                    const irPct=latestTest?calcBodyweightPct(latestTest.ir_load_lbs,latestTest.bodyweight_lbs):null
-                    const romAsym=latestTest?calcRomAsymmetry(latestTest.er_rom_deg,latestTest.ir_rom_deg):null
-                    const armCareTrends=computeArmCareTrends(armCareTests,getEffectiveVelocity(selected,cmjResults)||null)
-                    const workloadHist=[...logs].reverse()
-                    const workloadCallout=computeWorkloadArmHealthCallout([
-                      {label:'Pitch Count', hist:workloadHist.map(r=>({date:r.log_date,value:r.pitch_count})).filter(h=>h.value!=null)},
-                      {label:'High-Effort Throws', hist:workloadHist.map(r=>({date:r.log_date,value:r.high_effort_throws})).filter(h=>h.value!=null)},
-                    ], armCareTrends)
-                    const erStatus=bodyweightPctStatus(erPct,'ER'), irStatus=bodyweightPctStatus(irPct,'IR')
-                    const armCareRecommendations=[
-                      svr?.flagged&&{key:'arm_care_svr_flag',label:'Strength-Velocity Ratio flagged'},
-                      (erStatus==='Caution'||erStatus==='Flag')&&{key:'arm_care_er_low',label:'ER % Bodyweight low'},
-                      (irStatus==='Caution'||irStatus==='Flag')&&{key:'arm_care_ir_low',label:'IR % Bodyweight low'},
-                      (romAsym?.status==='Caution'||romAsym?.status==='Flag')&&{key:'arm_care_rom_asym',label:'ROM Asymmetry flagged'},
-                    ].filter((r):r is {key:string,label:string}=>!!r)
                     return (
                       <div style={{...S.card,marginBottom:12}}>
                         <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:12}}>
-                          <div style={{fontSize:11,color:C.textMuted,fontWeight:700,textTransform:'uppercase' as const,letterSpacing:'1px'}}>Arm Care</div>
+                          <div style={{fontSize:11,color:C.textMuted,fontWeight:700,textTransform:'uppercase' as const,letterSpacing:'1px'}}>Workload</div>
                           <div style={{display:'flex',gap:8}}>
-                            {armCareTests.length>0&&<button onClick={()=>setShowArmCareHistory(s=>!s)} style={S.btn()}>{showArmCareHistory?'Hide':'History'} ({armCareTests.length})</button>}
                             <button onClick={()=>setShowThrowersTen(s=>!s)} style={S.btn()}>{showThrowersTen?'Hide':'Show'} Thrower's Ten</button>
-                            <button onClick={()=>setArmCareModal(true)} style={S.btn('gold')}>+ Log Arm Care Test</button>
                           </div>
                         </div>
                         <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10,marginBottom:8}}>
@@ -1501,80 +1428,6 @@ Write next week's program by day and category (Pre-Throwing, Throwing, Post-Thro
                           <div style={{fontSize:11,fontWeight:700,color:C.text,marginBottom:6}}>What this means</div>
                           <div style={{fontSize:11,color:C.textMuted,lineHeight:1.6}}>Based on Pitch Smart (MLB/USA Baseball, developed with ASMI research): {lastPitchSession?`the last logged outing was ${lastPitchSession.pitch_count} pitches, which calls for ${requiredRest} day${requiredRest===1?'':'s'} of rest before pitching again.`:'no pitch count has been logged yet.'} Pitch Smart also recommends never pitching in a game on 3 consecutive days regardless of count, and at least 3 months off from competitive pitching per year (including 4 continuous weeks of no throwing at all). This is workload guidance, not a medical diagnosis — cross-check against soreness reports and how the arm actually feels.</div>
                         </div>
-                        {latestTest&&(
-                          <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(150px,1fr))',gap:8,paddingTop:12,borderTop:`1px solid ${C.border}`}}>
-                            <div>
-                              <div style={{fontSize:9,color:C.textMuted,textTransform:'uppercase' as const,marginBottom:3}}>Strength-Velocity Ratio</div>
-                              <div style={{fontSize:13,fontWeight:700,color:svr?(svr.flagged?C.red:C.teal):C.textDim}}>{svr?`${svr.ratio.toFixed(2)} ${svr.flagged?'(Flag <0.35)':''}`:'—'}</div>
-                              <TestVideoLink testKey="arm_care_svr" videos={testVideos} onSave={saveTestVideo}/>
-                            </div>
-                            <div>
-                              <div style={{fontSize:9,color:C.textMuted,textTransform:'uppercase' as const,marginBottom:3}}>ER % Bodyweight</div>
-                              <div style={{fontSize:13,fontWeight:700,color:erPct!=null?THREE_TIER_COLORS[bodyweightPctStatus(erPct,'ER')||'OK']:C.textDim}}>{erPct!=null?`${erPct.toFixed(0)}%`:'—'}</div>
-                              <TestVideoLink testKey="arm_care_er_load" videos={testVideos} onSave={saveTestVideo}/>
-                            </div>
-                            <div>
-                              <div style={{fontSize:9,color:C.textMuted,textTransform:'uppercase' as const,marginBottom:3}}>IR % Bodyweight</div>
-                              <div style={{fontSize:13,fontWeight:700,color:irPct!=null?THREE_TIER_COLORS[bodyweightPctStatus(irPct,'IR')||'OK']:C.textDim}}>{irPct!=null?`${irPct.toFixed(0)}%`:'—'}</div>
-                              <TestVideoLink testKey="arm_care_ir_load" videos={testVideos} onSave={saveTestVideo}/>
-                            </div>
-                            <div>
-                              <div style={{fontSize:9,color:C.textMuted,textTransform:'uppercase' as const,marginBottom:3}}>ROM Asymmetry (ER vs IR)</div>
-                              <div style={{fontSize:13,fontWeight:700,color:romAsym?THREE_TIER_COLORS[romAsym.status]:C.textDim}}>{romAsym?`${romAsym.pctDiff.toFixed(0)}% (${romAsym.status})`:'—'}</div>
-                              <TestVideoLink testKey="arm_care_rom" videos={testVideos} onSave={saveTestVideo}/>
-                            </div>
-                          </div>
-                        )}
-                        {armCareTests.length>1&&(
-                          <div style={{marginTop:12,paddingTop:12,borderTop:`1px solid ${C.border}`}}>
-                            <div style={{fontSize:10,color:C.textMuted,fontWeight:700,textTransform:'uppercase' as const,letterSpacing:'0.5px',marginBottom:8}}>Arm Care Trends</div>
-                            <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(150px,1fr))',gap:10}}>
-                              {[
-                                {label:'Strength-Velocity Ratio', hist:armCareTrends.svr, color:C.gold, unit:''},
-                                {label:'ER % Bodyweight', hist:armCareTrends.erPct, color:C.blue, unit:'%'},
-                                {label:'IR % Bodyweight', hist:armCareTrends.irPct, color:C.purple, unit:'%'},
-                                {label:'ROM Asymmetry', hist:armCareTrends.romAsym, color:C.red, unit:'%'},
-                              ].map(m=>(
-                                <div key={m.label}>
-                                  <div style={{fontSize:9,color:C.textMuted,textTransform:'uppercase' as const,marginBottom:3}}>{m.label}</div>
-                                  {m.hist.length>1?<MiniSparkline data={m.hist} color={m.color} unit={m.unit} height={60}/>:<div style={{fontSize:11,color:C.textDim,padding:'14px 0',textAlign:'center' as const}}>Not enough data</div>}
-                                </div>
-                              ))}
-                            </div>
-                          </div>
-                        )}
-                        {workloadCallout&&(
-                          <div style={{marginTop:12,padding:'10px 12px',borderRadius:8,background:workloadCallout.severity==='Flag'?C.redBg:C.goldBg,border:`1px solid ${workloadCallout.severity==='Flag'?C.red:C.goldDim}66`}}>
-                            <div style={{fontSize:10,fontWeight:700,color:workloadCallout.severity==='Flag'?C.red:C.gold,textTransform:'uppercase' as const,letterSpacing:'0.5px',marginBottom:4}}>Workload vs. Arm Health</div>
-                            <div style={{fontSize:12,color:C.text,lineHeight:1.5}}>{workloadCallout.workloadLabel} is up {workloadCallout.workloadChangePct}% since the first log on file, while {workloadCallout.armMetricLabel} has {workloadCallout.armMetricChangePct>=0?'risen':'dropped'} {Math.abs(workloadCallout.armMetricChangePct)}% over the same span — worth checking whether the rise in throwing load is driving that change.</div>
-                          </div>
-                        )}
-                        {armCareRecommendations.length>0&&(
-                          <div style={{marginTop:12,paddingTop:12,borderTop:`1px solid ${C.border}`,display:'flex',flexDirection:'column' as const,gap:14}}>
-                            {armCareRecommendations.map(r=>{
-                              const rec=getRecommendation(r.key)
-                              return(
-                                <div key={r.key}>
-                                  <div style={{fontSize:11,color:C.red,fontWeight:600,marginBottom:6}}>{r.label}</div>
-                                  <RecommendedExercisesBlock exercises={rec.exercises} notes={rec.notes} accentColor={C.red} parsedPrinciples={parsedPrinciples}/>
-                                </div>
-                              )
-                            })}
-                          </div>
-                        )}
-                        {showArmCareHistory&&armCareTests.length>0&&(
-                          <div style={{marginTop:12,paddingTop:12,borderTop:`1px solid ${C.border}`,display:'flex',flexDirection:'column' as const,gap:6}}>
-                            {armCareTests.map((t:any)=>(
-                              <div key={t.id} style={{display:'flex',alignItems:'center',gap:10,background:C.bg3,border:`1px solid ${C.border}`,borderRadius:8,padding:'8px 12px',fontSize:11,flexWrap:'wrap' as const}}>
-                                <span style={{color:C.textMuted,minWidth:80}}>{new Date(t.created_at).toLocaleDateString()}</span>
-                                <span style={{color:C.gold,fontWeight:600,minWidth:100,textTransform:'capitalize' as const}}>{t.test_type?.replace(/_/g,' ')}</span>
-                                <span style={{color:C.textMuted}}>ER {t.er_load_lbs??'—'}lbs / {t.er_hold_seconds??'—'}s / {t.er_rom_deg??'—'}°</span>
-                                <span style={{color:C.textMuted}}>IR {t.ir_load_lbs??'—'}lbs / {t.ir_hold_seconds??'—'}s / {t.ir_rom_deg??'—'}°</span>
-                                {t.notes&&<span style={{color:C.textDim,fontStyle:'italic' as const}}>{t.notes}</span>}
-                              </div>
-                            ))}
-                          </div>
-                        )}
                         {showThrowersTen&&(
                           <div style={{marginTop:12,paddingTop:12,borderTop:`1px solid ${C.border}`}}>
                             <div style={{fontSize:10,color:C.textDim,marginBottom:10,lineHeight:1.6}}>Wilk et al.'s EMG-researched rotator cuff/scapular program for throwing athletes. Standard dose: {THROWERS_TEN_SETS} sets of {THROWERS_TEN_REPS} reps each, band or light dumbbell, minimal rest between exercises.</div>
@@ -1794,28 +1647,10 @@ Write next week's program by day and category (Pre-Throwing, Throwing, Post-Thro
               {tab==='weekly'&&(()=>{
                 const lastPitchSession=logs.find((l:any)=>l.pitch_count!=null)||null
                 const daysOwed=lastPitchSession?daysUntilClearToThrow(lastPitchSession.pitch_count,lastPitchSession.log_date):0
-                const latestArmTest=armCareTests[0]||null
-                const effVelocity=getEffectiveVelocity(selected,cmjResults)||null
-                const svr=latestArmTest?calcStrengthVelocityRatio(latestArmTest.er_load_lbs,latestArmTest.ir_load_lbs,effVelocity):null
-                const erPct=latestArmTest?calcBodyweightPct(latestArmTest.er_load_lbs,latestArmTest.bodyweight_lbs):null
-                const irPct=latestArmTest?calcBodyweightPct(latestArmTest.ir_load_lbs,latestArmTest.bodyweight_lbs):null
-                const romAsym=latestArmTest?calcRomAsymmetry(latestArmTest.er_rom_deg,latestArmTest.ir_rom_deg):null
-                const erStatus=bodyweightPctStatus(erPct,'ER'), irStatus=bodyweightPctStatus(irPct,'IR')
                 const {classification}=classifyCMJ(cmjResults[0])
-                const armCareTrendsForCallout=computeArmCareTrends(armCareTests,effVelocity)
-                const workloadHist=[...logs].reverse()
-                const workloadCallout=computeWorkloadArmHealthCallout([
-                  {label:'Pitch Count', hist:workloadHist.map(r=>({date:r.log_date,value:r.pitch_count})).filter(h=>h.value!=null)},
-                  {label:'High-Effort Throws', hist:workloadHist.map(r=>({date:r.log_date,value:r.high_effort_throws})).filter(h=>h.value!=null)},
-                ], armCareTrendsForCallout)
 
                 const flags:{label:string,color:string}[]=[]
                 if (daysOwed>0) flags.push({label:`Rest owed: ${daysOwed} day${daysOwed===1?'':'s'} before next outing`, color:C.gold})
-                if (svr?.flagged) flags.push({label:'Strength-Velocity Ratio flagged', color:C.red})
-                if (erStatus==='Caution'||erStatus==='Flag') flags.push({label:`ER strength ${erStatus.toLowerCase()}`, color:erStatus==='Flag'?C.red:C.gold})
-                if (irStatus==='Caution'||irStatus==='Flag') flags.push({label:`IR strength ${irStatus.toLowerCase()}`, color:irStatus==='Flag'?C.red:C.gold})
-                if (romAsym?.status==='Caution'||romAsym?.status==='Flag') flags.push({label:`ROM asymmetry ${romAsym.status.toLowerCase()}`, color:romAsym.status==='Flag'?C.red:C.gold})
-                if (workloadCallout) flags.push({label:`${workloadCallout.workloadLabel} up ${workloadCallout.workloadChangePct}% while ${workloadCallout.armMetricLabel} ${workloadCallout.armMetricChangePct>=0?'rose':'dropped'} ${Math.abs(workloadCallout.armMetricChangePct)}%`, color:workloadCallout.severity==='Flag'?C.red:C.gold})
                 if (classification==='Both Limited'||classification==='Rate Limiter'||classification==='Magnitude Limiter') flags.push({label:`CMJ classification: ${classification}`, color:C.purple})
 
                 const recentLogs=logs.slice(0,7)
@@ -1962,26 +1797,13 @@ Write next week's program by day and category (Pre-Throwing, Throwing, Post-Thro
                             <div style={{width:3,height:28,borderRadius:2,background:cat.color,flexShrink:0}}/>
                             <span style={{fontSize:10,fontWeight:700,color:cat.color,textTransform:'uppercase' as const,letterSpacing:'0.5px',lineHeight:1.2}}>{cat.key}</span>
                           </div>
-                          {DAYS.map((day,dayIdx)=>{
+                          {DAYS.map((day)=>{
                             const key=`${day}___${cat.key}`
                             const exercises=structuredDays[key]||[]
                             const note=cellNotes[key]||''
                             const isExpanded=expandedCell===key
-                            const toContactExercise=(ex:any)=>({id:ex.id,sets:ex.sets,reps:ex.reps,ground_contacts_per_rep:EXERCISE_DB.find((e:any)=>e.id===ex.id)?.ground_contacts_per_rep})
-                            const priorDay=DAYS[(dayIdx-1+DAYS.length)%DAYS.length]
-                            const priorDayExercises=structuredDays[`${priorDay}___${cat.key}`]||[]
-                            const speedPowerGuardrail=cat.key==='Speed/Power'&&exercises.length>0?computeSpeedPowerGuardrail(
-                              exercises.map(toContactExercise),
-                              speedPowerRecoveryModifier,speedPowerArmCareStatuses,
-                              priorDayExercises.map(toContactExercise),
-                            ):null
                             return(
                               <div key={day} style={{background:C.bg2,border:`1px solid ${C.border}`,borderRadius:6,padding:6,minHeight:60}}>
-                                {speedPowerGuardrail&&speedPowerGuardrail.status!=='OK'&&(
-                                  <div title={`${speedPowerGuardrail.totalContacts} ground contacts today, ${speedPowerGuardrail.rolling48hContacts} within the last 48h (Caution at ${speedPowerGuardrail.cautionCeiling}, Flag at ${speedPowerGuardrail.flagCeiling})${speedPowerGuardrail.reasons.length?' — '+speedPowerGuardrail.reasons.join(', '):''}`} style={{fontSize:9,fontWeight:700,padding:'2px 5px',borderRadius:4,marginBottom:3,background:speedPowerGuardrail.status==='Flag'?'rgba(248,81,73,0.15)':'rgba(232,184,75,0.15)',color:speedPowerGuardrail.status==='Flag'?C.red:C.gold,border:`1px solid ${speedPowerGuardrail.status==='Flag'?C.red:C.gold}66`}}>
-                                    {speedPowerGuardrail.is48hDriven?`${speedPowerGuardrail.rolling48hContacts} in 48h`:`${speedPowerGuardrail.totalContacts} contacts`} — {speedPowerGuardrail.status}
-                                  </div>
-                                )}
                                 {exercises.map((ex:any,i:number)=>{
                                   const prescription=formatPrescriptionPlain(ex)
                                   return (
@@ -2540,117 +2362,6 @@ Accessory | Single Arm DB Row | 3 x 6 @ 70%`}
               </div>
             </div>
           )}
-        </div>
-      </div>
-    )}
-    {armCareModal&&selected&&(
-      <div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.7)',zIndex:9999,display:'flex',alignItems:'center',justifyContent:'center',overflowY:'auto' as const,padding:'20px 0'}} onClick={()=>setArmCareModal(false)}>
-        <div style={{background:C.bg2,border:`1px solid ${C.border}`,borderRadius:12,padding:24,width:480,maxWidth:'90vw',maxHeight:'85vh',overflowY:'auto' as const}} onClick={e=>e.stopPropagation()}>
-          <div style={{fontSize:15,fontWeight:700,color:C.white,marginBottom:4}}>Log Arm Care Test — {selected.full_name}</div>
-          <div style={{fontSize:12,color:C.textMuted,marginBottom:16}}>Training Load, Fatigue/Recovery, Strength-Velocity Ratio, %Bodyweight, and ROM are tracked separately — none of these get collapsed into a single score.</div>
-
-          <div style={{fontSize:11,color:C.gold,fontWeight:700,textTransform:'uppercase' as const,letterSpacing:'0.5px',marginBottom:8}}>Training Load</div>
-          <div style={{fontSize:11,color:C.textDim,lineHeight:1.6,marginBottom:10,background:C.bg3,border:`1px solid ${C.border}`,borderRadius:8,padding:'8px 10px'}}>
-            <b>Protocol:</b> Have the pitcher lie on their side (or use a bench), throwing-arm elbow tucked at 90°. Hand them a dumbbell and find the heaviest weight they can rotate the forearm outward (external rotation, ER) through a full, controlled range — that's ER Load. Flip to the other side (or reposition) and repeat for internal rotation (IR Load). Log bodyweight too — it drives the %-of-bodyweight badges elsewhere on the page.
-          </div>
-          <div style={{fontSize:10,color:C.textDim,lineHeight:1.5,marginBottom:10}}>
-            <b>Test Type:</b> <b>Baseline Max</b> — run when fresh, before any outing, to set the pitcher's true max. <b>Post-Outing</b> — run within about an hour after a bullpen/outing to see the drop from baseline (feeds Fatigue Score). <b>Recovery Check</b> — run 24–72 hours later to see how much has returned (feeds the Adjusted Target's recovery modifier).
-          </div>
-          <label style={{fontSize:11,color:C.textMuted,fontWeight:600,marginBottom:6,display:'block'}}>Test Type</label>
-          <select style={{...S.input,marginBottom:12}} value={armCareForm.test_type} onChange={e=>setArmCareForm(f=>({...f,test_type:e.target.value}))}>
-            <option value="baseline_max">Baseline Max</option>
-            <option value="post_outing">Post-Outing</option>
-            <option value="recovery_check">Recovery Check</option>
-          </select>
-          <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10,marginBottom:12}}>
-            <div>
-              <label style={{fontSize:11,color:C.textMuted,fontWeight:600,marginBottom:6,display:'block'}}>ER Load (lbs)</label>
-              <input type="text" inputMode="decimal" style={S.input} placeholder="e.g. 10" value={armCareForm.er_load_lbs} onChange={e=>setArmCareForm(f=>({...f,er_load_lbs:e.target.value}))}/>
-            </div>
-            <div>
-              <label style={{fontSize:11,color:C.textMuted,fontWeight:600,marginBottom:6,display:'block'}}>IR Load (lbs)</label>
-              <input type="text" inputMode="decimal" style={S.input} placeholder="e.g. 15" value={armCareForm.ir_load_lbs} onChange={e=>setArmCareForm(f=>({...f,ir_load_lbs:e.target.value}))}/>
-            </div>
-            <div>
-              <label style={{fontSize:11,color:C.textMuted,fontWeight:600,marginBottom:6,display:'block'}}>Bodyweight (lbs)</label>
-              <input type="text" inputMode="decimal" style={S.input} placeholder="e.g. 190" value={armCareForm.bodyweight_lbs} onChange={e=>setArmCareForm(f=>({...f,bodyweight_lbs:e.target.value}))}/>
-            </div>
-          </div>
-          {armCareForm.er_load_lbs&&armCareForm.ir_load_lbs&&(()=>{
-            const velocity=getEffectiveVelocity(selected,cmjResults)||null
-            const svr=calcStrengthVelocityRatio(parseFloat(armCareForm.er_load_lbs),parseFloat(armCareForm.ir_load_lbs),velocity)
-            return (
-              <div style={{fontSize:11,color:C.textDim,marginBottom:12}}>
-                SVR (ER+IR ÷ velocity): {svr?`${svr.ratio.toFixed(2)} ${svr.flagged?'— below 0.35 flag threshold':''}`:`— no effective velocity on file for ${selected.full_name} yet`}
-                {armCareForm.bodyweight_lbs&&<><br/>ER %BW: {((parseFloat(armCareForm.er_load_lbs)/parseFloat(armCareForm.bodyweight_lbs))*100).toFixed(0)}% · IR %BW: {((parseFloat(armCareForm.ir_load_lbs)/parseFloat(armCareForm.bodyweight_lbs))*100).toFixed(0)}%</>}
-              </div>
-            )
-          })()}
-
-          <div style={{fontSize:11,color:C.gold,fontWeight:700,textTransform:'uppercase' as const,letterSpacing:'0.5px',marginBottom:8}}>Fatigue / Recovery</div>
-          <div style={{fontSize:11,color:C.textDim,lineHeight:1.6,marginBottom:10,background:C.bg3,border:`1px solid ${C.border}`,borderRadius:8,padding:'8px 10px'}}>
-            <b>Protocol:</b> Using a lighter, sub-max load (not the same heavy weight as Training Load — pick something they can hold, not just move once), have the pitcher hold the ER position isometrically at end-range and time how long they sustain it before form breaks down. Repeat for IR. Use the <b>same load</b> across all three test types (Baseline Max, Post-Outing, Recovery Check) for this pitcher, since the comparison is hold-time vs. hold-time — a different load would make the fatigue/recovery % meaningless.
-          </div>
-          <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10,marginBottom:12}}>
-            <div>
-              <label style={{fontSize:11,color:C.textMuted,fontWeight:600,marginBottom:6,display:'block'}}>ER Hold (sec)</label>
-              <input type="text" inputMode="decimal" style={S.input} placeholder="e.g. 30" value={armCareForm.er_hold_seconds} onChange={e=>setArmCareForm(f=>({...f,er_hold_seconds:e.target.value}))}/>
-            </div>
-            <div>
-              <label style={{fontSize:11,color:C.textMuted,fontWeight:600,marginBottom:6,display:'block'}}>IR Hold (sec)</label>
-              <input type="text" inputMode="decimal" style={S.input} placeholder="e.g. 30" value={armCareForm.ir_hold_seconds} onChange={e=>setArmCareForm(f=>({...f,ir_hold_seconds:e.target.value}))}/>
-            </div>
-          </div>
-          <div style={{fontSize:10,color:C.textDim,marginBottom:12}}>Compared against this pitcher's Baseline Max test to compute fatigue/recovery % — visible in the history list after saving.</div>
-
-          <div style={{fontSize:11,color:C.gold,fontWeight:700,textTransform:'uppercase' as const,letterSpacing:'0.5px',marginBottom:8}}>Range of Motion</div>
-          <div style={{fontSize:11,color:C.textDim,lineHeight:1.6,marginBottom:10,background:C.bg3,border:`1px solid ${C.border}`,borderRadius:8,padding:'8px 10px'}}>
-            <b>Protocol:</b> Arm out at 90° abduction ("goal post" position), elbow bent 90°. Rotate the forearm as far as it will go externally (hand moves up toward the ceiling) and measure the angle from vertical — that's ER ROM. Then rotate as far as it will go internally (hand moves down toward the table) and measure that angle — that's IR ROM. Use a goniometer if you have one, or the "∠" button below to calculate the angle from 3 points on a photo/video frame instead.
-          </div>
-          <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10,marginBottom:8}}>
-            <div>
-              <label style={{fontSize:11,color:C.textMuted,fontWeight:600,marginBottom:6,display:'block'}}>ER ROM (°)</label>
-              <div style={{display:'flex',gap:6}}>
-                <input type="text" inputMode="decimal" style={{...S.input,flex:1}} placeholder="e.g. 95" value={armCareForm.er_rom_deg} onChange={e=>setArmCareForm(f=>({...f,er_rom_deg:e.target.value}))}/>
-                <button onClick={()=>setRomCalc({side:'er',p1:{x:'',y:''},p2:{x:'',y:''},p3:{x:'',y:''}})} title="Calculate from 3 reference points" style={{...S.btn(),padding:'6px 8px',fontSize:11}}>∠</button>
-              </div>
-            </div>
-            <div>
-              <label style={{fontSize:11,color:C.textMuted,fontWeight:600,marginBottom:6,display:'block'}}>IR ROM (°)</label>
-              <div style={{display:'flex',gap:6}}>
-                <input type="text" inputMode="decimal" style={{...S.input,flex:1}} placeholder="e.g. 60" value={armCareForm.ir_rom_deg} onChange={e=>setArmCareForm(f=>({...f,ir_rom_deg:e.target.value}))}/>
-                <button onClick={()=>setRomCalc({side:'ir',p1:{x:'',y:''},p2:{x:'',y:''},p3:{x:'',y:''}})} title="Calculate from 3 reference points" style={{...S.btn(),padding:'6px 8px',fontSize:11}}>∠</button>
-              </div>
-            </div>
-          </div>
-          {romCalc.side&&(
-            <div style={{background:C.bg3,border:`1px solid ${C.border}`,borderRadius:8,padding:12,marginBottom:12}}>
-              <div style={{fontSize:11,color:C.textMuted,marginBottom:8}}>Calculate {romCalc.side.toUpperCase()} ROM from 3 points (forearm-start, elbow pivot, forearm-end) — same angle math used for joint tracking in Mechanics.</div>
-              <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:6,marginBottom:8}}>
-                {(['p1','p2','p3'] as const).map(p=>(
-                  <div key={p} style={{display:'flex',gap:4}}>
-                    <input type="text" inputMode="decimal" style={{...S.input,padding:'6px 8px',fontSize:11}} placeholder="x" value={romCalc[p].x} onChange={e=>setRomCalc(rc=>({...rc,[p]:{...rc[p],x:e.target.value}}))}/>
-                    <input type="text" inputMode="decimal" style={{...S.input,padding:'6px 8px',fontSize:11}} placeholder="y" value={romCalc[p].y} onChange={e=>setRomCalc(rc=>({...rc,[p]:{...rc[p],y:e.target.value}}))}/>
-                  </div>
-                ))}
-              </div>
-              <div style={{display:'flex',gap:8}}>
-                <button onClick={()=>setRomCalc({side:null,p1:{x:'',y:''},p2:{x:'',y:''},p3:{x:'',y:''}})} style={{...S.btn(),flex:1}}>Cancel</button>
-                <button onClick={applyRomCalc} style={{...S.btn('gold'),flex:1}}>Apply</button>
-              </div>
-            </div>
-          )}
-          {armCareForm.er_rom_deg&&armCareForm.ir_rom_deg&&(
-            <div style={{fontSize:11,color:C.textDim,marginBottom:12}}>ROM asymmetry: {calcRomAsymmetry(parseFloat(armCareForm.er_rom_deg),parseFloat(armCareForm.ir_rom_deg))?.pctDiff.toFixed(0)}% ({calcRomAsymmetry(parseFloat(armCareForm.er_rom_deg),parseFloat(armCareForm.ir_rom_deg))?.status})</div>
-          )}
-
-          <label style={{fontSize:11,color:C.textMuted,fontWeight:600,marginBottom:6,display:'block'}}>Notes</label>
-          <textarea style={{...S.input,minHeight:60,marginBottom:16,resize:'vertical' as const}} placeholder="Optional" value={armCareForm.notes} onChange={e=>setArmCareForm(f=>({...f,notes:e.target.value}))}/>
-
-          <div style={{display:'flex',gap:8}}>
-            <button onClick={()=>setArmCareModal(false)} style={{...S.btn(),flex:1}}>Cancel</button>
-            <button onClick={saveArmCareTest} disabled={armCareSaving} style={{...S.btn('gold'),flex:2}}>{armCareSaving?'Saving...':'Save Test'}</button>
-          </div>
         </div>
       </div>
     )}

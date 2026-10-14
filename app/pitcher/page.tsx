@@ -7,15 +7,12 @@ import PitchingIQTab from '@/app/components/PitchingIQTab'
 import AthleticBenchmarks from '@/app/components/AthleticBenchmarks'
 import ProgressOverview from '@/app/components/ProgressOverview'
 import MiniSparkline from '@/app/components/MiniSparkline'
-import ArmCareSummary from '@/app/components/ArmCareSummary'
 import PitchMechanics2D from '@/app/components/PitchMechanics2D'
 import ThrowingPrinciples from '@/app/components/ThrowingPrinciples'
 import TestVideoLink from '@/app/components/TestVideoLink'
 import { useTestVideos } from '@/lib/testVideos'
 import { parseTime, calcCMJFn, classifyCMJ } from '@/lib/cmj'
 import { CATEGORY_ORDER, CATEGORY_COLORS } from '@/lib/exerciseCategories'
-import { getRecoveryModifier, computeArmCareFlagStatuses } from '@/lib/armCare'
-import { computeSpeedPowerGuardrail, GROUND_CONTACTS_PER_REP } from '@/lib/speedPowerVolume'
 import { intentLabel } from '@/lib/plainLanguage'
 
 const C = {
@@ -138,8 +135,6 @@ export default function PitcherDashboard(){
   const [foodLogs,setFoodLogs]=useState<any[]>([])
   const [dailyFuelScore,setDailyFuelScore]=useState<any>(null)
   const [weekFuelScores,setWeekFuelScores]=useState<any[]>([])
-  const [armCareTests,setArmCareTests]=useState<any[]>([])
-  const [customExercises,setCustomExercises]=useState<any[]>([])
   const [loading,setLoading]=useState(true)
   const [logForm,setLogForm]=useState({date:new Date().toISOString().split('T')[0],velocity:'',weightLifted:'',sprintTime:'',pitchCount:'',highEffortThrows:'',feeling:7,soreness:[] as string[],readiness:'',notes:''})
   const [logSaved,setLogSaved]=useState(false)
@@ -185,7 +180,7 @@ export default function PitcherDashboard(){
       if (prof.role==='coach'){router.push('/coach');return}
       setProfile(prof)
       const sevenDaysAgo=new Date(Date.now()-7*24*60*60*1000).toISOString().split('T')[0]
-      const [progRes,logsRes,cmjRes,foodRes,fuelRes,weekFuelRes,videosRes,armCareRes,customExRes]=await Promise.all([
+      const [progRes,logsRes,cmjRes,foodRes,fuelRes,weekFuelRes,videosRes]=await Promise.all([
         supabase.from('programs').select('*').eq('pitcher_id',prof.id).order('week_of',{ascending:false}).limit(1),
         supabase.from('session_logs').select('*').eq('pitcher_id',prof.id).order('log_date',{ascending:false}).limit(20),
         supabase.from('cmj_results').select('*').eq('pitcher_id',prof.id).order('test_date',{ascending:false}),
@@ -193,8 +188,6 @@ export default function PitcherDashboard(){
         supabase.from('daily_fuel_scores').select('*').eq('pitcher_id',prof.id).eq('log_date',today).single(),
         supabase.from('daily_fuel_scores').select('*').eq('pitcher_id',prof.id).gte('log_date',sevenDaysAgo).order('log_date'),
         supabase.from('exercise_videos').select('*'),
-        supabase.from('arm_care_tests').select('*').eq('pitcher_id',prof.id).order('created_at',{ascending:false}),
-        supabase.from('custom_exercises').select('exercise_id,ground_contacts_per_rep'),
       ])
       setProgram(progRes.data?.[0]||null)
       setLogs(logsRes.data||[])
@@ -202,8 +195,6 @@ export default function PitcherDashboard(){
       setFoodLogs(foodRes.data||[])
       setDailyFuelScore(fuelRes.data||null)
       setWeekFuelScores(weekFuelRes.data||[])
-      setArmCareTests(armCareRes.data||[])
-      setCustomExercises(customExRes.data||[])
       const videoMap: Record<string, string> = {}
       ;(videosRes.data || []).forEach((v: any) => { videoMap[v.exercise_id] = v.video_url })
       setExerciseVideos(videoMap)
@@ -450,12 +441,7 @@ export default function PitcherDashboard(){
             {!program&&<div style={{...card,textAlign:'center',color:C.textMuted,padding:'32px 16px'}}>No program yet.</div>}
             {program&&(()=>{
               const structured=program.structured_days||{}
-              // Same recoveryModifier/arm-care statuses the coach's builder uses, so this
-              // read-only view always agrees with what the coach saw when they built it.
-              const speedPowerRecoveryModifier=getRecoveryModifier(armCareTests)
-              const speedPowerEffectiveVelocity=cmjResults[0]?.estimated_velocity||profile?.avg_velocity||null
-              const speedPowerArmCareStatuses=computeArmCareFlagStatuses(armCareTests[0]||null,speedPowerEffectiveVelocity)
-              return DAYS.map((day,dayIdx)=>{
+              return DAYS.map((day)=>{
                 const dayCats=NEW_CATS.filter(cat=>{
                   const key=`${day}___${cat}`
                   return (structured[key]||[]).length>0||(program.days?.[key])
@@ -475,23 +461,10 @@ export default function PitcherDashboard(){
                       const note=program.days?.[key]||''
                       if (!exercises.length&&!note)return null
                       const catCol=CAT_COLORS[cat]||C.textMuted
-                      const toContactExercise=(ex:any)=>({id:ex.id,sets:ex.sets,reps:ex.reps,ground_contacts_per_rep:GROUND_CONTACTS_PER_REP[ex.id]??customExercises.find((c:any)=>c.exercise_id===ex.id)?.ground_contacts_per_rep})
-                      const priorDay=DAYS[(dayIdx-1+DAYS.length)%DAYS.length]
-                      const priorDayExercises=structured[`${priorDay}___${cat}`]||[]
-                      const speedPowerGuardrail=cat==='Speed/Power'&&exercises.length>0?computeSpeedPowerGuardrail(
-                        exercises.map(toContactExercise),
-                        speedPowerRecoveryModifier,speedPowerArmCareStatuses,
-                        priorDayExercises.map(toContactExercise),
-                      ):null
                       return(
                         <div key={cat} style={{marginBottom:10}}>
                           <div style={{fontSize:10,color:catCol,fontWeight:700,textTransform:'uppercase' as const,letterSpacing:'0.5px',marginBottom:6,display:'flex',alignItems:'center',gap:8}}>
                             <span>{cat}</span>
-                            {speedPowerGuardrail&&speedPowerGuardrail.status!=='OK'&&(
-                              <span title={`${speedPowerGuardrail.totalContacts} ground contacts today, ${speedPowerGuardrail.rolling48hContacts} within the last 48h (Caution at ${speedPowerGuardrail.cautionCeiling}, Flag at ${speedPowerGuardrail.flagCeiling})${speedPowerGuardrail.reasons.length?' — '+speedPowerGuardrail.reasons.join(', '):''}`} style={{fontSize:9,fontWeight:700,padding:'2px 6px',borderRadius:4,textTransform:'none' as const,letterSpacing:0,background:speedPowerGuardrail.status==='Flag'?'rgba(248,81,73,0.15)':'rgba(232,184,75,0.15)',color:speedPowerGuardrail.status==='Flag'?C.red:C.gold,border:`1px solid ${speedPowerGuardrail.status==='Flag'?C.red:C.gold}66`}}>
-                                {speedPowerGuardrail.is48hDriven?`${speedPowerGuardrail.rolling48hContacts} in 48h`:`${speedPowerGuardrail.totalContacts} contacts`} — {speedPowerGuardrail.status}
-                              </span>
-                            )}
                           </div>
                           {exercises.map((ex:any,i:number)=>{
                             // Throwing slots are written as a count + intent code (e.g. "35 @
@@ -706,7 +679,7 @@ export default function PitcherDashboard(){
             <div style={{fontSize:18,fontWeight:700,color:C.white,marginBottom:4}}>Assessments</div>
             <div style={{fontSize:12,color:C.textMuted,marginBottom:16}}>Film at 240 FPS · Open in Photos · Edit · Scrub to find timestamps</div>
             <div style={{display:'flex',gap:6,marginBottom:16,overflowX:'auto' as const,paddingBottom:4}}>
-              {[{id:'cmj',label:'CMJ'},{id:'arm_care',label:'Arm Care'},{id:'benchmarks',label:'Benchmarks'},{id:'mechanics',label:'Mechanics'}].map(t=>(
+              {[{id:'cmj',label:'CMJ'},{id:'benchmarks',label:'Benchmarks'},{id:'mechanics',label:'Mechanics'}].map(t=>(
                 <button key={t.id} onClick={()=>setAssessTab(t.id)} style={{background:assessTab===t.id?C.gold:C.bg3,color:assessTab===t.id?C.bg:C.textMuted,border:`1px solid ${assessTab===t.id?C.gold:C.border}`,borderRadius:8,padding:'8px 14px',fontSize:12,fontWeight:assessTab===t.id?700:400,cursor:'pointer',whiteSpace:'nowrap' as const,flexShrink:0}}>{t.label}</button>
               ))}
             </div>
@@ -787,10 +760,6 @@ export default function PitcherDashboard(){
                   </div>
                 )}
               </div>
-            )}
-
-            {assessTab==='arm_care'&&profile&&(
-              <ArmCareSummary pitcherId={profile.id}/>
             )}
 
             {assessTab==='benchmarks'&&profile&&(
