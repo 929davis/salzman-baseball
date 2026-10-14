@@ -11,7 +11,7 @@ import PitchMechanics2D from '@/app/components/PitchMechanics2D'
 import ThrowingPrinciples from '@/app/components/ThrowingPrinciples'
 import TestVideoLink from '@/app/components/TestVideoLink'
 import { useTestVideos } from '@/lib/testVideos'
-import { parseTime, calcCMJFn, classifyCMJ, CMJ_VELOCITY_MODEL_MAE_MPH } from '@/lib/cmj'
+import { parseTime, calcCMJFn, classifyCMJ, CMJ_VELOCITY_MODEL_MAE_MPH, validateCMJTimestamps } from '@/lib/cmj'
 import { CATEGORY_ORDER, CATEGORY_COLORS } from '@/lib/exerciseCategories'
 import { intentLabel } from '@/lib/plainLanguage'
 
@@ -114,11 +114,11 @@ function scoreColor(score:number){
 
 const BLANK_MEAL={description:'',protein:'',carbs:'',fat:'',giOption:'low',proMetabolicFoods:[] as string[]}
 
-const FrameInputs=({form,setForm,fields,inp,lbl}:{form:any,setForm:any,fields:{key:string,label:string,placeholder:string}[],inp:any,lbl:any})=>(
+const FrameInputs=({form,setForm,fields,inp,lbl}:{form:any,setForm:any,fields:{key:string,label:string,placeholder:string,optional?:boolean}[],inp:any,lbl:any})=>(
   <div>
     {fields.map(f=>(
       <div key={f.key}>
-        <label style={lbl}>{f.label}</label>
+        <label style={lbl}>{f.label}{f.optional&&' (optional)'}</label>
         <input type="text" style={inp} placeholder={f.placeholder} value={form[f.key]} onChange={e=>setForm((prev:any)=>({...prev,[f.key]:e.target.value}))}/>
       </div>
     ))}
@@ -151,7 +151,7 @@ export default function PitcherDashboard(){
   const [showGuidelines,setShowGuidelines]=useState(false)
 
   // Assessment forms
-  const [cmjForm,setCmjForm]=useState({date:new Date().toISOString().split('T')[0],bodyweight:'',weightUnit:'lbs',fps:'240',startTime:'',takeoffTime:'',landingTime:'',notes:''})
+  const [cmjForm,setCmjForm]=useState({date:new Date().toISOString().split('T')[0],bodyweight:'',weightUnit:'lbs',fps:'240',startTime:'',bottomTime:'',takeoffTime:'',landingTime:'',stabilizationTime:'',uprightTime:'',notes:''})
   const [cmjResult,setCmjResult]=useState<any>(null)
   const [cmjErr,setCmjErr]=useState('')
   const [cmjSaved,setCmjSaved]=useState(false)
@@ -299,13 +299,21 @@ export default function PitcherDashboard(){
   }
 
   // Assessment calcs
+  const parseOptionalCmjTime=(s:string):number|undefined=>{
+    if (!s.trim()) return undefined
+    const v=parseTime(s)
+    return isNaN(v)?undefined:v
+  }
   const calcCMJHandler=()=>{
     setCmjErr('')
     const bw=parseFloat(cmjForm.bodyweight)
     const st=parseTime(cmjForm.startTime),tt=parseTime(cmjForm.takeoffTime),lt=parseTime(cmjForm.landingTime)
-    if (!bw||isNaN(st)||isNaN(tt)||isNaN(lt)||tt<=st||lt<=tt){setCmjErr('Check your inputs.');return}
+    const bt=parseOptionalCmjTime(cmjForm.bottomTime),sbt=parseOptionalCmjTime(cmjForm.stabilizationTime),ut=parseOptionalCmjTime(cmjForm.uprightTime)
+    if (!bw||isNaN(st)||isNaN(tt)||isNaN(lt)){setCmjErr('Check your inputs.');return}
+    const ordErr=validateCMJTimestamps({startTime:st,bottomTime:bt,takeoffTime:tt,landingTime:lt,stabilizationTime:sbt,uprightTime:ut})
+    if (ordErr){setCmjErr(ordErr);return}
     const massKg=cmjForm.weightUnit==='lbs'?bw*0.453592:bw
-    setCmjResult(calcCMJFn({startTime:st,takeoffTime:tt,landingTime:lt,massKg}))
+    setCmjResult(calcCMJFn({startTime:st,bottomTime:bt,takeoffTime:tt,landingTime:lt,stabilizationTime:sbt,uprightTime:ut,massKg}))
   }
   const saveCMJ=async()=>{
     if (!cmjResult||!profile)return
@@ -313,13 +321,19 @@ export default function PitcherDashboard(){
     const bw=parseFloat(cmjForm.bodyweight)
     const massKg=cmjForm.weightUnit==='lbs'?bw*0.453592:bw
     const fps=parseFloat(cmjForm.fps)
+    const bt=parseOptionalCmjTime(cmjForm.bottomTime),sbt=parseOptionalCmjTime(cmjForm.stabilizationTime),ut=parseOptionalCmjTime(cmjForm.uprightTime)
     const {error}=await supabase.from('cmj_results').insert({
       pitcher_id:profile.id,test_date:cmjForm.date,bodyweight:bw,weight_unit:cmjForm.weightUnit,
       fps:parseInt(cmjForm.fps),start_frame:Math.round(parseTime(cmjForm.startTime)*fps),
+      bottom_frame:bt!=null?Math.round(bt*fps):null,
       takeoff_frame:Math.round(parseTime(cmjForm.takeoffTime)*fps),landing_frame:Math.round(parseTime(cmjForm.landingTime)*fps),
+      stabilization_frame:sbt!=null?Math.round(sbt*fps):null,
+      upright_frame:ut!=null?Math.round(ut*fps):null,
       flight_time:cmjResult.flightTime,jump_height_in:cmjResult.jumpHeightIn,rsi_mod:cmjResult.rsiMod,
       peak_power_per_kg:cmjResult.peakPowerPerKg,takeoff_velocity:cmjResult.takeoffVelocity,
-      explosive_index:cmjResult.explosiveIndex,estimated_velocity:cmjResult.estimatedVelocity,notes:cmjForm.notes||null
+      explosive_index:cmjResult.explosiveIndex,estimated_velocity:cmjResult.estimatedVelocity,notes:cmjForm.notes||null,
+      eccentric_duration_sec:cmjResult.eccentricDurationSec??null,concentric_duration_sec:cmjResult.concentricDurationSec??null,
+      landing_stabilization_sec:cmjResult.landingStabilizationSec??null,return_to_upright_sec:cmjResult.returnToUprightSec??null,
     })
     if (error){
       console.error('pitcher dashboard: failed to save CMJ result',error)
@@ -328,7 +342,7 @@ export default function PitcherDashboard(){
     }
     const {data}=await supabase.from('cmj_results').select('*').eq('pitcher_id',profile.id).order('test_date',{ascending:false})
     setCmjResults(data||[]);setCmjResult(null)
-    setCmjForm({date:new Date().toISOString().split('T')[0],bodyweight:'',weightUnit:'lbs',fps:'240',startTime:'',takeoffTime:'',landingTime:'',notes:''})
+    setCmjForm({date:new Date().toISOString().split('T')[0],bodyweight:'',weightUnit:'lbs',fps:'240',startTime:'',bottomTime:'',takeoffTime:'',landingTime:'',stabilizationTime:'',uprightTime:'',notes:''})
     setCmjSaved(true);setTimeout(()=>setCmjSaved(false),2000)
   }
 
@@ -701,7 +715,7 @@ export default function PitcherDashboard(){
                   </div>
                   <label style={lbl}>FPS</label>
                   <select style={inp} value={cmjForm.fps} onChange={e=>setCmjForm(f=>({...f,fps:e.target.value}))}><option value="240">240 FPS (iPhone)</option><option value="120">120 FPS</option><option value="480">480 FPS</option><option value="30">30 FPS (Real Time)</option></select>
-                  <FrameInputs form={cmjForm} setForm={setCmjForm} inp={inp} lbl={lbl} fields={[{key:'startTime',label:'Start Time',placeholder:'e.g. 0:03.20'},{key:'takeoffTime',label:'Takeoff Time',placeholder:'e.g. 0:03.20'},{key:'landingTime',label:'Landing Time',placeholder:'e.g. 0:03.20'}]}/>
+                  <FrameInputs form={cmjForm} setForm={setCmjForm} inp={inp} lbl={lbl} fields={[{key:'startTime',label:'Start Time',placeholder:'e.g. 0:03.20'},{key:'bottomTime',label:'Bottom of Loading Phase',placeholder:'e.g. 0:03.20',optional:true},{key:'takeoffTime',label:'Takeoff Time',placeholder:'e.g. 0:03.20'},{key:'landingTime',label:'Landing Time',placeholder:'e.g. 0:03.20'},{key:'stabilizationTime',label:'Landing Stabilization',placeholder:'e.g. 0:03.20',optional:true},{key:'uprightTime',label:'Return to Upright',placeholder:'e.g. 0:03.20',optional:true}]}/>
                   {cmjErr&&<div style={{color:C.red,fontSize:13,marginTop:8,padding:'10px',background:'rgba(248,81,73,0.1)',borderRadius:8}}>{cmjErr}</div>}
                   <button style={btn('gold')} onClick={calcCMJHandler}>Calculate</button>
                 </div>
@@ -718,6 +732,19 @@ export default function PitcherDashboard(){
                         </div>
                       ))}
                     </div>
+                    {(cmjResult.eccentricDurationSec!=null||cmjResult.concentricDurationSec!=null||cmjResult.landingStabilizationSec!=null||cmjResult.returnToUprightSec!=null)&&(
+                      <div style={{marginBottom:12}}>
+                        <div style={{fontSize:10,color:C.textMuted,textTransform:'uppercase' as const,letterSpacing:'0.5px',marginBottom:6}}>Video-Derived Timing (timing only -- not force)</div>
+                        <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8}}>
+                          {[{l:'Eccentric Duration',v:cmjResult.eccentricDurationSec},{l:'Concentric Duration',v:cmjResult.concentricDurationSec},{l:'Landing Stabilization',v:cmjResult.landingStabilizationSec},{l:'Return to Upright',v:cmjResult.returnToUprightSec}].filter(m=>m.v!=null).map(m=>(
+                            <div key={m.l} style={{background:'rgba(163,113,247,0.08)',borderRadius:8,padding:'10px'}}>
+                              <div style={{fontSize:10,color:C.purple,marginBottom:3}}>{m.l}</div>
+                              <div style={{fontSize:16,fontWeight:700,color:C.white}}>{m.v.toFixed(2)}s</div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
                     <button style={{...btn('gold'),marginTop:0}} onClick={saveCMJ}>Save to Profile</button>
                     {cmjSaved&&<div style={{textAlign:'center',color:C.teal,fontSize:13,fontWeight:600,marginTop:8}}>✓ Saved!</div>}
                     {cmjSaveError&&<div style={{textAlign:'center',color:C.red,fontSize:13,fontWeight:600,marginTop:8,padding:'10px',background:'rgba(248,81,73,0.1)',borderRadius:8}}>{cmjSaveError}</div>}

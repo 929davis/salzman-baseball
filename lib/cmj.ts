@@ -26,7 +26,43 @@ export const calcJumpHeight=(takeoff:number,landing:number)=>{
 // plate and isn't in this dataset, so it's excluded. This output is a video-estimated model
 // prediction, not a measurement -- treat it as provisional, not authoritative.
 export const CMJ_VELOCITY_MODEL_MAE_MPH=3.9
-export const calcCMJFn=({startTime,takeoffTime,landingTime,massKg}:{startTime:number,takeoffTime:number,landingTime:number,massKg:number})=>{
+
+// The 6 CMJ phase events (per the iPhone assessment spec). Only the first/takeoff/landing
+// are required -- they're what the velocity model above and the existing jump-height/RSI/
+// power calculations need. The other 3 are optional, video-derived timing-only inputs: they
+// support coaching review of jump quality (how long a pitcher takes to load, decelerate, and
+// recover) but are NOT inputs to the velocity model and never will be from timestamps alone --
+// true force/impulse/power metrics (CI-100, Braking RFD) require a force plate, not a stopwatch.
+export type CMJPhaseTimestamps={
+  startTime:number        // 1. first downward movement
+  bottomTime?:number      // 2. bottom of the loading phase
+  takeoffTime:number      // 3. takeoff
+  landingTime:number      // 4. landing
+  stabilizationTime?:number // 5. landing stabilization
+  uprightTime?:number     // 6. return to upright standing
+}
+
+// Checks the 6 phase timestamps occur in order (whichever optional ones are present).
+// Returns an error message naming the pair that's out of order, or null if valid.
+export function validateCMJTimestamps(t:CMJPhaseTimestamps):string|null{
+  const seq:[string,number|undefined][]=[
+    ['first downward movement',t.startTime],
+    ['bottom of the loading phase',t.bottomTime],
+    ['takeoff',t.takeoffTime],
+    ['landing',t.landingTime],
+    ['landing stabilization',t.stabilizationTime],
+    ['return to upright',t.uprightTime],
+  ]
+  const present=seq.filter(([,v])=>v!=null&&!isNaN(v))
+  for (let i=1;i<present.length;i++){
+    const [prevLabel,prevVal]=present[i-1]
+    const [label,val]=present[i]
+    if ((val as number)<=(prevVal as number)) return `"${label}" must come after "${prevLabel}"`
+  }
+  return null
+}
+
+export const calcCMJFn=({startTime,bottomTime,takeoffTime,landingTime,stabilizationTime,uprightTime,massKg}:CMJPhaseTimestamps&{massKg:number})=>{
   const ft=landingTime-takeoffTime
   const ttt=takeoffTime-startTime
   const jh=(9.81*ft*ft)/8
@@ -39,7 +75,14 @@ export const calcCMJFn=({startTime,takeoffTime,landingTime,massKg}:{startTime:nu
   const ei=rsi*ppkg
   const massLbs=massKg*2.20462
   const ev=49.17+(0.123*jhc)+(0.291*ppkg)+(0.0626*massLbs)
-  return{flightTime:ft,jumpHeightIn:jhi,rsiMod:rsi,peakPowerPerKg:ppkg,takeoffVelocity:tv,explosiveIndex:ei,estimatedVelocity:ev,estimatedVelocityMarginMph:CMJ_VELOCITY_MODEL_MAE_MPH}
+  // Timing-only metrics from the optional phase events. undefined when the coach hasn't
+  // entered that timestamp -- never inferred or defaulted, per "display as unavailable rather
+  // than inventing a value."
+  const eccentricDurationSec=bottomTime!=null?bottomTime-startTime:undefined
+  const concentricDurationSec=bottomTime!=null?takeoffTime-bottomTime:undefined
+  const landingStabilizationSec=stabilizationTime!=null?stabilizationTime-landingTime:undefined
+  const returnToUprightSec=uprightTime!=null?uprightTime-landingTime:undefined
+  return{flightTime:ft,propulsionDurationSec:ttt,jumpHeightIn:jhi,rsiMod:rsi,peakPowerPerKg:ppkg,takeoffVelocity:tv,explosiveIndex:ei,estimatedVelocity:ev,estimatedVelocityMarginMph:CMJ_VELOCITY_MODEL_MAE_MPH,eccentricDurationSec,concentricDurationSec,landingStabilizationSec,returnToUprightSec}
 }
 
 // ---------------------------------------------------------------------------
