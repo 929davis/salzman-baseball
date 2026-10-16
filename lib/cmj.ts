@@ -15,16 +15,33 @@ export const calcJumpHeight=(takeoff:number,landing:number)=>{
   return (9.81*ft*ft)/8*39.3701
 }
 
-// Refit against Driveline's OpenBiomechanics "high_performance" dataset, College-level
+// --- Base model: Driveline's OpenBiomechanics "high_performance" dataset, College-level
 // pitchers only (n=272, athlete-grouped train/test split, 30 resamples): jump height, peak
 // power/kg (Sayers equation, since we have no force plate), and body weight. Cross-validated
-// MAE≈3.9 mph, R²≈0.20 -- a real but modest improvement over predicting the population mean
-// (MAE≈4.8 mph). RSI-Mod was tested and dropped: it added no predictive value in this dataset.
-// Known gap: a 2024 peer-reviewed study (Sakurai, Qiao, Szymanski & Crotin, JSCR 38(7)) found
-// concentric impulse in the first 100ms (CI-100) correlates with fastball velocity at r≈0.71
-// in D1 pitchers specifically -- stronger than anything fit here. CI-100 requires a force
-// plate and isn't in this dataset, so it's excluded. This output is a video-estimated model
-// prediction, not a measurement -- treat it as provisional, not authoritative.
+// MAE≈3.9 mph, R²≈0.20 against that dataset. RSI-Mod was tested and dropped there: no
+// predictive value. A 2024 peer-reviewed study (Sakurai, Qiao, Szymanski & Crotin, JSCR 38(7))
+// found concentric impulse in the first 100ms (CI-100) correlates with fastball velocity at
+// r≈0.71 in D1 pitchers -- stronger than anything fit here. CI-100 needs a force plate and
+// isn't available from video, so it stays excluded.
+//
+// --- Local correction, layered on top of the base model ---
+// 8 real local athletes (real recorded velocity + a real CMJ test) showed the base model
+// consistently underestimates lower-power athletes and is roughly accurate for higher-power
+// ones: the base model's own error correlated with PP/BM at r=-0.79 across this sample.
+// Fitting that error directly (error ≈ 31.5 - 0.419*ppbm) and adding it straight to the base
+// model flips the net PP/BM coefficient negative (0.291 - 0.419 = -0.128) -- i.e. it would
+// tell a coach that a MORE powerful jumper throws SLOWER, holding jump height/weight constant.
+// That contradicts the base model, the Salzman CSV's own fit, and basic physiology; it's an
+// artifact of 2 athletes at opposite extremes of an 8-person sample driving most of the slope,
+// not a real finding. So the correction is anchored at this sample's own mean PP/BM (70.0,
+// where a regression line is actually trustworthy) rather than at PP/BM=0 (wild extrapolation),
+// and the net PP/BM sensitivity is floored at +0.05 so the formula can never say "more power,
+// less velocity" regardless of what a future small sample suggests.
+// Net result for this hypothetical (200lb, 20in jump, PP/BM≈56.6): base model alone said 84.4
+// mph; this athlete's real bullpen/max velocity was 91-95 mph; the corrected formula gives 89.9.
+// This correction is NOT independently cross-validated (n=8, in-sample fit) the way the base
+// model is -- treat it as a working, evidence-based adjustment, not a validated replacement.
+// Revisit once more real local athletes have both a CMJ test and a real recorded velocity.
 export const CMJ_VELOCITY_MODEL_MAE_MPH=3.9
 
 // The 6 CMJ phase events (per the iPhone assessment spec). Only the first/takeoff/landing
@@ -74,7 +91,7 @@ export const calcCMJFn=({startTime,bottomTime,takeoffTime,landingTime,stabilizat
   const tv=Math.sqrt(2*9.81*jh)
   const ei=rsi*ppkg
   const massLbs=massKg*2.20462
-  const ev=49.17+(0.123*jhc)+(0.291*ppkg)+(0.0626*massLbs)
+  const ev=68.2803+(0.123*jhc)+(0.05*ppkg)+(0.0626*massLbs)
   // Timing-only metrics from the optional phase events. undefined when the coach hasn't
   // entered that timestamp -- never inferred or defaulted, per "display as unavailable rather
   // than inventing a value."
