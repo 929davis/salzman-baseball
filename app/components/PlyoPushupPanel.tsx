@@ -34,7 +34,7 @@ export default function PlyoPushupPanel({pitcherId}:{pitcherId:string}){
 
   const fetchHistory=useCallback(async()=>{
     setLoading(true)
-    const {data}=await supabase.from('plyo_pushup_results').select('*').eq('pitcher_id',pitcherId).order('test_date',{ascending:false})
+    const {data}=await supabase.from('plyo_pushup_assessments').select('*').eq('pitcher_id',pitcherId).order('test_date',{ascending:false})
     setHistory(data||[])
     setLoading(false)
   },[pitcherId])
@@ -64,7 +64,7 @@ export default function PlyoPushupPanel({pitcherId}:{pitcherId:string}){
     setSaving(true);setSaveErr('')
     const fpsNum=parseFloat(fps)
     const repsJson=rows.map(r=>({contact_frame:Math.round(parseTime(r.contactTime)*fpsNum),bottom_frame:r.bottomTime.trim()?Math.round(parseTime(r.bottomTime)*fpsNum):null,leave_frame:Math.round(parseTime(r.leaveTime)*fpsNum)}))
-    const {error}=await supabase.from('plyo_pushup_results').insert({
+    const {error}=await supabase.from('plyo_pushup_assessments').insert({
       pitcher_id:pitcherId,test_date:date,fps:parseInt(fps),
       reps:repsJson,
       final_contact_frame:Math.round(parseTime(finalContactTime)*fpsNum),
@@ -90,7 +90,7 @@ export default function PlyoPushupPanel({pitcherId}:{pitcherId:string}){
 
   const deleteResult=async(row:any)=>{
     if (!window.confirm(`Delete the plyo push-up test from ${row.test_date}? This cannot be undone.`))return
-    await supabase.from('plyo_pushup_results').delete().eq('id',row.id)
+    await supabase.from('plyo_pushup_assessments').delete().eq('id',row.id)
     await fetchHistory()
   }
 
