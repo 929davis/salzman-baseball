@@ -15,34 +15,40 @@ export const calcJumpHeight=(takeoff:number,landing:number)=>{
   return (9.81*ft*ft)/8*39.3701
 }
 
-// --- Base model: Driveline's OpenBiomechanics "high_performance" dataset, College-level
-// pitchers only (n=272, athlete-grouped train/test split, 30 resamples): jump height, peak
-// power/kg (Sayers equation, since we have no force plate), and body weight. Cross-validated
-// MAE≈3.9 mph, R²≈0.20 against that dataset. RSI-Mod was tested and dropped there: no
-// predictive value. A 2024 peer-reviewed study (Sakurai, Qiao, Szymanski & Crotin, JSCR 38(7))
-// found concentric impulse in the first 100ms (CI-100) correlates with fastball velocity at
-// r≈0.71 in D1 pitchers -- stronger than anything fit here. CI-100 needs a force plate and
-// isn't available from video, so it stays excluded.
+// --- This is a CEILING estimate, not an average prediction ---
+// Earlier versions of this formula were a mean regression (ordinary least squares): by
+// construction, about half of real athletes throw harder than a mean fit and half throw
+// softer. That's the wrong shape for "this is roughly the hardest you'd expect this athlete to
+// throw, given mechanical efficiency is never 100%" -- for that, the real athlete should
+// RARELY exceed the number, not do so about half the time. That requires a different
+// statistical fit entirely: quantile regression at a high percentile (here, the 95th), not a
+// mean fit.
 //
-// --- Local correction, layered on top of the base model ---
-// 8 real local athletes (real recorded velocity + a real CMJ test) showed the base model
-// consistently underestimates lower-power athletes and is roughly accurate for higher-power
-// ones: the base model's own error correlated with PP/BM at r=-0.79 across this sample.
-// Fitting that error directly (error ≈ 31.5 - 0.419*ppbm) and adding it straight to the base
-// model flips the net PP/BM coefficient negative (0.291 - 0.419 = -0.128) -- i.e. it would
-// tell a coach that a MORE powerful jumper throws SLOWER, holding jump height/weight constant.
-// That contradicts the base model, the Salzman CSV's own fit, and basic physiology; it's an
-// artifact of 2 athletes at opposite extremes of an 8-person sample driving most of the slope,
-// not a real finding. So the correction is anchored at this sample's own mean PP/BM (70.0,
-// where a regression line is actually trustworthy) rather than at PP/BM=0 (wild extrapolation),
-// and the net PP/BM sensitivity is floored at +0.05 so the formula can never say "more power,
-// less velocity" regardless of what a future small sample suggests.
-// Net result for this hypothetical (200lb, 20in jump, PP/BM≈56.6): base model alone said 84.4
-// mph; this athlete's real bullpen/max velocity was 91-95 mph; the corrected formula gives 89.9.
-// This correction is NOT independently cross-validated (n=8, in-sample fit) the way the base
-// model is -- treat it as a working, evidence-based adjustment, not a validated replacement.
-// Revisit once more real local athletes have both a CMJ test and a real recorded velocity.
-export const CMJ_VELOCITY_MODEL_MAE_MPH=3.9
+// Refit on Driveline's OpenBiomechanics "high_performance" dataset, College-level pitchers only
+// (n=272/445 rows), as a 95th-percentile quantile regression of velocity on peak power/kg
+// (Sayers equation, since we have no force plate) and body weight. Validated via 30
+// athlete-grouped resamples: held-out real athletes exceeded the predicted ceiling only ~5% of
+// the time (median), matching the intended 95th-percentile design. In-sample exceedance on the
+// full dataset: 5.4%.
+//
+// Jump height was tested as a 3rd predictor and dropped: at this quantile, its coefficient was
+// unstable across resamples (median slightly negative, range -0.098 to +0.21 -- i.e. it
+// sometimes said taller jumps meant a LOWER ceiling, which is nonsensical and just reflects
+// that 272 athletes isn't enough data to pin down 3 variables at an extreme quantile). PP/BM
+// alone already captures most of what jump height would add (it's computed partly FROM jump
+// height via the Sayers equation), so dropping it fixed the instability without losing real
+// signal: PP/BM's own coefficient stayed reliably positive (0.074 to 0.268) across every resample.
+//
+// A 2024 peer-reviewed study (Sakurai, Qiao, Szymanski & Crotin, JSCR 38(7)) found concentric
+// impulse in the first 100ms (CI-100) correlates with fastball velocity at r≈0.71 in D1
+// pitchers. CI-100 needs a force plate and isn't available from video, so it stays excluded.
+//
+// This ceiling is expected to be exceeded occasionally -- that's the design, not a bug. One
+// real local athlete (Blake Armstrong, PP/BM≈55) exceeded his predicted ceiling by ~5 mph; a
+// handful of real athletes are legitimately that efficient, and a model built to be "almost
+// never wrong" would be useless (it would have to predict absurdly high for everyone). ~1 in 20
+// real athletes exceeding it is the model working as intended, not a sign it needs raising again.
+export const CMJ_VELOCITY_CEILING_EXCEEDANCE_PCT=5
 
 // The 6 CMJ phase events (per the iPhone assessment spec). Only the first/takeoff/landing
 // are required -- they're what the velocity model above and the existing jump-height/RSI/
@@ -91,7 +97,7 @@ export const calcCMJFn=({startTime,bottomTime,takeoffTime,landingTime,stabilizat
   const tv=Math.sqrt(2*9.81*jh)
   const ei=rsi*ppkg
   const massLbs=massKg*2.20462
-  const ev=68.2803+(0.123*jhc)+(0.05*ppkg)+(0.0626*massLbs)
+  const ev=68.2015+(0.1727*ppkg)+(0.0604*massLbs)
   // Timing-only metrics from the optional phase events. undefined when the coach hasn't
   // entered that timestamp -- never inferred or defaulted, per "display as unavailable rather
   // than inventing a value."
@@ -99,7 +105,7 @@ export const calcCMJFn=({startTime,bottomTime,takeoffTime,landingTime,stabilizat
   const concentricDurationSec=bottomTime!=null?takeoffTime-bottomTime:undefined
   const landingStabilizationSec=stabilizationTime!=null?stabilizationTime-landingTime:undefined
   const returnToUprightSec=uprightTime!=null?uprightTime-landingTime:undefined
-  return{flightTime:ft,propulsionDurationSec:ttt,jumpHeightIn:jhi,rsiMod:rsi,peakPowerPerKg:ppkg,takeoffVelocity:tv,explosiveIndex:ei,estimatedVelocity:ev,estimatedVelocityMarginMph:CMJ_VELOCITY_MODEL_MAE_MPH,eccentricDurationSec,concentricDurationSec,landingStabilizationSec,returnToUprightSec}
+  return{flightTime:ft,propulsionDurationSec:ttt,jumpHeightIn:jhi,rsiMod:rsi,peakPowerPerKg:ppkg,takeoffVelocity:tv,explosiveIndex:ei,estimatedVelocity:ev,estimatedVelocityExceedancePct:CMJ_VELOCITY_CEILING_EXCEEDANCE_PCT,eccentricDurationSec,concentricDurationSec,landingStabilizationSec,returnToUprightSec}
 }
 
 // ---------------------------------------------------------------------------

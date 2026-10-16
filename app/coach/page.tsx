@@ -2374,9 +2374,9 @@ Accessory | Single Arm DB Row | 3 x 6 @ 70%`}
           ):(
             <div>
               <div style={{background:C.purpleBg,border:'1px solid rgba(163,113,247,0.3)',borderRadius:8,padding:12,marginBottom:12,textAlign:'center'}}>
-                <div style={{fontSize:9,color:C.textMuted,textTransform:'uppercase' as const,letterSpacing:'0.5px',marginBottom:2}}>Model-Predicted Velocity Capacity</div>
-                <div style={{fontSize:28,fontWeight:700,color:C.white}}>{cmjCalc.estimatedVelocity.toFixed(1)}<span style={{fontSize:13,color:C.textMuted,fontWeight:400}}> mph (±{cmjCalc.estimatedVelocityMarginMph.toFixed(1)})</span></div>
-                <div style={{fontSize:10,color:C.textMuted,marginTop:2}}>Video-estimated, not a measurement -- a rough indicator only</div>
+                <div style={{fontSize:9,color:C.textMuted,textTransform:'uppercase' as const,letterSpacing:'0.5px',marginBottom:2}}>Model-Predicted Velocity Ceiling</div>
+                <div style={{fontSize:28,fontWeight:700,color:C.white}}>{cmjCalc.estimatedVelocity.toFixed(1)}<span style={{fontSize:13,color:C.textMuted,fontWeight:400}}> mph</span></div>
+                <div style={{fontSize:10,color:C.textMuted,marginTop:2}}>Video-estimated, not a measurement -- roughly the hardest this jump profile predicts, exceeded only ~{cmjCalc.estimatedVelocityExceedancePct}% of the time</div>
                 <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:8,marginTop:10}}>
                   {[{l:'Jump Height',v:`${cmjCalc.jumpHeightIn.toFixed(1)} in`},{l:'RSI-Mod',v:cmjCalc.rsiMod.toFixed(2)},{l:'PP/kg',v:`${cmjCalc.peakPowerPerKg.toFixed(1)} W/kg`}].map(m=>(
                     <div key={m.l} style={{background:'rgba(0,0,0,0.2)',borderRadius:6,padding:'6px 8px'}}>
