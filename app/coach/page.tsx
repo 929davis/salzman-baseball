@@ -6,6 +6,7 @@ import { useRouter } from 'next/navigation'
 import PitchingIQTab from '@/app/components/PitchingIQTab'
 import AthleticBenchmarks from '@/app/components/AthleticBenchmarks'
 import HopTestPanel from '@/app/components/HopTestPanel'
+import PlyoPushupPanel from '@/app/components/PlyoPushupPanel'
 import PitchMechanics2D from '@/app/components/PitchMechanics2D'
 import ProgressOverview from '@/app/components/ProgressOverview'
 import AthleteStatePanel from '@/app/components/AthleteStatePanel'
@@ -1400,7 +1401,7 @@ Write next week's program by day and category (Pre-Throwing, Throwing, Post-Thro
               <ThrowLogPanel pitcherId={selected.id}/>
 
               <div style={{display:'flex',gap:6,marginBottom:16,flexWrap:'wrap' as const}}>
-                {['overview','weekly','logs','program','iq','benchmarks','hop','mechanics'].map(t=>(
+                {['overview','weekly','logs','program','iq','benchmarks','hop','pushup','mechanics'].map(t=>(
                   <button key={t} style={S.tab(tab===t)} onClick={()=>setTab(t)}>{t}</button>
                 ))}
               </div>
@@ -1873,6 +1874,10 @@ Write next week's program by day and category (Pre-Throwing, Throwing, Post-Thro
 
               {tab==='hop'&&(
                 <div style={{padding:4}}><HopTestPanel pitcherId={selected.id}/></div>
+              )}
+
+              {tab==='pushup'&&(
+                <div style={{padding:4}}><PlyoPushupPanel pitcherId={selected.id}/></div>
               )}
 
               {tab==='mechanics'&&(
