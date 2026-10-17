@@ -105,7 +105,17 @@ export const calcCMJFn=({startTime,bottomTime,takeoffTime,landingTime,stabilizat
   const concentricDurationSec=bottomTime!=null?takeoffTime-bottomTime:undefined
   const landingStabilizationSec=stabilizationTime!=null?stabilizationTime-landingTime:undefined
   const returnToUprightSec=uprightTime!=null?uprightTime-landingTime:undefined
-  return{flightTime:ft,propulsionDurationSec:ttt,jumpHeightIn:jhi,rsiMod:rsi,peakPowerPerKg:ppkg,takeoffVelocity:tv,explosiveIndex:ei,estimatedVelocity:ev,estimatedVelocityExceedancePct:CMJ_VELOCITY_CEILING_EXCEEDANCE_PCT,eccentricDurationSec,concentricDurationSec,landingStabilizationSec,returnToUprightSec}
+  // Concentric impulse, FULL PHASE -- not CI-100. CI-100 specifically measures force in the
+  // first 100ms of the concentric phase; that requires a continuous force or position curve
+  // (force plate or frame-by-frame pose tracking), which two timestamps can't give us. This is
+  // a different, legitimate physics estimate of the TOTAL impulse across the whole concentric
+  // phase, derived from the impulse-momentum theorem: net impulse = mass*takeoff_velocity (since
+  // vertical velocity is ~0 at the bottom of the squat), and ground-reaction impulse also has to
+  // overcome gravity for the full duration of the push, so + mass*g*concentric_duration.
+  // Do not compare this to the Sakurai et al. CI-100 finding (r≈0.71) -- that study measured a
+  // different, narrower window of the same phase.
+  const concentricImpulseNs=concentricDurationSec!=null?(massKg*tv)+(massKg*9.81*concentricDurationSec):undefined
+  return{flightTime:ft,propulsionDurationSec:ttt,jumpHeightIn:jhi,rsiMod:rsi,peakPowerPerKg:ppkg,takeoffVelocity:tv,explosiveIndex:ei,estimatedVelocity:ev,estimatedVelocityExceedancePct:CMJ_VELOCITY_CEILING_EXCEEDANCE_PCT,eccentricDurationSec,concentricDurationSec,landingStabilizationSec,returnToUprightSec,concentricImpulseNs}
 }
 
 // ---------------------------------------------------------------------------

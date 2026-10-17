@@ -31,12 +31,19 @@ describe('calcCMJFn phase timing',()=>{
     expect(r.concentricDurationSec).toBeUndefined()
     expect(r.landingStabilizationSec).toBeUndefined()
     expect(r.returnToUprightSec).toBeUndefined()
+    expect(r.concentricImpulseNs).toBeUndefined()
   })
 
   it('computes eccentric/concentric duration when bottomTime is provided',()=>{
     const r=calcCMJFn({...base,bottomTime:0.3})
     expect(r.eccentricDurationSec).toBeCloseTo(0.3,10)
     expect(r.concentricDurationSec).toBeCloseTo(0.2,10)
+  })
+
+  it('computes full-phase concentric impulse (mass*takeoff_velocity + mass*g*concentric_duration) when bottomTime is provided',()=>{
+    const r=calcCMJFn({...base,bottomTime:0.3})
+    const expected=(base.massKg*r.takeoffVelocity)+(base.massKg*9.81*r.concentricDurationSec!)
+    expect(r.concentricImpulseNs).toBeCloseTo(expected,8)
   })
 
   it('computes landing stabilization and return-to-upright durations independently',()=>{

@@ -336,6 +336,7 @@ export default function PitcherDashboard(){
       explosive_index:cmjResult.explosiveIndex,estimated_velocity:cmjResult.estimatedVelocity,notes:cmjForm.notes||null,
       eccentric_duration_sec:cmjResult.eccentricDurationSec??null,concentric_duration_sec:cmjResult.concentricDurationSec??null,
       landing_stabilization_sec:cmjResult.landingStabilizationSec??null,return_to_upright_sec:cmjResult.returnToUprightSec??null,
+      concentric_impulse_ns:cmjResult.concentricImpulseNs??null,
     })
     if (error){
       console.error('pitcher dashboard: failed to save CMJ result',error)
@@ -738,13 +739,14 @@ export default function PitcherDashboard(){
                       <div style={{marginBottom:12}}>
                         <div style={{fontSize:10,color:C.textMuted,textTransform:'uppercase' as const,letterSpacing:'0.5px',marginBottom:6}}>Video-Derived Timing (timing only -- not force)</div>
                         <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8}}>
-                          {[{l:'Eccentric Duration',v:cmjResult.eccentricDurationSec},{l:'Concentric Duration',v:cmjResult.concentricDurationSec},{l:'Landing Stabilization',v:cmjResult.landingStabilizationSec},{l:'Return to Upright',v:cmjResult.returnToUprightSec}].filter(m=>m.v!=null).map(m=>(
+                          {[{l:'Eccentric Duration',v:cmjResult.eccentricDurationSec,u:'s',digits:2},{l:'Concentric Duration',v:cmjResult.concentricDurationSec,u:'s',digits:2},{l:'Landing Stabilization',v:cmjResult.landingStabilizationSec,u:'s',digits:2},{l:'Return to Upright',v:cmjResult.returnToUprightSec,u:'s',digits:2},{l:'Concentric Impulse (full phase)',v:cmjResult.concentricImpulseNs,u:' N·s',digits:0}].filter(m=>m.v!=null).map(m=>(
                             <div key={m.l} style={{background:'rgba(163,113,247,0.08)',borderRadius:8,padding:'10px'}}>
                               <div style={{fontSize:10,color:C.purple,marginBottom:3}}>{m.l}</div>
-                              <div style={{fontSize:16,fontWeight:700,color:C.white}}>{m.v.toFixed(2)}s</div>
+                              <div style={{fontSize:16,fontWeight:700,color:C.white}}>{m.v.toFixed(m.digits)}{m.u}</div>
                             </div>
                           ))}
                         </div>
+                        {cmjResult.concentricImpulseNs!=null&&<div style={{fontSize:9,color:C.textDim,marginTop:6}}>Concentric Impulse is a physics estimate across the whole push, not CI-100 (which needs a force plate and measures only the first 100ms).</div>}
                       </div>
                     )}
                     <button style={{...btn('gold'),marginTop:0}} onClick={saveCMJ}>Save to Profile</button>

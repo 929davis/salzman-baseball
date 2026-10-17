@@ -689,6 +689,7 @@ export default function CoachDashboard(){
       explosive_index:cmjCalc.explosiveIndex,estimated_velocity:cmjCalc.estimatedVelocity,
       eccentric_duration_sec:cmjCalc.eccentricDurationSec??null,concentric_duration_sec:cmjCalc.concentricDurationSec??null,
       landing_stabilization_sec:cmjCalc.landingStabilizationSec??null,return_to_upright_sec:cmjCalc.returnToUprightSec??null,
+      concentric_impulse_ns:cmjCalc.concentricImpulseNs??null,
     }
     if (cmjEditingId){
       await supabase.from('cmj_results').update(row).eq('id',cmjEditingId)
@@ -2390,13 +2391,14 @@ Accessory | Single Arm DB Row | 3 x 6 @ 70%`}
                 <div style={{background:'rgba(0,0,0,0.15)',borderRadius:8,padding:12,marginBottom:12}}>
                   <div style={{fontSize:9,color:C.textMuted,textTransform:'uppercase' as const,letterSpacing:'0.5px',marginBottom:8}}>Video-Derived Timing (timing only -- not force)</div>
                   <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8}}>
-                    {[{l:'Eccentric Duration',v:cmjCalc.eccentricDurationSec},{l:'Concentric Duration',v:cmjCalc.concentricDurationSec},{l:'Landing Stabilization',v:cmjCalc.landingStabilizationSec},{l:'Return to Upright',v:cmjCalc.returnToUprightSec}].filter(m=>m.v!=null).map(m=>(
+                    {[{l:'Eccentric Duration',v:cmjCalc.eccentricDurationSec,u:'s',digits:2},{l:'Concentric Duration',v:cmjCalc.concentricDurationSec,u:'s',digits:2},{l:'Landing Stabilization',v:cmjCalc.landingStabilizationSec,u:'s',digits:2},{l:'Return to Upright',v:cmjCalc.returnToUprightSec,u:'s',digits:2},{l:'Concentric Impulse (full phase)',v:cmjCalc.concentricImpulseNs,u:' N·s',digits:0}].filter(m=>m.v!=null).map(m=>(
                       <div key={m.l} style={{background:'rgba(0,0,0,0.2)',borderRadius:6,padding:'6px 8px'}}>
                         <div style={{fontSize:9,color:C.textMuted}}>{m.l}</div>
-                        <div style={{fontSize:13,fontWeight:700,color:C.white}}>{m.v.toFixed(2)}s</div>
+                        <div style={{fontSize:13,fontWeight:700,color:C.white}}>{m.v.toFixed(m.digits)}{m.u}</div>
                       </div>
                     ))}
                   </div>
+                  {cmjCalc.concentricImpulseNs!=null&&<div style={{fontSize:9,color:C.textDim,marginTop:8}}>Concentric Impulse is a physics estimate across the whole push, not CI-100 (which needs a force plate and measures only the first 100ms).</div>}
                 </div>
               )}
               <div style={{display:'flex',gap:8}}>
