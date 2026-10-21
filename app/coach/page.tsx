@@ -9,8 +9,6 @@ import HopTestPanel from '@/app/components/HopTestPanel'
 import PlyoPushupPanel from '@/app/components/PlyoPushupPanel'
 import PitchMechanics2D from '@/app/components/PitchMechanics2D'
 import ProgressOverview from '@/app/components/ProgressOverview'
-import AthleteStatePanel from '@/app/components/AthleteStatePanel'
-import ThrowLogPanel from '@/app/components/ThrowLogPanel'
 import MiniSparkline from '@/app/components/MiniSparkline'
 import TestVideoLink from '@/app/components/TestVideoLink'
 import { useTestVideos } from '@/lib/testVideos'
@@ -1396,8 +1394,6 @@ Write next week's program by day and category (Pre-Throwing, Throwing, Post-Thro
               </div>
 
               <ProgressOverview pitcherId={selected.id} mode="coach"/>
-              <AthleteStatePanel pitcherId={selected.id}/>
-              <ThrowLogPanel pitcherId={selected.id}/>
 
               <div style={{display:'flex',gap:6,marginBottom:16,flexWrap:'wrap' as const}}>
                 {['overview','weekly','logs','program','iq','benchmarks','hop','pushup','mechanics'].map(t=>(
@@ -1638,30 +1634,6 @@ Write next week's program by day and category (Pre-Throwing, Throwing, Post-Thro
                           ))}
                         </div>
                       )}
-                    </div>
-
-                    <div style={S.card}>
-                      <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:10}}>
-                        <div style={{fontSize:11,color:C.textMuted,fontWeight:700,textTransform:'uppercase' as const,letterSpacing:'1px'}}>This Week's Program</div>
-                        <button onClick={()=>setTab('program')} style={S.btn('gold')}>Edit Program →</button>
-                      </div>
-                      {(()=>{
-                        const rows=DAYS.map(day=>{
-                          const dayExercises=CATEGORIES.flatMap(cat=>structuredDays[`${day}___${cat.key}`]||[])
-                          return {day,dayExercises}
-                        }).filter(r=>r.dayExercises.length>0)
-                        if (rows.length===0) return <div style={{fontSize:12,color:C.textDim}}>No program set for this week yet.</div>
-                        return (
-                          <div style={{display:'flex',flexDirection:'column' as const,gap:6}}>
-                            {rows.map(r=>(
-                              <div key={r.day} style={{fontSize:12}}>
-                                <span style={{color:C.gold,fontWeight:600}}>{r.day}: </span>
-                                <span style={{color:C.textMuted}}>{r.dayExercises.map((e:any)=>e.name).join(', ')}</span>
-                              </div>
-                            ))}
-                          </div>
-                        )
-                      })()}
                     </div>
                   </div>
                 )
