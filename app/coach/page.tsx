@@ -14,8 +14,7 @@ import ThrowLogPanel from '@/app/components/ThrowLogPanel'
 import MiniSparkline from '@/app/components/MiniSparkline'
 import TestVideoLink from '@/app/components/TestVideoLink'
 import { useTestVideos } from '@/lib/testVideos'
-import { restDaysRequired, daysUntilClearToThrow, DAILY_MAX_PITCHES, PITCH_SMART_NOTES } from '@/lib/pitchSmart'
-import { THROWERS_TEN, THROWERS_TEN_SETS, THROWERS_TEN_REPS } from '@/lib/throwersTen'
+import { restDaysRequired, daysUntilClearToThrow } from '@/lib/pitchSmart'
 import { bundleAllPrinciples, formatPrinciplesForPrompt, summarizePrinciples, type PrinciplesSection } from '@/lib/principlesSections'
 import { checkDeprecated, checkEquipmentTier, checkGateRequirement, checkThrowingIntent, checkCNSAdjacency, computeAthleteConstraints, renderAthleteConstraintsBlock, type EngineAthleteState, type EngineExercise, type EngineSlot } from '@/lib/engine'
 import PrinciplesSectionsEditor from '@/app/components/PrinciplesSectionsEditor'
@@ -443,7 +442,6 @@ export default function CoachDashboard(){
   const [throwEntries, setThrowEntries] = useState<any[]>([])
   const [showThrowEntries,setShowThrowEntries]=useState(false)
   const [newThrowEntry,setNewThrowEntry]=useState({label:'',weekly_count:'',surface:'',effort_tier:''})
-  const [showThrowersTen,setShowThrowersTen]=useState(false)
   const [tab,setTab]=useState('overview')
   const [view,setView]=useState('roster')
   const [loading,setLoading]=useState(true)
@@ -1417,81 +1415,6 @@ Write next week's program by day and category (Pre-Throwing, Throwing, Post-Thro
                       </div>
                     ))}
                   </div>
-
-                  {/* Workload / Rest — split out from the old Arm Care card. The arm-care
-                      test logging, trends, and workload-vs-arm-health flag that used to live
-                      here were removed (will be replaced); Pitch Smart rest status and the
-                      Thrower's Ten reference don't depend on arm_care_tests data, so they stay. */}
-                  {(()=>{
-                    const lastPitchSession=logs.find((l:any)=>l.pitch_count!=null)||null
-                    const daysOwed=lastPitchSession?daysUntilClearToThrow(lastPitchSession.pitch_count,lastPitchSession.log_date):0
-                    const requiredRest=lastPitchSession?restDaysRequired(lastPitchSession.pitch_count):0
-                    return (
-                      <div style={{...S.card,marginBottom:12}}>
-                        <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:12}}>
-                          <div style={{fontSize:11,color:C.textMuted,fontWeight:700,textTransform:'uppercase' as const,letterSpacing:'1px'}}>Workload</div>
-                          <div style={{display:'flex',gap:8}}>
-                            <button onClick={()=>setShowThrowersTen(s=>!s)} style={S.btn()}>{showThrowersTen?'Hide':'Show'} Thrower's Ten</button>
-                          </div>
-                        </div>
-                        <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10,marginBottom:8}}>
-                          <div style={{background:C.bg3,border:`1px solid ${C.border}`,borderRadius:8,padding:'10px 14px'}}>
-                            <div style={{fontSize:10,color:C.textMuted,textTransform:'uppercase' as const,letterSpacing:'0.5px',marginBottom:4}}>Last Outing</div>
-                            <div style={{fontSize:18,fontWeight:700,color:C.white}}>{lastPitchSession?`${lastPitchSession.pitch_count} pitches`:'—'}<span style={{fontSize:10,color:C.textDim,fontWeight:400}}> / {DAILY_MAX_PITCHES} max</span></div>
-                            {lastPitchSession&&<div style={{fontSize:10,color:C.textDim,marginTop:2}}>{new Date(lastPitchSession.log_date+'T00:00:00').toLocaleDateString()}</div>}
-                          </div>
-                          <div style={{background:daysOwed>0?C.goldBg:C.bg3,border:`1px solid ${daysOwed>0?C.goldDim:C.border}`,borderRadius:8,padding:'10px 14px'}}>
-                            <div style={{fontSize:10,color:daysOwed>0?C.gold:C.textMuted,textTransform:'uppercase' as const,letterSpacing:'0.5px',marginBottom:4}}>Rest Status</div>
-                            <div style={{fontSize:18,fontWeight:700,color:daysOwed>0?C.gold:C.white}}>{!lastPitchSession?'—':daysOwed>0?`${daysOwed} day${daysOwed===1?'':'s'} left`:'Clear to throw'}</div>
-                          </div>
-                        </div>
-                        <div style={{background:C.bg3,border:`1px solid ${C.border}`,borderRadius:8,padding:'10px 12px',marginBottom:12}}>
-                          <div style={{fontSize:11,fontWeight:700,color:C.text,marginBottom:6}}>What this means</div>
-                          <div style={{fontSize:11,color:C.textMuted,lineHeight:1.6}}>Based on Pitch Smart (MLB/USA Baseball, developed with ASMI research): {lastPitchSession?`the last logged outing was ${lastPitchSession.pitch_count} pitches, which calls for ${requiredRest} day${requiredRest===1?'':'s'} of rest before pitching again.`:'no pitch count has been logged yet.'} Pitch Smart also recommends never pitching in a game on 3 consecutive days regardless of count, and at least 3 months off from competitive pitching per year (including 4 continuous weeks of no throwing at all). This is workload guidance, not a medical diagnosis — cross-check against soreness reports and how the arm actually feels.</div>
-                        </div>
-                        {showThrowersTen&&(
-                          <div style={{marginTop:12,paddingTop:12,borderTop:`1px solid ${C.border}`}}>
-                            <div style={{fontSize:10,color:C.textDim,marginBottom:10,lineHeight:1.6}}>Wilk et al.'s EMG-researched rotator cuff/scapular program for throwing athletes. Standard dose: {THROWERS_TEN_SETS} sets of {THROWERS_TEN_REPS} reps each, band or light dumbbell, minimal rest between exercises.</div>
-                            <div style={{display:'flex',flexDirection:'column' as const,gap:6}}>
-                              {THROWERS_TEN.map(ex=>(
-                                <div key={ex.key} style={{background:C.bg3,borderRadius:6,padding:'6px 10px',fontSize:11}}>
-                                  <span style={{color:C.gold,fontWeight:700}}>{ex.order}. </span>
-                                  <span style={{color:C.white,fontWeight:600}}>{ex.name}</span>
-                                  <span style={{color:C.textMuted}}> — {ex.description}</span>
-                                </div>
-                              ))}
-                            </div>
-                            <div style={{fontSize:10,color:C.textDim,marginTop:8,lineHeight:1.5}}>
-                              {PITCH_SMART_NOTES.map((n,i)=><div key={i}>• {n}</div>)}
-                            </div>
-                          </div>
-                        )}
-                      </div>
-                    )
-                  })()}
-
-                  {/* Workload Trend — from logged sessions, not the throw_volume_entries
-                      breakdown (that table is a snapshot of the CURRENT week's program by
-                      category, not a time series, so it has nothing to chart over time). */}
-                  {logs.length>1&&(()=>{
-                    const asc=[...logs].reverse()
-                    const pitchHist=asc.map(r=>({date:r.log_date,value:r.pitch_count})).filter(h=>h.value!=null)
-                    const heHist=asc.map(r=>({date:r.log_date,value:r.high_effort_throws})).filter(h=>h.value!=null)
-                    if (pitchHist.length<2 && heHist.length<2) return null
-                    return (
-                      <div style={{...S.card,marginBottom:12}}>
-                        <div style={{fontSize:11,color:C.textMuted,fontWeight:700,textTransform:'uppercase' as const,letterSpacing:'1px',marginBottom:12}}>Workload Trend</div>
-                        <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(160px,1fr))',gap:10}}>
-                          {[{label:'Pitch Count',hist:pitchHist,color:C.blue,unit:''},{label:'High-Effort Throws',hist:heHist,color:C.red,unit:''}].map(m=>(
-                            <div key={m.label}>
-                              <div style={{fontSize:10,color:C.textMuted,textTransform:'uppercase' as const,letterSpacing:'0.5px',marginBottom:4}}>{m.label}</div>
-                              {m.hist.length>1?<MiniSparkline data={m.hist} color={m.color} unit={m.unit} height={70}/>:<div style={{fontSize:11,color:C.textDim,padding:'20px 0',textAlign:'center' as const}}>Not enough data</div>}
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-                    )
-                  })()}
 
                   {/* CMJ Trends */}
                   {cmjResults.length>1&&(()=>{
