@@ -135,10 +135,6 @@ const CLASS_COLORS:Record<string,{bg:string,border:string,text:string}> = {
   'No Data':{bg:'rgba(72,79,88,0.1)',border:'rgba(72,79,88,0.35)',text:'#7d8590'},
 }
 
-const MEAL_TYPE_COLORS:Record<string,string> = {
-  'Pre-Training':'#58a6ff','Post-Training':'#39d353','Recovery Meal':'#a371f7','Regular Meal':'#e8b84b'
-}
-
 const READINESS_OPTIONS = [
   {value:'trusts_it',label:'Trusts It'},
   {value:'hesitant',label:'Hesitant'},
@@ -147,13 +143,6 @@ const READINESS_OPTIONS = [
 const READINESS_COLORS:Record<string,string> = {trusts_it:'#39d353',hesitant:'#e8b84b',guarding:'#f85149'}
 // RTT-phase UI removed for a rework (the phase/tier model wasn't landing well) — the
 // profiles.rtt_phase column and its data are untouched, so this can come back cleanly later.
-
-function scoreColor(score:number){
-  if (score>=80) return '#39d353'
-  if (score>=60) return '#e8b84b'
-  if (score>=40) return '#f97316'
-  return '#f85149'
-}
 
 const BUILT_IN_EXERCISES = [
   {id:'ex_001',name:'Barbell Back Squat',pattern:'Squat',category:'Main Exercises',cns:'High',description:'Stand with bar on upper traps, feet shoulder-width. Brace core, push knees out, descend until thighs parallel or below.',movement_category:'bilateral_squat_strength',equipment_tier:'E1',deprecated:false,throwing_phase:null},
@@ -512,16 +501,11 @@ export default function CoachDashboard(){
   const [libSearch,setLibSearch]=useState('')
   const [libCat,setLibCat]=useState('All')
   const [recommendationRules,setRecommendationRules]=useState<any[]>([])
-  // Food log state
-  const [todayFoodLogs,setTodayFoodLogs]=useState<any[]>([])
-  const [todayFuelScore,setTodayFuelScore]=useState<any>(null)
-  const [weekFuelScores,setWeekFuelScores]=useState<any[]>([])
 
   const router=useRouter()
   const supabase=createClient()
   const {videos:testVideos, saveVideo:saveTestVideo} = useTestVideos()
   const parsedPrinciples = useMemo(()=>parsePrinciples(principles),[principles])
-  const today=new Date().toISOString().split('T')[0]
 
   const EXERCISE_DB = useMemo(()=>{
     return [...BUILT_IN_EXERCISES,...customExercises].map(ex=>{
@@ -625,22 +609,15 @@ export default function CoachDashboard(){
       femoral_torsion_trail_leg:p.femoral_torsion_trail_leg||'',femoral_torsion_lead_leg:p.femoral_torsion_lead_leg||'',
       foot_arch_type:p.foot_arch_type||'',elbow_carrying_angle:p.elbow_carrying_angle||'',elbow_laxity:p.elbow_laxity||'',
     })
-    const sevenDaysAgo=new Date(Date.now()-7*24*60*60*1000).toISOString().split('T')[0]
-    const [logsRes,cmjRes,,foodRes,fuelRes,weekFuelRes,throwRes,hopRes]=await Promise.all([
+    const [logsRes,cmjRes,,throwRes,hopRes]=await Promise.all([
       supabase.from('session_logs').select('*').eq('pitcher_id',p.id).order('log_date',{ascending:false}),
       supabase.from('cmj_results').select('*').eq('pitcher_id',p.id).order('test_date',{ascending:false}),
       loadProgramForWeek(p.id,currentWeekOf()),
-      supabase.from('food_logs').select('*').eq('pitcher_id',p.id).eq('log_date',today).order('created_at'),
-      supabase.from('daily_fuel_scores').select('*').eq('pitcher_id',p.id).eq('log_date',today).maybeSingle(),
-      supabase.from('daily_fuel_scores').select('*').eq('pitcher_id',p.id).gte('log_date',sevenDaysAgo).order('log_date'),
       supabase.from('throw_volume_entries').select('*').eq('pitcher_id',p.id).order('created_at'),
       supabase.from('hop_test_results').select('*').eq('pitcher_id',p.id).order('test_date',{ascending:false}),
     ])
     setLogs(logsRes.data||[])
     setCmjResults(cmjRes.data||[])
-    setTodayFoodLogs(foodRes.data||[])
-    setTodayFuelScore(fuelRes.data||null)
-    setWeekFuelScores(weekFuelRes.data||[])
     setThrowEntries(throwRes.data||[])
     setHopResults(hopRes.data||[])
   }
@@ -1369,7 +1346,6 @@ Write next week's program by day and category (Pre-Throwing, Throwing, Post-Thro
             const classCol=CLASS_COLORS[classification]||CLASS_COLORS['No Data']
             const rule=recommendationRules.find(r=>r.classification===classification)
             const cmjRecommendation=getRecommendation(classification)
-            const todayScore=todayFuelScore?.total_score||0
 
             return(
             <div>
@@ -1517,20 +1493,16 @@ Write next week's program by day and category (Pre-Throwing, Throwing, Post-Thro
               <ProgressOverview pitcherId={selected.id} mode="coach"/>
 
               <div style={{display:'flex',gap:6,marginBottom:16,flexWrap:'wrap' as const}}>
-                {['overview','weekly','logs','program','iq','benchmarks','hop','pushup','mechanics'].map(t=>(
+                {['overview','logs','program','iq','benchmarks','mechanics'].map(t=>(
                   <button key={t} style={S.tab(tab===t)} onClick={()=>setTab(t)}>{t}</button>
                 ))}
               </div>
 
               {tab==='overview'&&(
                 <div>
-                  <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:12,marginBottom:12}}>
-                    {[{label:'Pitches/Wk',val:selected.weekly_pitches||'—'},{label:'HE Throws/Wk',val:selected.weekly_high_effort||'—'},{label:'CMJ Tests',val:cmjResults.length}].map(m=>(
-                      <div key={m.label} style={{background:C.bg3,border:`1px solid ${C.border}`,borderRadius:8,padding:'12px 14px'}}>
-                        <div style={{fontSize:10,color:C.textMuted,textTransform:'uppercase' as const,letterSpacing:'0.5px',marginBottom:4}}>{m.label}</div>
-                        <div style={{fontSize:22,fontWeight:700,color:C.white}}>{m.val}</div>
-                      </div>
-                    ))}
+                  <div style={{display:'inline-block',background:C.bg3,border:`1px solid ${C.border}`,borderRadius:8,padding:'12px 14px',marginBottom:12}}>
+                    <div style={{fontSize:10,color:C.textMuted,textTransform:'uppercase' as const,letterSpacing:'0.5px',marginBottom:4}}>CMJ Tests</div>
+                    <div style={{fontSize:22,fontWeight:700,color:C.white}}>{cmjResults.length}</div>
                   </div>
 
                   {/* CMJ Trends */}
@@ -1614,151 +1586,19 @@ Write next week's program by day and category (Pre-Throwing, Throwing, Post-Thro
                     </div>
                   )}
 
-                  {/* Fuel Score */}
+                  {/* Hop Test — moved up from its own top-level tab, alongside CMJ */}
                   <div style={{...S.card,marginBottom:12}}>
-                    <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:12}}>
-                      <div style={{fontSize:11,color:C.textMuted,fontWeight:700,textTransform:'uppercase' as const,letterSpacing:'1px'}}>Today's Fuel Score</div>
-                      {todayFuelScore?.water_oz>0&&<div style={{fontSize:11,color:C.blue}}>💧 {todayFuelScore.water_oz} oz water</div>}
-                    </div>
-
-                    {todayScore>0?(
-                      <div>
-                        <div style={{display:'flex',alignItems:'center',gap:16,marginBottom:12}}>
-                          <div style={{fontSize:48,fontWeight:700,color:scoreColor(todayScore),letterSpacing:'-2px'}}>{todayScore}<span style={{fontSize:16,color:C.textMuted,fontWeight:400}}>/100</span></div>
-                          <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:6,flex:1}}>
-                            {[{l:'Macros',v:todayFuelScore?.macro_score||0,max:30},{l:'Quality',v:todayFuelScore?.quality_score||0,max:30},{l:'Glycemic',v:todayFuelScore?.glycemic_score||0,max:20},{l:'Timing',v:todayFuelScore?.timing_score||0,max:20}].map(s=>(
-                              <div key={s.l} style={{background:C.bg3,borderRadius:6,padding:'5px 8px'}}>
-                                <div style={{fontSize:9,color:C.textMuted}}>{s.l}</div>
-                                <div style={{fontSize:12,fontWeight:700,color:C.white}}>{s.v}<span style={{fontSize:9,color:C.textDim}}>/{s.max}</span></div>
-                              </div>
-                            ))}
-                          </div>
-                        </div>
-
-                        {/* Today's meals */}
-                        {todayFoodLogs.length>0&&(
-                          <div>
-                            <div style={{fontSize:10,color:C.textMuted,fontWeight:700,textTransform:'uppercase' as const,letterSpacing:'0.5px',marginBottom:8}}>Meals Today</div>
-                            {todayFoodLogs.map((meal:any,i:number)=>{
-                              const mealCol=MEAL_TYPE_COLORS[meal.meal_type]||C.textMuted
-                              return(
-                                <div key={i} style={{padding:'8px 10px',background:C.bg3,borderRadius:6,marginBottom:6,borderLeft:`3px solid ${mealCol}`}}>
-                                  <div style={{display:'flex',justifyContent:'space-between',marginBottom:4}}>
-                                    <span style={{fontSize:10,color:mealCol,fontWeight:700,textTransform:'uppercase' as const,letterSpacing:'0.3px'}}>{meal.meal_type}</span>
-                                    <span style={{fontSize:11,color:C.gold,fontWeight:600}}>{Math.round(meal.estimated_calories)} cal</span>
-                                  </div>
-                                  <div style={{fontSize:12,color:C.white,marginBottom:4}}>{meal.meal_description}</div>
-                                  <div style={{display:'flex',gap:10}}>
-                                    <span style={{fontSize:10,color:C.teal}}>P: {meal.estimated_protein}g</span>
-                                    <span style={{fontSize:10,color:C.blue}}>C: {meal.estimated_carbs}g</span>
-                                    <span style={{fontSize:10,color:C.gold}}>F: {meal.estimated_fat}g</span>
-                                    <span style={{fontSize:10,color:C.textMuted}}>GL: {meal.gl_score}</span>
-                                  </div>
-                                  {meal.pro_metabolic_foods?.length>0&&<div style={{fontSize:10,color:C.teal,marginTop:3}}>✓ {meal.pro_metabolic_foods.join(', ')}</div>}
-                                </div>
-                              )
-                            })}
-                          </div>
-                        )}
-
-                        {/* 7-day trend */}
-                        {weekFuelScores.length>1&&(
-                          <div style={{marginTop:12}}>
-                            <div style={{fontSize:10,color:C.textMuted,fontWeight:700,textTransform:'uppercase' as const,letterSpacing:'0.5px',marginBottom:8}}>7-Day Fuel Trend</div>
-                            <div style={{display:'flex',gap:4,alignItems:'flex-end',height:48}}>
-                              {weekFuelScores.map((s:any,i:number)=>{
-                                const score=s.total_score||0
-                                const height=Math.max(4,Math.round((score/100)*44))
-                                return(
-                                  <div key={i} style={{flex:1,display:'flex',flexDirection:'column' as const,alignItems:'center',gap:2}}>
-                                    <div style={{width:'100%',height,background:scoreColor(score),borderRadius:2,minHeight:4}}/>
-                                    <div style={{fontSize:8,color:C.textDim}}>{score}</div>
-                                  </div>
-                                )
-                              })}
-                            </div>
-                          </div>
-                        )}
-                      </div>
-                    ):(
-                      <div style={{fontSize:13,color:C.textDim}}>No food logged today.</div>
-                    )}
+                    <div style={{fontSize:11,color:C.textMuted,fontWeight:700,textTransform:'uppercase' as const,letterSpacing:'1px',marginBottom:12}}>Hop Test</div>
+                    <HopTestPanel pitcherId={selected.id}/>
                   </div>
 
-                  {/* Recent sessions */}
-                  {logs.length>0&&(
-                    <div style={S.card}>
-                      <div style={{fontSize:11,color:C.textMuted,fontWeight:700,textTransform:'uppercase' as const,letterSpacing:'1px',marginBottom:12}}>Recent Sessions</div>
-                      {logs.slice(0,5).map((log:any,i:number)=>(
-                        <div key={i} style={{borderBottom:`1px solid ${C.border}`,padding:'10px 0',display:'flex',gap:16}}>
-                          <div style={{minWidth:80,fontSize:11,color:C.textMuted}}>{log.log_date}</div>
-                          <div style={{display:'flex',gap:16,flexWrap:'wrap' as const}}>
-                            {log.velocity&&<span style={{fontSize:12,color:C.gold}}>{log.velocity} mph</span>}
-                            {log.weight_lifted&&<span style={{fontSize:12,color:C.teal}}>{log.weight_lifted} lbs</span>}
-                            {log.feeling&&<span style={{fontSize:12,color:log.feeling>=7?C.teal:log.feeling>=4?C.gold:C.red}}>{log.feeling}/10</span>}
-                            {log.soreness?.length>0&&<span style={{fontSize:12,color:C.red}}>{log.soreness.join(', ')}</span>}
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  )}
+                  {/* Plyo Push-Up — moved up from its own top-level tab, alongside CMJ */}
+                  <div style={S.card}>
+                    <div style={{fontSize:11,color:C.textMuted,fontWeight:700,textTransform:'uppercase' as const,letterSpacing:'1px',marginBottom:12}}>Plyo Push-Up</div>
+                    <PlyoPushupPanel pitcherId={selected.id}/>
+                  </div>
                 </div>
               )}
-
-              {tab==='weekly'&&(()=>{
-                const lastPitchSession=logs.find((l:any)=>l.pitch_count!=null)||null
-                const daysOwed=lastPitchSession?daysUntilClearToThrow(lastPitchSession.pitch_count,lastPitchSession.log_date):0
-                const {classification}=classifyCMJ(cmjResults[0])
-
-                const flags:{label:string,color:string}[]=[]
-                if (daysOwed>0) flags.push({label:`Rest owed: ${daysOwed} day${daysOwed===1?'':'s'} before next outing`, color:C.gold})
-                if (classification==='Both Limited'||classification==='Rate Limiter'||classification==='Magnitude Limiter') flags.push({label:`CMJ classification: ${classification}`, color:C.purple})
-
-                const recentLogs=logs.slice(0,7)
-
-                return (
-                  <div>
-                    <div style={{fontSize:11,color:C.textDim,marginBottom:16,lineHeight:1.5}}>Everything worth checking before adjusting {selected.full_name}'s program for next week — flags, recent feedback, and this week's assignment. Doesn't include Athletic Benchmarks/Mobility Screens flags yet (those live on the Benchmarks tab).</div>
-
-                    <div style={{...S.card,marginBottom:12}}>
-                      <div style={{fontSize:11,color:C.textMuted,fontWeight:700,textTransform:'uppercase' as const,letterSpacing:'1px',marginBottom:10}}>Flags</div>
-                      {flags.length===0?(
-                        <div style={{fontSize:12,color:C.textDim}}>Nothing flagged right now.</div>
-                      ):(
-                        <div style={{display:'flex',flexDirection:'column' as const,gap:8}}>
-                          {flags.map((f,i)=>(
-                            <div key={i} style={{display:'flex',alignItems:'center',gap:8,fontSize:12,color:C.text}}>
-                              <div style={{width:8,height:8,borderRadius:4,background:f.color,flexShrink:0}}/>
-                              {f.label}
-                            </div>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-
-                    <div style={{...S.card,marginBottom:12}}>
-                      <div style={{fontSize:11,color:C.textMuted,fontWeight:700,textTransform:'uppercase' as const,letterSpacing:'1px',marginBottom:10}}>Recent Feedback (last {recentLogs.length} log{recentLogs.length===1?'':'s'})</div>
-                      {recentLogs.length===0?(
-                        <div style={{fontSize:12,color:C.textDim}}>No logs yet.</div>
-                      ):(
-                        <div style={{display:'flex',flexDirection:'column' as const,gap:6}}>
-                          {recentLogs.map((log:any,i:number)=>(
-                            <div key={i} style={{background:C.bg3,borderRadius:6,padding:'8px 10px',fontSize:12}}>
-                              <div style={{display:'flex',gap:12,flexWrap:'wrap' as const}}>
-                                <span style={{color:C.textMuted,minWidth:80}}>{log.log_date}</span>
-                                <span style={{color:log.feeling>=7?C.teal:log.feeling>=4?C.gold:C.red}}>Feeling {log.feeling??'—'}/10</span>
-                                {log.readiness&&<span style={{color:READINESS_COLORS[log.readiness]}}>{READINESS_OPTIONS.find((o:any)=>o.value===log.readiness)?.label}</span>}
-                                {log.soreness?.length>0&&<span style={{color:C.red}}>Sore: {log.soreness.join(', ')}</span>}
-                              </div>
-                              {log.notes&&<div style={{color:C.textDim,fontStyle:'italic' as const,marginTop:4}}>"{log.notes}"</div>}
-                            </div>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                )
-              })()}
 
               {tab==='logs'&&(
                 <div style={S.card}>
@@ -1887,14 +1727,6 @@ Write next week's program by day and category (Pre-Throwing, Throwing, Post-Thro
 
               {tab==='benchmarks'&&(
                 <div style={{padding:4}}><AthleticBenchmarks pitcherId={selected.id} getRecommendation={getRecommendation} cmjResults={cmjResults} hopResults={hopResults} showCorrelations/></div>
-              )}
-
-              {tab==='hop'&&(
-                <div style={{padding:4}}><HopTestPanel pitcherId={selected.id}/></div>
-              )}
-
-              {tab==='pushup'&&(
-                <div style={{padding:4}}><PlyoPushupPanel pitcherId={selected.id}/></div>
               )}
 
               {tab==='mechanics'&&(
