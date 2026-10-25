@@ -161,6 +161,18 @@ export const POWER_TIER_COLORS: Record<PowerTestTier,string> = {
   Excellent:'#39d353', Good:'#58a6ff', Marginal:'#e8b84b', Deficit:'#f85149',
 }
 
+// Power Tests sitting at Marginal/Deficit on the most recent athletic_benchmarks row --
+// shared by AthleticBenchmarks.tsx's own Power Tests card and the Program tab's "Suggested
+// Corrective Work" banner, so the two never compute this differently.
+export function flaggedPowerTests(latestBench: any | null | undefined): {key:string,label:string,statusLabel:string}[] {
+  if (!latestBench) return []
+  return POWER_TESTS.map(def=>{
+    const value=def.reuseKey?latestBench[def.reuseKey]:latestBench[def.key]
+    return {def, tier:powerTestTier(def,value)}
+  }).filter(x=>x.tier==='Marginal'||x.tier==='Deficit')
+    .map(x=>({key:x.def.reuseKey?`benchmark_${x.def.reuseKey}`:`powertest_${x.def.key}`, label:x.def.label, statusLabel:x.tier as string}))
+}
+
 // ---------------------------------------------------------------------------
 // Mobility/Stability Screens — pass/fail-style qualitative screens (the TPI
 // screening battery), modeled as a status per screen rather than forced into
@@ -195,4 +207,15 @@ export const MOBILITY_SCREENS: MobilityScreenDef[] = [
 
 export const SCREEN_STATUS_COLORS: Record<ScreenStatus,string> = {
   Pass:'#39d353', Limited:'#e8b84b', Fail:'#f85149',
+}
+
+// Mobility screens sitting at Limited/Fail on the most recent mobility_screens row -- shared
+// by AthleticBenchmarks.tsx's own Mobility/Stability Screens card and the Program tab's
+// "Suggested Corrective Work" banner, same reasoning as flaggedPowerTests above.
+export function flaggedMobilityScreens(latestScreens: any | null | undefined): {key:string,label:string,statusLabel:string}[] {
+  if (!latestScreens) return []
+  return MOBILITY_SCREENS.filter(s=>{
+    const status=latestScreens[s.key]
+    return status==='Limited'||status==='Fail'
+  }).map(s=>({key:`mobility_${s.key}`, label:s.label, statusLabel:latestScreens[s.key]}))
 }

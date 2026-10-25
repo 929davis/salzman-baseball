@@ -2,8 +2,8 @@
 import { useEffect, useState, useCallback } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { BENCHMARKS, TIER_INFO, benchmarkStatus, scalePct, type BenchmarkDef,
-  POWER_TESTS, powerTestTier, POWER_TIER_COLORS, type PowerTestDef,
-  MOBILITY_SCREENS, SCREEN_STATUS_COLORS, type ScreenStatus, type MobilityScreenDef } from '@/lib/benchmarks'
+  POWER_TESTS, powerTestTier, POWER_TIER_COLORS, type PowerTestDef, flaggedPowerTests,
+  MOBILITY_SCREENS, SCREEN_STATUS_COLORS, type ScreenStatus, type MobilityScreenDef, flaggedMobilityScreens } from '@/lib/benchmarks'
 import { useTestVideos } from '@/lib/testVideos'
 import MiniSparkline from '@/app/components/MiniSparkline'
 import TestVideoLink from '@/app/components/TestVideoLink'
@@ -119,7 +119,7 @@ type Recommendation = { exercises:RecommendedExercise[], notes:string|null }
 
 // Shared by Mobility Screens, Benchmarks, and Power Tests below — one "why this helps, and
 // what to do about it" rendering, not three near-copies drifting apart.
-function RecommendedWorkList({items, getRecommendation}:{items:{key:string,label:string,statusLabel:string}[], getRecommendation:(key:string)=>Recommendation}){
+export function RecommendedWorkList({items, getRecommendation}:{items:{key:string,label:string,statusLabel:string}[], getRecommendation:(key:string)=>Recommendation}){
   const rendered = items.map(item=>{
     const rec = getRecommendation(item.key)
     if (!rec.exercises.length) return null
@@ -370,14 +370,7 @@ export default function AthleticBenchmarks({pitcherId, getRecommendation, cmjRes
               hasVideo={!!videos[def.key]} onOpen={()=>setDetailModal({type:'power',def})}/>
           })}
         </div>
-        {getRecommendation && (()=>{
-          const items=POWER_TESTS.map(def=>{
-            const value=def.reuseKey?latest?.[def.reuseKey]:latest?.[def.key]
-            return {def, tier:powerTestTier(def,value)}
-          }).filter(x=>x.tier==='Marginal'||x.tier==='Deficit')
-            .map(x=>({key:x.def.reuseKey?`benchmark_${x.def.reuseKey}`:`powertest_${x.def.key}`, label:x.def.label, statusLabel:x.tier as string}))
-          return <RecommendedWorkList items={items} getRecommendation={getRecommendation}/>
-        })()}
+        {getRecommendation && <RecommendedWorkList items={flaggedPowerTests(latest)} getRecommendation={getRecommendation}/>}
       </div>
 
       <div style={{background:C.bg2,border:`1px solid ${C.border}`,borderRadius:8,padding:16,marginBottom:12}}>
@@ -391,15 +384,7 @@ export default function AthleticBenchmarks({pitcherId, getRecommendation, cmjRes
           ))}
         </div>
 
-        {getRecommendation && (
-          <RecommendedWorkList
-            items={MOBILITY_SCREENS.filter(s=>{
-              const status=screenLatest?.[s.key]
-              return status==='Limited'||status==='Fail'
-            }).map(s=>({key:`mobility_${s.key}`,label:s.label,statusLabel:screenLatest?.[s.key]||''}))}
-            getRecommendation={getRecommendation}
-          />
-        )}
+        {getRecommendation && <RecommendedWorkList items={flaggedMobilityScreens(screenLatest)} getRecommendation={getRecommendation}/>}
       </div>
 
       {detailModal?.type==='power' && (()=>{

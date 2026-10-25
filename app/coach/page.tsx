@@ -4,7 +4,7 @@ import { useEffect, useState, useMemo } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { useRouter } from 'next/navigation'
 import PitchingIQTab from '@/app/components/PitchingIQTab'
-import AthleticBenchmarks from '@/app/components/AthleticBenchmarks'
+import AthleticBenchmarks, { RecommendedWorkList } from '@/app/components/AthleticBenchmarks'
 import HopTestPanel from '@/app/components/HopTestPanel'
 import PlyoPushupPanel from '@/app/components/PlyoPushupPanel'
 import PitchMechanics2D from '@/app/components/PitchMechanics2D'
@@ -24,6 +24,7 @@ import {
   HUMERAL_TORSION_HOW_TO_TEST, FEMORAL_TORSION_HOW_TO_TEST, FOOT_ARCH_HOW_TO_TEST,
   ELBOW_CARRYING_ANGLE_HOW_TO_TEST, ELBOW_LAXITY_HOW_TO_TEST,
 } from '@/lib/bodyType'
+import { flaggedPowerTests, flaggedMobilityScreens } from '@/lib/benchmarks'
 
 const C = {
   bg:'#0d1117',bg2:'#161b22',bg3:'#1c2333',border:'#30363d',
@@ -442,6 +443,8 @@ export default function CoachDashboard(){
   const [logs,setLogs]=useState<any[]>([])
   const [cmjResults,setCmjResults]=useState<any[]>([])
   const [hopResults,setHopResults]=useState<any[]>([])
+  const [latestBenchmarks,setLatestBenchmarks]=useState<any>(null)
+  const [latestMobilityScreens,setLatestMobilityScreens]=useState<any>(null)
   const [editingProfile,setEditingProfile]=useState(false)
   const [profileForm,setProfileForm]=useState({
     height_in:'',somatotype:'',isa_classification:'',
@@ -609,17 +612,21 @@ export default function CoachDashboard(){
       femoral_torsion_trail_leg:p.femoral_torsion_trail_leg||'',femoral_torsion_lead_leg:p.femoral_torsion_lead_leg||'',
       foot_arch_type:p.foot_arch_type||'',elbow_carrying_angle:p.elbow_carrying_angle||'',elbow_laxity:p.elbow_laxity||'',
     })
-    const [logsRes,cmjRes,,throwRes,hopRes]=await Promise.all([
+    const [logsRes,cmjRes,,throwRes,hopRes,benchRes,screenRes]=await Promise.all([
       supabase.from('session_logs').select('*').eq('pitcher_id',p.id).order('log_date',{ascending:false}),
       supabase.from('cmj_results').select('*').eq('pitcher_id',p.id).order('test_date',{ascending:false}),
       loadProgramForWeek(p.id,currentWeekOf()),
       supabase.from('throw_volume_entries').select('*').eq('pitcher_id',p.id).order('created_at'),
       supabase.from('hop_test_results').select('*').eq('pitcher_id',p.id).order('test_date',{ascending:false}),
+      supabase.from('athletic_benchmarks').select('*').eq('pitcher_id',p.id).order('test_date',{ascending:false}).limit(1).maybeSingle(),
+      supabase.from('mobility_screens').select('*').eq('pitcher_id',p.id).order('test_date',{ascending:false}).limit(1).maybeSingle(),
     ])
     setLogs(logsRes.data||[])
     setCmjResults(cmjRes.data||[])
     setThrowEntries(throwRes.data||[])
     setHopResults(hopRes.data||[])
+    setLatestBenchmarks(benchRes.data||null)
+    setLatestMobilityScreens(screenRes.data||null)
   }
 
   const saveProfileClassification=async()=>{
@@ -1638,6 +1645,23 @@ Write next week's program by day and category (Pre-Throwing, Throwing, Post-Thro
                     {!isCurrentWeek&&<span style={{fontSize:11,color:C.gold,fontWeight:700}}>Read-only — past week</span>}
                     {isCurrentWeek&&program?.carried_forward&&!program?.first_edited_at&&<span style={{fontSize:11,color:C.textMuted}}>Carried forward from last week, not yet edited — excluded from prescribed load until you make a change</span>}
                   </div>
+
+                  {/* Suggested Corrective Work -- the Power Tests (Marginal/Deficit) and
+                      Mobility/Stability Screens (Limited/Fail) sections from the Benchmarks tab,
+                      surfaced here where the week actually gets built. Informational only, same
+                      as the CMJ recommendation elsewhere in this app -- add matching exercises
+                      through the normal picker below, same engine checks apply either way. */}
+                  {(()=>{
+                    const correctiveFlags=[...flaggedPowerTests(latestBenchmarks),...flaggedMobilityScreens(latestMobilityScreens)]
+                    if (!correctiveFlags.length) return null
+                    return (
+                      <div style={{...S.card,marginBottom:16,border:'1px solid rgba(248,81,73,0.25)',background:'rgba(248,81,73,0.04)'}}>
+                        <div style={{fontSize:11,color:C.textDim}}>From this pitcher's Power Tests and Mobility Screens on the Benchmarks tab. Add matching exercises below through the normal picker.</div>
+                        <RecommendedWorkList items={correctiveFlags} getRecommendation={getRecommendation}/>
+                      </div>
+                    )
+                  })()}
+
                   <div style={{display:'flex',gap:12,flexWrap:'wrap' as const,marginBottom:16,padding:'10px 14px',background:C.bg2,border:`1px solid ${C.border}`,borderRadius:8,alignItems:'center'}}>
                     <span style={{fontSize:10,color:C.textDim,fontWeight:700,textTransform:'uppercase' as const,letterSpacing:'1px',marginRight:4}}>Categories:</span>
                     {CATEGORIES.map(cat=>(
