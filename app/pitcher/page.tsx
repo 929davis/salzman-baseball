@@ -517,7 +517,7 @@ export default function PitcherDashboard(){
                     )}
                   </div>
                   {targetLbs!=null?(
-                    <div style={{fontSize:11,color:C.textMuted,lineHeight:1.5}}>Target for a {somatotype} at {heightIn}in: {targetLbs.toFixed(0)}lbs (height × {SOMATOTYPE_WEIGHT_MULTIPLIER[somatotype as Somatotype]}). Built from real height/weight of 24 MLB pitchers sorted by build — same height, different target depending on type.</div>
+                    <div style={{fontSize:11,color:C.textMuted,lineHeight:1.5}}>Target for a {somatotype} at {heightIn}in: {targetLbs.toFixed(0)}lbs (height × {SOMATOTYPE_WEIGHT_MULTIPLIER[somatotype as Somatotype]}). Built from real height/weight of MLB pitchers sorted by build — same height, different target depending on type.</div>
                   ):(
                     <div style={{fontSize:11,color:C.textMuted,lineHeight:1.5}}>No somatotype set yet, so no type-specific target — for reference, the lean-end floor at {heightIn}in is {floorLbs!.toFixed(0)}lbs (height × 2.5).</div>
                   )}
