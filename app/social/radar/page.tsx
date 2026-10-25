@@ -6,6 +6,7 @@
 import { useEffect, useState, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
+import { deriveTitleFromText } from '@/lib/ideas'
 
 const C = {
   bg: '#0d1117', bg2: '#161b22', bg3: '#1c2333', border: '#30363d',
@@ -102,8 +103,15 @@ export default function QuestionRadarPage() {
     setRefreshing(false)
   }
 
+  // Writes to the unified `ideas` table (sql/ideas.sql), not the old radar_ideas table --
+  // radar_ideas is superseded as of the Ideas Intake/Triage workflow (Phase 1) and is no
+  // longer written to anywhere in this app. See sql/ideas.sql for the one-time migration of
+  // radar_ideas' prior rows.
   const sendToIdeas = async (item: RadarItem) => {
-    await supabase.from('radar_ideas').insert({ radar_item_id: item.id, text: item.text, source: 'question_radar' })
+    await supabase.from('ideas').insert({
+      title: deriveTitleFromText(item.text), details: item.text,
+      source: 'question_radar', radar_item_id: item.id,
+    })
     await supabase.from('radar_items').update({ status: 'sent_to_ideas' }).eq('id', item.id)
     await load()
   }

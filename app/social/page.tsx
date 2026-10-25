@@ -371,6 +371,7 @@ export default function SocialPage() {
           <div style={{ display: 'flex', gap: 8 }}>
             <button onClick={() => router.push('/social/playbook')} style={smallBtn()}>Playbook</button>
             <button onClick={() => router.push('/social/radar')} style={smallBtn()}>Question Radar</button>
+            <button onClick={() => router.push('/ideas')} style={smallBtn()}>Ideas</button>
             <button onClick={resetComposer} style={smallBtn()}>+ New Post</button>
           </div>
         </div>
