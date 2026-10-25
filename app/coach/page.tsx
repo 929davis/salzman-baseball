@@ -20,6 +20,10 @@ import { parseTime, calcCMJFn, classifyCMJ, validateCMJTimestamps } from '@/lib/
 import { CATEGORY_ORDER, CATEGORY_COLORS } from '@/lib/exerciseCategories'
 import { currentWeekOf, addWeeks } from '@/lib/weekUtils'
 import { intentLabel, gateLabel, stageLabel, tierLabel } from '@/lib/plainLanguage'
+import {
+  HUMERAL_TORSION_HOW_TO_TEST, FEMORAL_TORSION_HOW_TO_TEST, FOOT_ARCH_HOW_TO_TEST,
+  ELBOW_CARRYING_ANGLE_HOW_TO_TEST, ELBOW_LAXITY_HOW_TO_TEST,
+} from '@/lib/bodyType'
 
 const C = {
   bg:'#0d1117',bg2:'#161b22',bg3:'#1c2333',border:'#30363d',
@@ -1420,24 +1424,26 @@ Write next week's program by day and category (Pre-Throwing, Throwing, Post-Thro
                     <div style={{fontSize:11,fontWeight:700,color:C.gold,textTransform:'uppercase' as const,letterSpacing:'0.5px',margin:'16px 0 10px'}}>Structural Profile</div>
                     {([
                       {group:'Shoulder (per arm — commonly asymmetric in throwers)',fields:[
-                        {key:'humeral_torsion_throwing_arm',label:'Humeral Torsion — Throwing Arm',options:[['retroverted','Retroverted'],['anteverted','Anteverted']]},
-                        {key:'humeral_torsion_glove_arm',label:'Humeral Torsion — Glove Arm',options:[['retroverted','Retroverted'],['anteverted','Anteverted']]},
+                        {key:'humeral_torsion_throwing_arm',label:'Humeral Torsion — Throwing Arm',options:[['retroverted','Retroverted'],['anteverted','Anteverted']],howToTest:HUMERAL_TORSION_HOW_TO_TEST},
+                        {key:'humeral_torsion_glove_arm',label:'Humeral Torsion — Glove Arm',options:[['retroverted','Retroverted'],['anteverted','Anteverted']],howToTest:HUMERAL_TORSION_HOW_TO_TEST},
                       ]},
                       {group:'Hip (per leg — trail = drive/back leg, lead = front/landing leg)',fields:[
-                        {key:'femoral_torsion_trail_leg',label:'Femoral Torsion — Trail Leg',options:[['retroverted','Retroverted'],['anteverted','Anteverted']]},
-                        {key:'femoral_torsion_lead_leg',label:'Femoral Torsion — Lead Leg',options:[['retroverted','Retroverted'],['anteverted','Anteverted']]},
+                        {key:'femoral_torsion_trail_leg',label:'Femoral Torsion — Trail Leg',options:[['retroverted','Retroverted'],['anteverted','Anteverted']],howToTest:FEMORAL_TORSION_HOW_TO_TEST},
+                        {key:'femoral_torsion_lead_leg',label:'Femoral Torsion — Lead Leg',options:[['retroverted','Retroverted'],['anteverted','Anteverted']],howToTest:FEMORAL_TORSION_HOW_TO_TEST},
                       ]},
                       {group:'Foot',fields:[
-                        {key:'foot_arch_type',label:'Foot Arch Type',options:[['high_arch','High Arch'],['flat','Flat / Flexible']]},
+                        {key:'foot_arch_type',label:'Foot Arch Type',options:[['high_arch','High Arch'],['flat','Flat / Flexible']],howToTest:FOOT_ARCH_HOW_TO_TEST},
                       ]},
                       {group:'Elbow',fields:[
-                        {key:'elbow_carrying_angle',label:'Carrying Angle',options:[['varus','Varus'],['valgus','Valgus']]},
-                        {key:'elbow_laxity',label:'Laxity',options:[['hypermobile','Hypermobile'],['normal','Normal']]},
+                        {key:'elbow_carrying_angle',label:'Carrying Angle',options:[['varus','Varus'],['valgus','Valgus']],howToTest:ELBOW_CARRYING_ANGLE_HOW_TO_TEST},
+                        {key:'elbow_laxity',label:'Laxity',options:[['hypermobile','Hypermobile'],['normal','Normal']],howToTest:ELBOW_LAXITY_HOW_TO_TEST},
                       ]},
-                    ] as const).map(g=>(
+                    ] as const).map(g=>{
+                      const uniqueTests=Array.from(new Set(g.fields.map(f=>f.howToTest)))
+                      return (
                       <div key={g.group} style={{marginBottom:12}}>
                         <div style={{fontSize:10,color:C.textMuted,marginBottom:6}}>{g.group}</div>
-                        <div style={{display:'flex',gap:12,flexWrap:'wrap' as const}}>
+                        <div style={{display:'flex',gap:12,flexWrap:'wrap' as const,marginBottom:8}}>
                           {g.fields.map(f=>(
                             <div key={f.key}>
                               <div style={{fontSize:10,color:C.textMuted,textTransform:'uppercase' as const,letterSpacing:'0.5px',marginBottom:4}}>{f.label}</div>
@@ -1448,8 +1454,14 @@ Write next week's program by day and category (Pre-Throwing, Throwing, Post-Thro
                             </div>
                           ))}
                         </div>
+                        {uniqueTests.map((t,i)=>(
+                          <div key={i} style={{fontSize:10,color:C.textDim,lineHeight:1.5,marginBottom:i<uniqueTests.length-1?6:0,padding:'8px 10px',background:'rgba(232,184,75,0.04)',border:'1px solid rgba(232,184,75,0.15)',borderRadius:6}}>
+                            <span style={{color:C.gold,fontWeight:700}}>How to test: </span>{t}
+                          </div>
+                        ))}
                       </div>
-                    ))}
+                      )
+                    })}
                     <button onClick={saveProfileClassification} style={S.btn('gold')}>Save</button>
                     {profileSaveError&&<div style={{fontSize:12,color:C.red,marginTop:8,padding:'8px 10px',background:'rgba(248,81,73,0.1)',borderRadius:6}}>{profileSaveError}</div>}
                   </div>

@@ -133,3 +133,17 @@ export const ELBOW_LAXITY_INFO: Record<ElbowLaxity, { name: string, color: strin
     tendency: 'The elbow extends to roughly straight and no further under passive stress — the baseline presentation, with no specific extra deceleration demand tied to laxity itself.',
   },
 }
+
+// Coach-facing testing protocols for the Structural Profile -- how to actually get each
+// classification, not just what the values mean. Plain-language, phone-and-hands only (same
+// "no special equipment" philosophy as the CMJ/Hop Test/Plyo Push-Up protocols elsewhere in
+// this app) since these are visual/manual passive-ROM checks, not something to self-diagnose.
+export const HUMERAL_TORSION_HOW_TO_TEST = 'Lay the athlete face-up, arm out to the side at 90°, elbow bent 90° (the "90/90" position), shoulder blade pinned flat against the table. Passively rotate the forearm down toward the table (external rotation) and up toward the head (internal rotation), each to its end range, without letting the shoulder shrug up off the table. If ER is clearly bigger than IR — especially if this arm\'s ER is bigger than the other arm\'s — call it Retroverted. If IR is clearly bigger than ER, call it Anteverted. Test both arms the same way; the throwing arm commonly shows more ER / less IR than the glove arm.'
+
+export const FEMORAL_TORSION_HOW_TO_TEST = 'Athlete lies face-down, knee bent to 90°. Swing the lower leg outward, away from the body — that range is hip internal rotation. Swing it inward, crossing toward the other leg — that range is hip external rotation. If IR is clearly bigger than ER, call it Anteverted. If ER is clearly bigger than IR, call it Retroverted. Test the trail leg and lead leg separately, same protocol.'
+
+export const FOOT_ARCH_HOW_TO_TEST = 'Wet the sole of the foot and have the athlete step once with full weight onto a dry surface (cardboard works), then step off. A thin or broken connection between the heel and ball of the print means a High Arch. A wide print with the midfoot filled in means Flat. (Or just look at a relaxed standing foot from the side: a clear gap of daylight under the arch is High Arch; the arch touching or nearly touching the ground is Flat.)'
+
+export const ELBOW_CARRYING_ANGLE_HOW_TO_TEST = 'Elbow fully straight, palm facing forward. Sight down the arm from the front and look at the angle between the upper arm and forearm. A slight outward angle (roughly 5-15°) is typical. Clearly more open/outward than that — or visibly more than the other arm — call it Valgus. Straighter/in-line, or angled slightly inward instead, call it Varus.'
+
+export const ELBOW_LAXITY_HOW_TO_TEST = 'Elbow fully straight and relaxed. Gently press into further extension. If the joint visibly bends backward past straight, call it Hypermobile. If it stops firmly right at straight with no give, call it Normal.'
