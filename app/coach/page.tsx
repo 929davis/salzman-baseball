@@ -450,7 +450,12 @@ export default function CoachDashboard(){
   const [cmjResults,setCmjResults]=useState<any[]>([])
   const [hopResults,setHopResults]=useState<any[]>([])
   const [editingProfile,setEditingProfile]=useState(false)
-  const [profileForm,setProfileForm]=useState({height_in:'',somatotype:'',isa_classification:''})
+  const [profileForm,setProfileForm]=useState({
+    height_in:'',somatotype:'',isa_classification:'',
+    humeral_torsion_throwing_arm:'',humeral_torsion_glove_arm:'',
+    femoral_torsion_trail_leg:'',femoral_torsion_lead_leg:'',
+    foot_arch_type:'',elbow_carrying_angle:'',elbow_laxity:'',
+  })
   const [profileSaveError,setProfileSaveError]=useState('')
   const [cmjModal,setCmjModal]=useState(false)
   const [cmjForm,setCmjForm]=useState({date:new Date().toISOString().split('T')[0],bodyweight:'',weightUnit:'lbs',fps:'240',startTime:'',bottomTime:'',takeoffTime:'',landingTime:'',stabilizationTime:'',uprightTime:''})
@@ -610,7 +615,12 @@ export default function CoachDashboard(){
   const selectPitcher=async(p:any)=>{
     setSelected(p);setTab('overview');setView('roster')
     setEditingProfile(false);setProfileSaveError('')
-    setProfileForm({height_in:p.height_in?.toString()||'',somatotype:p.somatotype||'',isa_classification:p.isa_classification||''})
+    setProfileForm({
+      height_in:p.height_in?.toString()||'',somatotype:p.somatotype||'',isa_classification:p.isa_classification||'',
+      humeral_torsion_throwing_arm:p.humeral_torsion_throwing_arm||'',humeral_torsion_glove_arm:p.humeral_torsion_glove_arm||'',
+      femoral_torsion_trail_leg:p.femoral_torsion_trail_leg||'',femoral_torsion_lead_leg:p.femoral_torsion_lead_leg||'',
+      foot_arch_type:p.foot_arch_type||'',elbow_carrying_angle:p.elbow_carrying_angle||'',elbow_laxity:p.elbow_laxity||'',
+    })
     const sevenDaysAgo=new Date(Date.now()-7*24*60*60*1000).toISOString().split('T')[0]
     const [logsRes,cmjRes,,foodRes,fuelRes,weekFuelRes,throwRes,hopRes]=await Promise.all([
       supabase.from('session_logs').select('*').eq('pitcher_id',p.id).order('log_date',{ascending:false}),
@@ -634,17 +644,25 @@ export default function CoachDashboard(){
   const saveProfileClassification=async()=>{
     if (!selected)return
     setProfileSaveError('')
-    const {error}=await supabase.from('profiles').update({
+    const update={
       height_in:profileForm.height_in?parseFloat(profileForm.height_in):null,
       somatotype:profileForm.somatotype||null,
       isa_classification:profileForm.isa_classification||null,
-    }).eq('id',selected.id)
+      humeral_torsion_throwing_arm:profileForm.humeral_torsion_throwing_arm||null,
+      humeral_torsion_glove_arm:profileForm.humeral_torsion_glove_arm||null,
+      femoral_torsion_trail_leg:profileForm.femoral_torsion_trail_leg||null,
+      femoral_torsion_lead_leg:profileForm.femoral_torsion_lead_leg||null,
+      foot_arch_type:profileForm.foot_arch_type||null,
+      elbow_carrying_angle:profileForm.elbow_carrying_angle||null,
+      elbow_laxity:profileForm.elbow_laxity||null,
+    }
+    const {error}=await supabase.from('profiles').update(update).eq('id',selected.id)
     if (error){
       console.error('coach dashboard: failed to save profile classification',error)
       setProfileSaveError('Could not save — check your connection and try again.')
       return
     }
-    setSelected((prev:any)=>({...prev,height_in:profileForm.height_in?parseFloat(profileForm.height_in):null,somatotype:profileForm.somatotype||null,isa_classification:profileForm.isa_classification||null}))
+    setSelected((prev:any)=>({...prev,...update}))
     setEditingProfile(false)
   }
 
@@ -1396,9 +1414,43 @@ Write next week's program by day and category (Pre-Throwing, Throwing, Post-Thro
                           <option value="wide">Wide</option>
                         </select>
                       </div>
-                      <button onClick={saveProfileClassification} style={S.btn('gold')}>Save</button>
                     </div>
                     <div style={{fontSize:10,color:C.textDim,marginTop:8}}>ISA needs a coach/PT feel of the lower rib margins or a relaxed side-on photo — not something to guess from eye alone.</div>
+
+                    <div style={{fontSize:11,fontWeight:700,color:C.gold,textTransform:'uppercase' as const,letterSpacing:'0.5px',margin:'16px 0 10px'}}>Structural Profile</div>
+                    {([
+                      {group:'Shoulder (per arm — commonly asymmetric in throwers)',fields:[
+                        {key:'humeral_torsion_throwing_arm',label:'Humeral Torsion — Throwing Arm',options:[['retroverted','Retroverted'],['anteverted','Anteverted']]},
+                        {key:'humeral_torsion_glove_arm',label:'Humeral Torsion — Glove Arm',options:[['retroverted','Retroverted'],['anteverted','Anteverted']]},
+                      ]},
+                      {group:'Hip (per leg — trail = drive/back leg, lead = front/landing leg)',fields:[
+                        {key:'femoral_torsion_trail_leg',label:'Femoral Torsion — Trail Leg',options:[['retroverted','Retroverted'],['anteverted','Anteverted']]},
+                        {key:'femoral_torsion_lead_leg',label:'Femoral Torsion — Lead Leg',options:[['retroverted','Retroverted'],['anteverted','Anteverted']]},
+                      ]},
+                      {group:'Foot',fields:[
+                        {key:'foot_arch_type',label:'Foot Arch Type',options:[['high_arch','High Arch'],['flat','Flat / Flexible']]},
+                      ]},
+                      {group:'Elbow',fields:[
+                        {key:'elbow_carrying_angle',label:'Carrying Angle',options:[['varus','Varus'],['valgus','Valgus']]},
+                        {key:'elbow_laxity',label:'Laxity',options:[['hypermobile','Hypermobile'],['normal','Normal']]},
+                      ]},
+                    ] as const).map(g=>(
+                      <div key={g.group} style={{marginBottom:12}}>
+                        <div style={{fontSize:10,color:C.textMuted,marginBottom:6}}>{g.group}</div>
+                        <div style={{display:'flex',gap:12,flexWrap:'wrap' as const}}>
+                          {g.fields.map(f=>(
+                            <div key={f.key}>
+                              <div style={{fontSize:10,color:C.textMuted,textTransform:'uppercase' as const,letterSpacing:'0.5px',marginBottom:4}}>{f.label}</div>
+                              <select style={{...S.input,width:150}} value={(profileForm as any)[f.key]} onChange={e=>setProfileForm(prev=>({...prev,[f.key]:e.target.value}))}>
+                                <option value="">— Not set —</option>
+                                {f.options.map(([value,label])=><option key={value} value={value}>{label}</option>)}
+                              </select>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    ))}
+                    <button onClick={saveProfileClassification} style={S.btn('gold')}>Save</button>
                     {profileSaveError&&<div style={{fontSize:12,color:C.red,marginTop:8,padding:'8px 10px',background:'rgba(248,81,73,0.1)',borderRadius:6}}>{profileSaveError}</div>}
                   </div>
                 )}

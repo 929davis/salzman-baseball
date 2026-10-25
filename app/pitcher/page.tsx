@@ -14,7 +14,11 @@ import { useTestVideos } from '@/lib/testVideos'
 import { parseTime, calcCMJFn, classifyCMJ, validateCMJTimestamps } from '@/lib/cmj'
 import { CATEGORY_ORDER, CATEGORY_COLORS } from '@/lib/exerciseCategories'
 import { intentLabel } from '@/lib/plainLanguage'
-import { SOMATOTYPE_INFO, SOMATOTYPE_WEIGHT_MULTIPLIER, ISA_INFO, type Somatotype, type IsaClassification } from '@/lib/bodyType'
+import {
+  SOMATOTYPE_INFO, SOMATOTYPE_WEIGHT_MULTIPLIER, ISA_INFO, type Somatotype, type IsaClassification,
+  HUMERAL_TORSION_INFO, FEMORAL_TORSION_INFO, FOOT_ARCH_INFO, ELBOW_CARRYING_ANGLE_INFO, ELBOW_LAXITY_INFO,
+  type HumeralTorsion, type FemoralTorsion, type FootArchType, type ElbowCarryingAngle, type ElbowLaxity,
+} from '@/lib/bodyType'
 import { BENCHMARKS, benchmarkStatus } from '@/lib/benchmarks'
 
 const C = {
@@ -421,6 +425,15 @@ export default function PitcherDashboard(){
           const latestPlyo=plyoResults[0]||null
           const somatotype:Somatotype|null = profile.somatotype||null
           const isa:IsaClassification|null = profile.isa_classification||null
+          const structuralProfile:{label:string,value:HumeralTorsion|FemoralTorsion|FootArchType|ElbowCarryingAngle|ElbowLaxity|null,info:Record<string,{name:string,color:string,tendency:string}>}[] = [
+            {label:'Humeral Torsion — Throwing Arm',value:profile.humeral_torsion_throwing_arm||null,info:HUMERAL_TORSION_INFO},
+            {label:'Humeral Torsion — Glove Arm',value:profile.humeral_torsion_glove_arm||null,info:HUMERAL_TORSION_INFO},
+            {label:'Femoral Torsion — Trail Leg',value:profile.femoral_torsion_trail_leg||null,info:FEMORAL_TORSION_INFO},
+            {label:'Femoral Torsion — Lead Leg',value:profile.femoral_torsion_lead_leg||null,info:FEMORAL_TORSION_INFO},
+            {label:'Foot Arch Type',value:profile.foot_arch_type||null,info:FOOT_ARCH_INFO},
+            {label:'Elbow Carrying Angle',value:profile.elbow_carrying_angle||null,info:ELBOW_CARRYING_ANGLE_INFO},
+            {label:'Elbow Laxity',value:profile.elbow_laxity||null,info:ELBOW_LAXITY_INFO},
+          ]
           const heightIn:number|null = profile.height_in||null
           const bodyweightLbs:number|null = latestCMJ?.bodyweight!=null
             ? (latestCMJ.weight_unit==='kg'?latestCMJ.bodyweight*2.20462:latestCMJ.bodyweight)
@@ -473,6 +486,23 @@ export default function PitcherDashboard(){
                   <div style={{fontSize:12,color:C.text,lineHeight:1.6}}>{ISA_INFO[isa].tendency}</div>
                 </div>
               ):<div style={{fontSize:12,color:C.textDim}}>ISA classification not set yet — this needs a coach/PT to feel the lower rib margins or review a photo.</div>}
+            </div>
+
+            {/* 2b. Structural Profile — humeral/femoral torsion, foot arch, elbow structure */}
+            <div style={card}>
+              <div style={{fontSize:11,color:C.gold,fontWeight:700,textTransform:'uppercase' as const,letterSpacing:'1px',marginBottom:4}}>Structural Profile</div>
+              <div style={{fontSize:10,color:C.textDim,marginBottom:10}}>Fixed by bone growth, not trainable — these describe a starting lean, same as body type above.</div>
+              {structuralProfile.map(s=>(
+                <div key={s.label} style={{marginBottom:10,paddingLeft:10,borderLeft:`3px solid ${s.value?s.info[s.value].color:C.border}`}}>
+                  <div style={{fontSize:11,fontWeight:700,color:C.textMuted,textTransform:'uppercase' as const,letterSpacing:'0.4px',marginBottom:2}}>{s.label}</div>
+                  {s.value?(
+                    <>
+                      <div style={{fontSize:12,fontWeight:700,color:s.info[s.value].color,marginBottom:2}}>{s.info[s.value].name}</div>
+                      <div style={{fontSize:12,color:C.text,lineHeight:1.6}}>{s.info[s.value].tendency}</div>
+                    </>
+                  ):<div style={{fontSize:12,color:C.textDim}}>Not set yet — ask your coach to classify this.</div>}
+                </div>
+              ))}
             </div>
 
             {/* 3. Bodyweight vs. height-to-weight target by body type */}

@@ -57,3 +57,79 @@ export const ISA_INFO: Record<IsaClassification, { name: string, color: string, 
 export const ISA_EXPLAINER = 'The angle where your lower ribs meet at the center of your chest, at the sternum. Under about 90° is a narrow ISA; over 90° is a wide ISA. This comes from postural-assessment work (the Postural Restoration Institute) used seriously in physical therapy and performance circles — but it describes a structural tendency, not a rigid rule. It takes a coach or PT feeling along the lower rib margins, or a relaxed side-on photo, to get a reasonable read — not something to self-diagnose precisely.'
 
 export const ISA_DISCLAIMER = 'Never a reason to skip mobility or stability work just because it "should" come easy for your structure — it\'s a starting lean to plan around, not a substitute for the work.'
+
+// ---------------------------------------------------------------------------
+// Structural Profile -- four more coach-assessed, fixed-by-bone-growth classifications,
+// same family as ISA above (not trainable, just describes a starting lean). Humeral and
+// femoral torsion are tracked per-side since both are well documented to develop
+// asymmetrically in throwers (e.g. a pitcher's throwing-arm humeral retroversion is commonly
+// greater than their glove arm's -- an adaptation from years of throwing, not a red flag on
+// its own). Trail leg = the drive/back leg during the delivery; lead leg = the front/landing
+// leg -- same trail/lead convention already used by the hip_rotation_trail_deg/
+// hip_rotation_lead_deg benchmarks in lib/benchmarks.ts.
+// ---------------------------------------------------------------------------
+
+export type HumeralTorsion = 'retroverted' | 'anteverted'
+
+export const HUMERAL_TORSION_INFO: Record<HumeralTorsion, { name: string, color: string, tendency: string }> = {
+  retroverted: {
+    name: 'Retroverted — biased toward external rotation (layback)', color: '#a371f7',
+    tendency: 'The humeral head sits rotated further back relative to the elbow, giving more external rotation/layback range without extra stress on the shoulder capsule itself. Tends to show up as a longer, later-looking layback. The tradeoff: less internal rotation available, so deceleration and internal-rotation strength work usually need more deliberate attention. Throwing-arm retroversion is commonly higher than the glove arm\'s in pitchers — that asymmetry by itself is a normal throwing adaptation, not something to "fix."',
+  },
+  anteverted: {
+    name: 'Anteverted — biased toward internal rotation', color: '#39d353',
+    tendency: 'The humeral head sits rotated further forward relative to the elbow, giving more internal rotation range at the cost of external rotation/layback. Tends to show up as a quicker, more compact arm action with less natural layback. The tradeoff: often needs more deliberate external-rotation/layback mobility work, since that side of the range is the one the structure doesn\'t give for free.',
+  },
+}
+
+export type FemoralTorsion = 'retroverted' | 'anteverted'
+
+export const FEMORAL_TORSION_INFO: Record<FemoralTorsion, { name: string, color: string, tendency: string }> = {
+  retroverted: {
+    name: 'Retroverted — biased toward external rotation', color: '#a371f7',
+    tendency: 'The hip socket sits oriented to allow more external rotation, less internal. On the trail leg, tends to make it easier to sit deep into the loaded/closed position during leg lift; the tradeoff is less internal rotation range to fire the hip open explosively. On the lead leg, it can make a firm, rotated-open front-side block harder to access without deliberate internal-rotation work.',
+  },
+  anteverted: {
+    name: 'Anteverted — biased toward internal rotation', color: '#39d353',
+    tendency: 'The hip socket sits oriented to allow more internal rotation, less external. On the trail leg, tends to make firing/rotating the hip open easier and more natural; the tradeoff is less range to sit deep into an externally-rotated load without deliberate mobility work. On the lead leg, it often makes a stable, blocking front side easier to access naturally.',
+  },
+}
+
+export type FootArchType = 'high_arch' | 'flat'
+
+export const FOOT_ARCH_INFO: Record<FootArchType, { name: string, color: string, tendency: string }> = {
+  high_arch: {
+    name: 'High Arch (Pes Cavus) — rigid, direct force transmission', color: '#e8b84b',
+    tendency: 'A stiffer, more rigid foot that transmits ground-reaction force more directly through push-off, with less energy lost to the arch flattening. Tends to show up as a "quicker off the ground" feel. The tradeoff: less natural shock absorption, so ankle/calf mobility and landing mechanics usually deserve more deliberate attention to manage the extra impact.',
+  },
+  flat: {
+    name: 'Flat / Flexible Arch (Pes Planus) — more shock absorption', color: '#58a6ff',
+    tendency: 'A more mobile, flexible foot that absorbs and dissipates more force through the arch itself. Tends to be a more forgiving, lower-impact structure with less overuse risk, at some cost to how directly force transmits off the rubber/mound during push-off. Unlike the bone-fixed traits above, foot/ankle strength work can meaningfully firm this up over time.',
+  },
+}
+
+export type ElbowCarryingAngle = 'varus' | 'valgus'
+
+export const ELBOW_CARRYING_ANGLE_INFO: Record<ElbowCarryingAngle, { name: string, color: string, tendency: string }> = {
+  varus: {
+    name: 'Varus — elbow angles inward at full extension', color: '#58a6ff',
+    tendency: 'The forearm sits closer to in-line with the upper arm at full extension, rather than angling outward. Less common in throwers than valgus (see below), and less studied in the injury-risk literature specifically because it carries less of the valgus torque that drives most UCL-stress discussion.',
+  },
+  valgus: {
+    name: 'Valgus — elbow angles outward at full extension', color: '#f85149',
+    tendency: 'The forearm angles outward relative to the upper arm at full extension — the more common presentation in throwers, and often itself partly an adaptation to repetitive throwing load rather than purely congenital. This is the angle most directly discussed in UCL-stress literature, since more valgus generally means more leverage for valgus torque during late cocking/arm acceleration — worth knowing, not a diagnosis on its own.',
+  },
+}
+
+export type ElbowLaxity = 'hypermobile' | 'normal'
+
+export const ELBOW_LAXITY_INFO: Record<ElbowLaxity, { name: string, color: string, tendency: string }> = {
+  hypermobile: {
+    name: 'Hypermobile — elbow hyperextends past neutral', color: '#a371f7',
+    tendency: 'The elbow extends past straight/neutral under passive stress. Tends to show up as a whippier-looking arm action, and the extra passive range can contribute to arm speed. The tradeoff: the joint\'s passive restraint is looser, so deceleration and eccentric strength work usually deserve more deliberate, consistent attention.',
+  },
+  normal: {
+    name: 'Normal — extends to neutral, no hyperextension', color: '#39d353',
+    tendency: 'The elbow extends to roughly straight and no further under passive stress — the baseline presentation, with no specific extra deceleration demand tied to laxity itself.',
+  },
+}
