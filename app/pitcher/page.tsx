@@ -14,7 +14,7 @@ import { useTestVideos } from '@/lib/testVideos'
 import { parseTime, calcCMJFn, classifyCMJ, validateCMJTimestamps } from '@/lib/cmj'
 import { CATEGORY_ORDER, CATEGORY_COLORS } from '@/lib/exerciseCategories'
 import { intentLabel } from '@/lib/plainLanguage'
-import { SOMATOTYPE_INFO, ISA_INFO, type Somatotype, type IsaClassification } from '@/lib/bodyType'
+import { SOMATOTYPE_INFO, SOMATOTYPE_WEIGHT_MULTIPLIER, ISA_INFO, type Somatotype, type IsaClassification } from '@/lib/bodyType'
 import { BENCHMARKS, benchmarkStatus } from '@/lib/benchmarks'
 
 const C = {
@@ -425,12 +425,9 @@ export default function PitcherDashboard(){
           const bodyweightLbs:number|null = latestCMJ?.bodyweight!=null
             ? (latestCMJ.weight_unit==='kg'?latestCMJ.bodyweight*2.20462:latestCMJ.bodyweight)
             : null
-          const bmi = (heightIn&&bodyweightLbs)?(703*bodyweightLbs)/(heightIn*heightIn):null
-          const bmiBand = bmi==null?null
-            : bmi<18.5?{label:'Underweight',color:C.blue}
-            : bmi<25?{label:'Normal',color:C.teal}
-            : bmi<30?{label:'Overweight',color:C.gold}
-            : {label:'Obese',color:C.red}
+          const targetLbs = (heightIn&&somatotype)?heightIn*SOMATOTYPE_WEIGHT_MULTIPLIER[somatotype]:null
+          const floorLbs = heightIn?heightIn*SOMATOTYPE_WEIGHT_MULTIPLIER.ectomorph:null
+          const deltaLbs = (targetLbs!=null&&bodyweightLbs!=null)?bodyweightLbs-targetLbs:null
           const plyoFlightProxyIn = latestPlyo?.avg_flight_sec!=null?(9.81*latestPlyo.avg_flight_sec**2)/8*39.3701:null
 
           const benchRow=(key:string,value:number|null|undefined)=>{
@@ -478,16 +475,22 @@ export default function PitcherDashboard(){
               ):<div style={{fontSize:12,color:C.textDim}}>ISA classification not set yet — this needs a coach/PT to feel the lower rib margins or review a photo.</div>}
             </div>
 
-            {/* 3. Bodyweight vs. height-to-weight ratio */}
+            {/* 3. Bodyweight vs. height-to-weight target by body type */}
             <div style={card}>
               <div style={{fontSize:11,color:C.gold,fontWeight:700,textTransform:'uppercase' as const,letterSpacing:'1px',marginBottom:10}}>Bodyweight vs. Height</div>
-              {bmi!=null?(
+              {heightIn&&bodyweightLbs!=null?(
                 <>
                   <div style={{display:'flex',alignItems:'baseline',gap:10,marginBottom:6}}>
-                    <div style={{fontSize:32,fontWeight:700,color:C.white}}>{bmi.toFixed(1)}</div>
-                    <div style={{fontSize:12,fontWeight:700,color:bmiBand!.color}}>{bmiBand!.label}</div>
+                    <div style={{fontSize:32,fontWeight:700,color:C.white}}>{bodyweightLbs.toFixed(0)}<span style={{fontSize:14,color:C.textMuted,fontWeight:400}}> lbs</span></div>
+                    {targetLbs!=null&&(
+                      <div style={{fontSize:12,fontWeight:700,color:deltaLbs!>=0?C.teal:C.gold}}>{deltaLbs!>=0?'+':''}{deltaLbs!.toFixed(0)}lbs vs. {somatotype} target</div>
+                    )}
                   </div>
-                  <div style={{fontSize:11,color:C.textMuted,lineHeight:1.5}}>Standard BMI, from height ({heightIn}in) and your latest logged bodyweight ({bodyweightLbs!.toFixed(0)}lbs). Shown as general context next to your coach-assessed body type above — there's no validated BMI range specific to each somatotype, so this isn't a per-type target.</div>
+                  {targetLbs!=null?(
+                    <div style={{fontSize:11,color:C.textMuted,lineHeight:1.5}}>Target for a {somatotype} at {heightIn}in: {targetLbs.toFixed(0)}lbs (height × {SOMATOTYPE_WEIGHT_MULTIPLIER[somatotype as Somatotype]}). Built from real height/weight of 24 MLB pitchers sorted by build — same height, different target depending on type.</div>
+                  ):(
+                    <div style={{fontSize:11,color:C.textMuted,lineHeight:1.5}}>No somatotype set yet, so no type-specific target — for reference, the lean-end floor at {heightIn}in is {floorLbs!.toFixed(0)}lbs (height × 2.5).</div>
+                  )}
                 </>
               ):<div style={{fontSize:12,color:C.textDim}}>{heightIn?'Log a CMJ test to capture bodyweight.':'Height not set yet — ask your coach to add it.'}</div>}
             </div>

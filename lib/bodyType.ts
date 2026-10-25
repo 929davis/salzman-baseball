@@ -24,6 +24,23 @@ export const SOMATOTYPE_INFO: Record<Somatotype, { name: string, color: string, 
 
 export const SOMATOTYPE_DISCLAIMER = 'A rough framework from 1940s constitutional psychology — the personality-prediction side of it has been thoroughly debunked, and even the body-type side is a loose heuristic, not a validated predictive model. Useful for setting realistic expectations on timeline and training focus, not for boxing anyone into a label.'
 
+// Bodyweight target = height(in) * this multiplier, by somatotype. NOT a published or
+// validated norm -- there is no official "somatotype" tag on any MLB roster, so this was built
+// by hand: looked up real listed height/weight for 24 current and recent MLB pitchers (e.g.
+// Chris Sale 78in/180lb, Paul Skenes 78in/260lb, same height, very different builds), sorted
+// them into ecto/meso/endo by eye, and averaged weight/height(in) within each group.
+//   Ectomorph cluster (9 pitchers, incl. Sale, Strider, Misiorowski, Fried): avg 2.57
+//   Mesomorph cluster (9 pitchers, incl. Cole, Verlander, Skenes, King): avg 2.96
+//   Endomorph cluster (6 pitchers, incl. Sabathia, Colon, Bednar, Rasmussen): avg 3.44, but
+//     Sabathia/Colon are outlier-heavy historical cases (both famously heavier in person than
+//     their listed weight) -- the other 4 modern relievers cluster tightly at 3.13-3.29.
+// Final numbers below were picked from that evidence, not the raw cluster averages verbatim.
+export const SOMATOTYPE_WEIGHT_MULTIPLIER: Record<Somatotype, number> = {
+  ectomorph: 2.5,
+  mesomorph: 2.9,
+  endomorph: 3.2,
+}
+
 export type IsaClassification = 'narrow' | 'wide'
 
 export const ISA_INFO: Record<IsaClassification, { name: string, color: string, tendency: string }> = {
