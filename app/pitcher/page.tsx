@@ -17,7 +17,9 @@ import { intentLabel } from '@/lib/plainLanguage'
 import {
   SOMATOTYPE_INFO, SOMATOTYPE_WEIGHT_MULTIPLIER, ISA_INFO, type Somatotype, type IsaClassification,
   HUMERAL_TORSION_INFO, FEMORAL_TORSION_INFO, FOOT_ARCH_INFO, ELBOW_CARRYING_ANGLE_INFO, ELBOW_LAXITY_INFO,
+  SHOULDER_LAXITY_INFO, HIP_LAXITY_INFO,
   type HumeralTorsion, type FemoralTorsion, type FootArchType, type ElbowCarryingAngle, type ElbowLaxity,
+  type ShoulderLaxity, type HipLaxity,
 } from '@/lib/bodyType'
 import { BENCHMARKS, benchmarkStatus } from '@/lib/benchmarks'
 
@@ -425,11 +427,13 @@ export default function PitcherDashboard(){
           const latestPlyo=plyoResults[0]||null
           const somatotype:Somatotype|null = profile.somatotype||null
           const isa:IsaClassification|null = profile.isa_classification||null
-          const structuralProfile:{label:string,value:HumeralTorsion|FemoralTorsion|FootArchType|ElbowCarryingAngle|ElbowLaxity|null,info:Record<string,{name:string,color:string,tendency:string}>}[] = [
+          const structuralProfile:{label:string,value:HumeralTorsion|FemoralTorsion|FootArchType|ElbowCarryingAngle|ElbowLaxity|ShoulderLaxity|HipLaxity|null,info:Record<string,{name:string,color:string,tendency:string}>}[] = [
             {label:'Humeral Torsion — Throwing Arm',value:profile.humeral_torsion_throwing_arm||null,info:HUMERAL_TORSION_INFO},
             {label:'Humeral Torsion — Glove Arm',value:profile.humeral_torsion_glove_arm||null,info:HUMERAL_TORSION_INFO},
+            {label:'Shoulder Laxity',value:profile.shoulder_laxity||null,info:SHOULDER_LAXITY_INFO},
             {label:'Femoral Torsion — Trail Leg',value:profile.femoral_torsion_trail_leg||null,info:FEMORAL_TORSION_INFO},
             {label:'Femoral Torsion — Lead Leg',value:profile.femoral_torsion_lead_leg||null,info:FEMORAL_TORSION_INFO},
+            {label:'Hip Laxity',value:profile.hip_laxity||null,info:HIP_LAXITY_INFO},
             {label:'Foot Arch Type',value:profile.foot_arch_type||null,info:FOOT_ARCH_INFO},
             {label:'Elbow Carrying Angle',value:profile.elbow_carrying_angle||null,info:ELBOW_CARRYING_ANGLE_INFO},
             {label:'Elbow Laxity',value:profile.elbow_laxity||null,info:ELBOW_LAXITY_INFO},

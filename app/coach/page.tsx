@@ -23,6 +23,7 @@ import { intentLabel, gateLabel, stageLabel, tierLabel } from '@/lib/plainLangua
 import {
   HUMERAL_TORSION_HOW_TO_TEST, FEMORAL_TORSION_HOW_TO_TEST, FOOT_ARCH_HOW_TO_TEST,
   ELBOW_CARRYING_ANGLE_HOW_TO_TEST, ELBOW_LAXITY_HOW_TO_TEST,
+  SHOULDER_LAXITY_HOW_TO_TEST, HIP_LAXITY_HOW_TO_TEST,
 } from '@/lib/bodyType'
 import { flaggedPowerTests, flaggedMobilityScreens } from '@/lib/benchmarks'
 
@@ -451,6 +452,7 @@ export default function CoachDashboard(){
     humeral_torsion_throwing_arm:'',humeral_torsion_glove_arm:'',
     femoral_torsion_trail_leg:'',femoral_torsion_lead_leg:'',
     foot_arch_type:'',elbow_carrying_angle:'',elbow_laxity:'',
+    shoulder_laxity:'',hip_laxity:'',
   })
   const [profileSaveError,setProfileSaveError]=useState('')
   const [cmjModal,setCmjModal]=useState(false)
@@ -611,6 +613,7 @@ export default function CoachDashboard(){
       humeral_torsion_throwing_arm:p.humeral_torsion_throwing_arm||'',humeral_torsion_glove_arm:p.humeral_torsion_glove_arm||'',
       femoral_torsion_trail_leg:p.femoral_torsion_trail_leg||'',femoral_torsion_lead_leg:p.femoral_torsion_lead_leg||'',
       foot_arch_type:p.foot_arch_type||'',elbow_carrying_angle:p.elbow_carrying_angle||'',elbow_laxity:p.elbow_laxity||'',
+      shoulder_laxity:p.shoulder_laxity||'',hip_laxity:p.hip_laxity||'',
     })
     const [logsRes,cmjRes,,throwRes,hopRes,benchRes,screenRes]=await Promise.all([
       supabase.from('session_logs').select('*').eq('pitcher_id',p.id).order('log_date',{ascending:false}),
@@ -643,6 +646,8 @@ export default function CoachDashboard(){
       foot_arch_type:profileForm.foot_arch_type||null,
       elbow_carrying_angle:profileForm.elbow_carrying_angle||null,
       elbow_laxity:profileForm.elbow_laxity||null,
+      shoulder_laxity:profileForm.shoulder_laxity||null,
+      hip_laxity:profileForm.hip_laxity||null,
     }
     const {error}=await supabase.from('profiles').update(update).eq('id',selected.id)
     if (error){
@@ -1407,12 +1412,14 @@ Write next week's program by day and category (Pre-Throwing, Throwing, Post-Thro
                     <div style={{fontSize:11,fontWeight:700,color:C.gold,textTransform:'uppercase' as const,letterSpacing:'0.5px',margin:'16px 0 10px'}}>Structural Profile</div>
                     {([
                       {group:'Shoulder (per arm — commonly asymmetric in throwers)',fields:[
-                        {key:'humeral_torsion_throwing_arm',label:'Humeral Torsion — Throwing Arm',options:[['retroverted','Retroverted'],['anteverted','Anteverted']],howToTest:HUMERAL_TORSION_HOW_TO_TEST},
-                        {key:'humeral_torsion_glove_arm',label:'Humeral Torsion — Glove Arm',options:[['retroverted','Retroverted'],['anteverted','Anteverted']],howToTest:HUMERAL_TORSION_HOW_TO_TEST},
+                        {key:'humeral_torsion_throwing_arm',label:'Humeral Torsion — Throwing Arm',options:[['retroverted','Retroverted'],['anteverted','Anteverted'],['neutral','Neutral']],howToTest:HUMERAL_TORSION_HOW_TO_TEST},
+                        {key:'humeral_torsion_glove_arm',label:'Humeral Torsion — Glove Arm',options:[['retroverted','Retroverted'],['anteverted','Anteverted'],['neutral','Neutral']],howToTest:HUMERAL_TORSION_HOW_TO_TEST},
+                        {key:'shoulder_laxity',label:'Shoulder Laxity (either arm)',options:[['hypermobile','Hypermobile'],['normal','Normal']],howToTest:SHOULDER_LAXITY_HOW_TO_TEST},
                       ]},
                       {group:'Hip (per leg — trail = drive/back leg, lead = front/landing leg)',fields:[
-                        {key:'femoral_torsion_trail_leg',label:'Femoral Torsion — Trail Leg',options:[['retroverted','Retroverted'],['anteverted','Anteverted']],howToTest:FEMORAL_TORSION_HOW_TO_TEST},
-                        {key:'femoral_torsion_lead_leg',label:'Femoral Torsion — Lead Leg',options:[['retroverted','Retroverted'],['anteverted','Anteverted']],howToTest:FEMORAL_TORSION_HOW_TO_TEST},
+                        {key:'femoral_torsion_trail_leg',label:'Femoral Torsion — Trail Leg',options:[['retroverted','Retroverted'],['anteverted','Anteverted'],['neutral','Neutral']],howToTest:FEMORAL_TORSION_HOW_TO_TEST},
+                        {key:'femoral_torsion_lead_leg',label:'Femoral Torsion — Lead Leg',options:[['retroverted','Retroverted'],['anteverted','Anteverted'],['neutral','Neutral']],howToTest:FEMORAL_TORSION_HOW_TO_TEST},
+                        {key:'hip_laxity',label:'Hip Laxity (either leg)',options:[['hypermobile','Hypermobile'],['normal','Normal']],howToTest:HIP_LAXITY_HOW_TO_TEST},
                       ]},
                       {group:'Foot',fields:[
                         {key:'foot_arch_type',label:'Foot Arch Type',options:[['high_arch','High Arch'],['flat','Flat / Flexible']],howToTest:FOOT_ARCH_HOW_TO_TEST},

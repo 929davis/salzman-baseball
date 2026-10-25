@@ -69,7 +69,7 @@ export const ISA_DISCLAIMER = 'Never a reason to skip mobility or stability work
 // hip_rotation_lead_deg benchmarks in lib/benchmarks.ts.
 // ---------------------------------------------------------------------------
 
-export type HumeralTorsion = 'retroverted' | 'anteverted'
+export type HumeralTorsion = 'retroverted' | 'anteverted' | 'neutral'
 
 export const HUMERAL_TORSION_INFO: Record<HumeralTorsion, { name: string, color: string, tendency: string }> = {
   retroverted: {
@@ -80,9 +80,13 @@ export const HUMERAL_TORSION_INFO: Record<HumeralTorsion, { name: string, color:
     name: 'Anteverted — biased toward internal rotation', color: '#39d353',
     tendency: 'The humeral head twists forward instead of back, reducing or eliminating the usual backward twist. This creates an "early wall" for throwers: reaching for a late-cocking layback position runs into an abrupt bone-on-bone block well before a retroverted shoulder would. Because that acceleration pathway is shortened, forcing elite velocity out of this structure usually means compensating somewhere mechanical instead — over-stretching the front of the shoulder capsule or opening the torso early — which raises stress on the labrum and the elbow\'s UCL. The tradeoff: more internal rotation range is available instead, so external-rotation/layback mobility work usually deserves more deliberate, ongoing attention.',
   },
+  neutral: {
+    name: 'Neutral — balanced ER/IR, no meaningful bias', color: '#e8b84b',
+    tendency: 'Total external and internal rotation split close to evenly — no strong structural lean either way. The arm\'s rotational mobility isn\'t capped by bone on either side specifically, so layback range and deceleration capacity come down more to soft-tissue mobility and strength training than to a fixed structural lean. Neither extra external-rotation mobility work nor extra internal-rotation strength work is specifically indicated by structure alone.',
+  },
 }
 
-export type FemoralTorsion = 'retroverted' | 'anteverted'
+export type FemoralTorsion = 'retroverted' | 'anteverted' | 'neutral'
 
 export const FEMORAL_TORSION_INFO: Record<FemoralTorsion, { name: string, color: string, tendency: string }> = {
   retroverted: {
@@ -92,6 +96,10 @@ export const FEMORAL_TORSION_INFO: Record<FemoralTorsion, { name: string, color:
   anteverted: {
     name: 'Anteverted — biased toward internal rotation', color: '#39d353',
     tendency: 'The femoral neck twists forward relative to the knee, rotating the thigh inward. This maximizes internal rotation (IR) range — a real advantage for transferring force through internally rotated positions, like firing the trail hip open explosively or a lead leg blocking through internal tracking. The tradeoff is limited external rotation (ER): forcing a wide, toes-out stance (e.g. sitting deep into an externally-rotated trail-leg load) runs into an early bone-on-bone block, which can show up as the knee collapsing inward (valgus stress) or hip pinch rather than at the hip itself. Structurally, this layout often shows as a slightly in-toed ("pigeon-toed") stance, and as kids, a natural preference for sitting in a "W" position.',
+  },
+  neutral: {
+    name: 'Neutral — balanced ER/IR, no meaningful bias', color: '#e8b84b',
+    tendency: 'Total external and internal rotation split close to evenly at the hip — no strong structural lean either way. Squat stance width and rotational demands during the delivery come down more to mobility and strength training than to a fixed structural lean; neither a wide, externally-rotated stance nor a narrow, internally-rotated one is specifically favored by structure alone.',
   },
 }
 
@@ -134,13 +142,50 @@ export const ELBOW_LAXITY_INFO: Record<ElbowLaxity, { name: string, color: strin
   },
 }
 
+// Rotational laxity (shoulder, hip) -- a different axis than torsion above. Torsion describes
+// WHERE a joint's total rotational arc is centered (shifted toward ER or IR); laxity describes
+// HOW BIG that total arc is. A loose capsule can enlarge the arc on top of whatever torsion
+// already set, so a retroverted shoulder with a hypermobile capsule shows even more ER AND
+// more IR than torsion alone would predict -- these two traits stack, they don't substitute for
+// each other. One value per joint (not per-side like torsion) since laxity is usually a more
+// systemic/whole-body trait, same reasoning as Elbow Laxity above.
+export type ShoulderLaxity = 'hypermobile' | 'normal'
+
+export const SHOULDER_LAXITY_INFO: Record<ShoulderLaxity, { name: string, color: string, tendency: string }> = {
+  hypermobile: {
+    name: 'Hypermobile — more total rotation than torsion alone explains', color: '#a371f7',
+    tendency: 'The shoulder capsule allows more total rotational range (ER and IR added together) than humeral torsion alone would predict -- a soft-tissue trait stacked on top of the bony structure, not a substitute for it. Tends to show up as extra layback or reach beyond what the torsion classification above explains, which can help arm speed, but the joint\'s passive restraint is looser across the board. Scapular control and deceleration strength work usually deserve extra, consistent attention.',
+  },
+  normal: {
+    name: 'Normal — total rotation matches torsion alone', color: '#39d353',
+    tendency: 'The shoulder capsule\'s total rotational range matches what humeral torsion alone would predict -- no extra soft-tissue laxity stacked on top of the bony structure.',
+  },
+}
+
+export type HipLaxity = 'hypermobile' | 'normal'
+
+export const HIP_LAXITY_INFO: Record<HipLaxity, { name: string, color: string, tendency: string }> = {
+  hypermobile: {
+    name: 'Hypermobile — more total rotation than torsion alone explains', color: '#a371f7',
+    tendency: 'The hip capsule/ligaments allow more total rotational range (ER and IR added together) than femoral torsion alone would predict. Tends to show up as extra range in both a wide, externally-rotated squat stance AND a narrow, internally-rotated one, beyond what the torsion classification above explains -- useful range, but with less passive joint stability to rely on. Hip and core control work usually deserves extra, consistent attention.',
+  },
+  normal: {
+    name: 'Normal — total rotation matches torsion alone', color: '#39d353',
+    tendency: 'The hip capsule/ligaments\' total rotational range matches what femoral torsion alone would predict -- no extra soft-tissue laxity stacked on top of the bony structure.',
+  },
+}
+
 // Coach-facing testing protocols for the Structural Profile -- how to actually get each
 // classification, not just what the values mean. Plain-language, phone-and-hands only (same
 // "no special equipment" philosophy as the CMJ/Hop Test/Plyo Push-Up protocols elsewhere in
 // this app) since these are visual/manual passive-ROM checks, not something to self-diagnose.
-export const HUMERAL_TORSION_HOW_TO_TEST = 'Supine Wall Rotation Test — isolates the shoulder blade so the bony range shows, not a compensated one. Athlete lies flat on their back (or stands with spine/hips flat against a wall). Arm out to the side at 90°, elbow bent 90°, fingers pointing at the ceiling. Put a hand on their lower ribs/shoulder blade to feel for cheating — it and the lower back must stay pinned the whole time. External rotation: lower the back of the hand toward the floor/wall behind them; stop the instant the shoulder blade lifts or the low back arches. Reaching flat is a baseline 90° of ER. Internal rotation: back to center, then rotate the forearm forward/down toward the feet; stop the instant the front of the shoulder blade rolls forward or hitches. Normal isolated IR is roughly 45-60°. Compare throwing arm to glove arm: clearly more ER (flat or past it) with IR stopping early (~20-30°) = Retroverted. ER clearly short of flat paired with deep IR instead = Anteverted.'
+export const HUMERAL_TORSION_HOW_TO_TEST = 'Supine Wall Rotation Test — isolates the shoulder blade so the bony range shows, not a compensated one. Athlete lies flat on their back (or stands with spine/hips flat against a wall). Arm out to the side at 90°, elbow bent 90°, fingers pointing at the ceiling. Put a hand on their lower ribs/shoulder blade to feel for cheating — it and the lower back must stay pinned the whole time. External rotation: lower the back of the hand toward the floor/wall behind them; stop the instant the shoulder blade lifts or the low back arches. Reaching flat is a baseline 90° of ER. Internal rotation: back to center, then rotate the forearm forward/down toward the feet; stop the instant the front of the shoulder blade rolls forward or hitches. Normal isolated IR is roughly 45-60°. Compare throwing arm to glove arm: clearly more ER (flat or past it) with IR stopping early (~20-30°) = Retroverted. ER clearly short of flat paired with deep IR instead = Anteverted. Roughly even on both sides, close to the 90°/45-60° baseline = Neutral.'
 
-export const FEMORAL_TORSION_HOW_TO_TEST = 'Craig\'s Test — the clinical standard for femoral version without imaging. Athlete lies face-down (prone), knee bent to a sharp 90°, foot pointing at the ceiling. Press firmly on the outside of their hip to find the greater trochanter (the hard bony point). Slowly rotate the lower leg side to side, like a windshield wiper, while feeling that spot — stop the instant the trochanter feels like it\'s pointing most directly out to the side (its most prominent point). Now look at where the shin/foot is pointing relative to vertical: a normal profile sits roughly 8-15° short of vertical. If the shin had to tilt in further than that (more than ~15° from vertical) to find the peak, call it Anteverted. If the shin was vertical, or had to tilt only slightly or even toward the other leg (less than ~8° from vertical) to find the peak, call it Retroverted. Test the trail leg and lead leg separately, same protocol.'
+export const FEMORAL_TORSION_HOW_TO_TEST = 'Craig\'s Test — the clinical standard for femoral version without imaging. Athlete lies face-down (prone), knee bent to a sharp 90°, foot pointing at the ceiling. Press firmly on the outside of their hip to find the greater trochanter (the hard bony point). Slowly rotate the lower leg side to side, like a windshield wiper, while feeling that spot — stop the instant the trochanter feels like it\'s pointing most directly out to the side (its most prominent point). Now look at where the shin/foot is pointing relative to vertical: a normal profile sits roughly 8-15° short of vertical. If the shin had to tilt in further than that (more than ~15° from vertical) to find the peak, call it Anteverted. If the shin was vertical, or had to tilt only slightly or even toward the other leg (less than ~8° from vertical) to find the peak, call it Retroverted. Right in the 8-15° band = Neutral. Test the trail leg and lead leg separately, same protocol.'
+
+export const SHOULDER_LAXITY_HOW_TO_TEST = 'Using the same Supine Wall Rotation Test setup as Humeral Torsion (90/90 position, scapula pinned), measure ER and IR end-range in degrees and add them together for a total arc. Do this on both arms. If one arm\'s total is clearly bigger than the other\'s (not just shifted toward ER or IR, but genuinely larger overall), call that arm Hypermobile. If the totals are about equal side to side, call it Normal.'
+
+export const HIP_LAXITY_HOW_TO_TEST = 'Using the same prone setup as Craig\'s Test (knee bent 90°), passively rotate the lower leg outward (hip IR) and inward (hip ER), measuring each end-range in degrees, and add them together for a total arc. Do this on both legs. If one leg\'s total is clearly bigger than the other\'s, call that leg Hypermobile. If the totals are about equal side to side, call it Normal.'
 
 export const FOOT_ARCH_HOW_TO_TEST = 'Wet the sole of the foot and have the athlete step once with full weight onto a dry surface (cardboard works), then step off. A thin or broken connection between the heel and ball of the print means a High Arch. A wide print with the midfoot filled in means Flat. (Or just look at a relaxed standing foot from the side: a clear gap of daylight under the arch is High Arch; the arch touching or nearly touching the ground is Flat.)'
 
