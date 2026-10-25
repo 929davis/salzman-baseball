@@ -7,15 +7,15 @@ import PitchingIQTab from '@/app/components/PitchingIQTab'
 import AthleticBenchmarks from '@/app/components/AthleticBenchmarks'
 import HopTestPanel from '@/app/components/HopTestPanel'
 import PlyoPushupPanel from '@/app/components/PlyoPushupPanel'
-import ProgressOverview from '@/app/components/ProgressOverview'
 import MiniSparkline from '@/app/components/MiniSparkline'
 import PitchMechanics2D from '@/app/components/PitchMechanics2D'
-import ThrowingPrinciples from '@/app/components/ThrowingPrinciples'
 import TestVideoLink from '@/app/components/TestVideoLink'
 import { useTestVideos } from '@/lib/testVideos'
 import { parseTime, calcCMJFn, classifyCMJ, validateCMJTimestamps } from '@/lib/cmj'
 import { CATEGORY_ORDER, CATEGORY_COLORS } from '@/lib/exerciseCategories'
 import { intentLabel } from '@/lib/plainLanguage'
+import { SOMATOTYPE_INFO, ISA_INFO, type Somatotype, type IsaClassification } from '@/lib/bodyType'
+import { BENCHMARKS, benchmarkStatus } from '@/lib/benchmarks'
 
 const C = {
   bg:'#0d1117',bg2:'#161b22',bg3:'#1c2333',border:'#30363d',
@@ -134,6 +134,8 @@ export default function PitcherDashboard(){
   const [program,setProgram]=useState<any>(null)
   const [logs,setLogs]=useState<any[]>([])
   const [cmjResults,setCmjResults]=useState<any[]>([])
+  const [hopResults,setHopResults]=useState<any[]>([])
+  const [plyoResults,setPlyoResults]=useState<any[]>([])
   const [foodLogs,setFoodLogs]=useState<any[]>([])
   const [dailyFuelScore,setDailyFuelScore]=useState<any>(null)
   const [weekFuelScores,setWeekFuelScores]=useState<any[]>([])
@@ -182,7 +184,7 @@ export default function PitcherDashboard(){
       if (prof.role==='coach'){router.push('/coach');return}
       setProfile(prof)
       const sevenDaysAgo=new Date(Date.now()-7*24*60*60*1000).toISOString().split('T')[0]
-      const [progRes,logsRes,cmjRes,foodRes,fuelRes,weekFuelRes,videosRes]=await Promise.all([
+      const [progRes,logsRes,cmjRes,foodRes,fuelRes,weekFuelRes,videosRes,hopRes,plyoRes]=await Promise.all([
         supabase.from('programs').select('*').eq('pitcher_id',prof.id).order('week_of',{ascending:false}).limit(1),
         supabase.from('session_logs').select('*').eq('pitcher_id',prof.id).order('log_date',{ascending:false}).limit(20),
         supabase.from('cmj_results').select('*').eq('pitcher_id',prof.id).order('test_date',{ascending:false}),
@@ -190,10 +192,14 @@ export default function PitcherDashboard(){
         supabase.from('daily_fuel_scores').select('*').eq('pitcher_id',prof.id).eq('log_date',today).single(),
         supabase.from('daily_fuel_scores').select('*').eq('pitcher_id',prof.id).gte('log_date',sevenDaysAgo).order('log_date'),
         supabase.from('exercise_videos').select('*'),
+        supabase.from('hop_test_results').select('*').eq('pitcher_id',prof.id).order('test_date',{ascending:false}),
+        supabase.from('plyo_pushup_assessments').select('*').eq('pitcher_id',prof.id).order('test_date',{ascending:false}),
       ])
       setProgram(progRes.data?.[0]||null)
       setLogs(logsRes.data||[])
       setCmjResults(cmjRes.data||[])
+      setHopResults(hopRes.data||[])
+      setPlyoResults(plyoRes.data||[])
       setFoodLogs(foodRes.data||[])
       setDailyFuelScore(fuelRes.data||null)
       setWeekFuelScores(weekFuelRes.data||[])
@@ -393,15 +399,13 @@ export default function PitcherDashboard(){
       <div style={{display:'flex',background:C.bg2,borderBottom:`1px solid ${C.border}`,padding:'0 2px',overflowX:'auto' as const}}>
         {[
           {id:'overview',icon:'📈',label:'Overview'},
-          {id:'principles',icon:'🧠',label:'Why'},
           {id:'program',icon:'📋',label:'Program'},
           {id:'food',icon:'🥗',label:'Food'},
           {id:'assess',icon:'🧪',label:'Assess'},
           {id:'log',icon:'📝',label:'Log'},
           {id:'iq',icon:'🎯',label:'Pitching IQ'},
-          {id:'anatomy',icon:'🦴',label:'Anatomy',external:true},
         ].map(t=>(
-          <button key={t.id} onClick={()=>t.external?router.push('/anatomy'):setTab(t.id)} style={{flex:1,background:'transparent',border:'none',borderBottom:`2px solid ${tab===t.id?C.gold:'transparent'}`,padding:'8px 2px',cursor:'pointer',color:tab===t.id?C.gold:C.textMuted,fontSize:9,fontWeight:tab===t.id?700:400,textTransform:'uppercase' as const,letterSpacing:'0.3px',whiteSpace:'nowrap' as const}}>
+          <button key={t.id} onClick={()=>setTab(t.id)} style={{flex:1,background:'transparent',border:'none',borderBottom:`2px solid ${tab===t.id?C.gold:'transparent'}`,padding:'8px 2px',cursor:'pointer',color:tab===t.id?C.gold:C.textMuted,fontSize:9,fontWeight:tab===t.id?700:400,textTransform:'uppercase' as const,letterSpacing:'0.3px',whiteSpace:'nowrap' as const}}>
             <div style={{fontSize:15,marginBottom:2}}>{t.icon}</div>
             {t.label}
           </button>
@@ -411,36 +415,99 @@ export default function PitcherDashboard(){
       <div style={{padding:'16px'}}>
 
         {/* OVERVIEW TAB */}
-        {tab==='overview'&&profile&&(
-          <div>
-            <ProgressOverview pitcherId={profile.id} mode="athlete"/>
-            {/* Workload Trend — from logged sessions, a real time series (unlike the
-                throw-volume breakdown on the coach side, which is a snapshot of the current
-                week's program by category, not something with a history to chart). */}
-            {logs.length>1&&(()=>{
-              const asc=[...logs].reverse()
-              const pitchHist=asc.map(r=>({date:r.log_date,value:r.pitch_count})).filter(h=>h.value!=null)
-              const heHist=asc.map(r=>({date:r.log_date,value:r.high_effort_throws})).filter(h=>h.value!=null)
-              if (pitchHist.length<2 && heHist.length<2) return null
-              return (
-                <div style={card}>
-                  <div style={{fontSize:14,fontWeight:700,color:C.white,marginBottom:10}}>Workload Trend</div>
-                  <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(140px,1fr))',gap:10}}>
-                    {[{label:'Pitch Count',hist:pitchHist,color:C.blue,unit:''},{label:'High-Effort Throws',hist:heHist,color:C.red,unit:''}].map(m=>(
-                      <div key={m.label}>
-                        <div style={{fontSize:10,color:C.textMuted,textTransform:'uppercase' as const,letterSpacing:'0.5px',marginBottom:4}}>{m.label}</div>
-                        {m.hist.length>1?<MiniSparkline data={m.hist} color={m.color} unit={m.unit} height={70}/>:<div style={{fontSize:11,color:C.textDim,padding:'20px 0',textAlign:'center' as const}}>Not enough data</div>}
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )
-            })()}
-          </div>
-        )}
+        {tab==='overview'&&profile&&(()=>{
+          const latestCMJ=cmjResults[0]||null
+          const latestHop=hopResults[0]||null
+          const latestPlyo=plyoResults[0]||null
+          const somatotype:Somatotype|null = profile.somatotype||null
+          const isa:IsaClassification|null = profile.isa_classification||null
+          const heightIn:number|null = profile.height_in||null
+          const bodyweightLbs:number|null = latestCMJ?.bodyweight!=null
+            ? (latestCMJ.weight_unit==='kg'?latestCMJ.bodyweight*2.20462:latestCMJ.bodyweight)
+            : null
+          const bmi = (heightIn&&bodyweightLbs)?(703*bodyweightLbs)/(heightIn*heightIn):null
+          const bmiBand = bmi==null?null
+            : bmi<18.5?{label:'Underweight',color:C.blue}
+            : bmi<25?{label:'Normal',color:C.teal}
+            : bmi<30?{label:'Overweight',color:C.gold}
+            : {label:'Obese',color:C.red}
+          const plyoFlightProxyIn = latestPlyo?.avg_flight_sec!=null?(9.81*latestPlyo.avg_flight_sec**2)/8*39.3701:null
 
-        {/* PRINCIPLES TAB */}
-        {tab==='principles'&&<ThrowingPrinciples/>}
+          const benchRow=(key:string,value:number|null|undefined)=>{
+            const def=BENCHMARKS.find(b=>b.key===key)!
+            const status=benchmarkStatus(def,value)
+            return (
+              <div key={key} style={{display:'flex',justifyContent:'space-between',alignItems:'baseline',padding:'8px 0',borderBottom:`1px solid ${C.border}`}}>
+                <span style={{fontSize:12,color:C.textMuted}}>{def.label}</span>
+                <span style={{fontSize:13,fontWeight:700,color:status?status.color:C.textDim}}>
+                  {value!=null?`${Number(value).toFixed(def.unit==='in'?1:2)}${def.unit}`:'No data'}
+                  {status&&<span style={{fontWeight:400,fontSize:11,marginLeft:6}}>· {status.label}</span>}
+                </span>
+              </div>
+            )
+          }
+
+          return (
+          <div>
+            {/* 1. Predictive velocity estimate */}
+            <div style={{...card,textAlign:'center',border:'1px solid rgba(163,113,247,0.4)',background:'rgba(163,113,247,0.06)'}}>
+              <div style={{fontSize:11,color:C.purple,fontWeight:700,textTransform:'uppercase' as const,letterSpacing:'1px',marginBottom:8}}>Predictive Velocity Estimate</div>
+              {latestCMJ?.estimated_velocity!=null?(
+                <>
+                  <div style={{fontSize:48,fontWeight:700,color:C.white,letterSpacing:'-2px',marginBottom:4}}>{latestCMJ.estimated_velocity.toFixed(1)}<span style={{fontSize:16,color:C.textMuted,fontWeight:400}}> MPH</span></div>
+                  <div style={{fontSize:11,color:C.textMuted}}>video-estimated ceiling from your CMJ test, not a measurement — exceeded only ~{latestCMJ.estimated_velocity_exceedance_pct||5}% of the time</div>
+                </>
+              ):<div style={{fontSize:13,color:C.textDim,padding:'10px 0'}}>No CMJ test yet — complete one in Assess to see this.</div>}
+            </div>
+
+            {/* 2. Somatotype / ISA classification */}
+            <div style={card}>
+              <div style={{fontSize:11,color:C.gold,fontWeight:700,textTransform:'uppercase' as const,letterSpacing:'1px',marginBottom:10}}>Body Type & Structure</div>
+              {somatotype?(
+                <div style={{marginBottom:12,paddingLeft:10,borderLeft:`3px solid ${SOMATOTYPE_INFO[somatotype].color}`}}>
+                  <div style={{fontSize:13,fontWeight:700,color:SOMATOTYPE_INFO[somatotype].color,marginBottom:3}}>{SOMATOTYPE_INFO[somatotype].name}</div>
+                  <div style={{fontSize:12,color:C.text,lineHeight:1.6,marginBottom:4}}>{SOMATOTYPE_INFO[somatotype].tendency}</div>
+                  <div style={{fontSize:11,color:C.textMuted,lineHeight:1.5,fontStyle:'italic'}}>{SOMATOTYPE_INFO[somatotype].note}</div>
+                </div>
+              ):<div style={{fontSize:12,color:C.textDim,marginBottom:12}}>Somatotype not set yet — ask your coach to classify this.</div>}
+              {isa?(
+                <div style={{paddingLeft:10,borderLeft:`3px solid ${ISA_INFO[isa].color}`}}>
+                  <div style={{fontSize:13,fontWeight:700,color:ISA_INFO[isa].color,marginBottom:3}}>{ISA_INFO[isa].name}</div>
+                  <div style={{fontSize:12,color:C.text,lineHeight:1.6}}>{ISA_INFO[isa].tendency}</div>
+                </div>
+              ):<div style={{fontSize:12,color:C.textDim}}>ISA classification not set yet — this needs a coach/PT to feel the lower rib margins or review a photo.</div>}
+            </div>
+
+            {/* 3. Bodyweight vs. height-to-weight ratio */}
+            <div style={card}>
+              <div style={{fontSize:11,color:C.gold,fontWeight:700,textTransform:'uppercase' as const,letterSpacing:'1px',marginBottom:10}}>Bodyweight vs. Height</div>
+              {bmi!=null?(
+                <>
+                  <div style={{display:'flex',alignItems:'baseline',gap:10,marginBottom:6}}>
+                    <div style={{fontSize:32,fontWeight:700,color:C.white}}>{bmi.toFixed(1)}</div>
+                    <div style={{fontSize:12,fontWeight:700,color:bmiBand!.color}}>{bmiBand!.label}</div>
+                  </div>
+                  <div style={{fontSize:11,color:C.textMuted,lineHeight:1.5}}>Standard BMI, from height ({heightIn}in) and your latest logged bodyweight ({bodyweightLbs!.toFixed(0)}lbs). Shown as general context next to your coach-assessed body type above — there's no validated BMI range specific to each somatotype, so this isn't a per-type target.</div>
+                </>
+              ):<div style={{fontSize:12,color:C.textDim}}>{heightIn?'Log a CMJ test to capture bodyweight.':'Height not set yet — ask your coach to add it.'}</div>}
+            </div>
+
+            {/* 4. Benchmarks: percentile vs. standards (CMJ, Hop Test, Plyo Push-Up) */}
+            <div style={card}>
+              <div style={{fontSize:11,color:C.gold,fontWeight:700,textTransform:'uppercase' as const,letterSpacing:'1px',marginBottom:10}}>Benchmarks vs. Standards</div>
+              {benchRow('cmj_jump_height_in',latestCMJ?.jump_height_in)}
+              {benchRow('cmj_peak_power_per_kg',latestCMJ?.peak_power_per_kg)}
+              {benchRow('hop_jump_height_in',latestHop?.avg_jump_height_in)}
+              {benchRow('hop_rsi',latestHop?.avg_rsi)}
+              <div style={{display:'flex',justifyContent:'space-between',alignItems:'baseline',padding:'8px 0'}}>
+                <span style={{fontSize:12,color:C.textMuted}}>Plyo Push-Up (flight-time proxy)</span>
+                <span style={{fontSize:13,fontWeight:700,color:C.textDim}}>{plyoFlightProxyIn!=null?`${plyoFlightProxyIn.toFixed(1)}in`:'No data'}</span>
+              </div>
+              {plyoFlightProxyIn!=null&&<div style={{fontSize:10,color:C.textDim,marginTop:-4}}>Estimated from flight time, not a force-plate measurement — a rough proxy, not a validated percentile.</div>}
+            </div>
+          </div>
+          )
+        })()}
 
         {/* PROGRAM TAB */}
         {tab==='program'&&(

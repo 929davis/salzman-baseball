@@ -68,6 +68,7 @@ export default function HopTestPanel({pitcherId}:{pitcherId:string}){
       avg_rsi:result.summary.avgRsi??null,best_rsi:result.summary.bestRsi??null,
       rsi_consistency_pct:result.summary.rsiConsistencyPct??null,
       left_avg_rsi:result.summary.leftAvgRsi??null,right_avg_rsi:result.summary.rightAvgRsi??null,
+      avg_jump_height_in:result.summary.avgJumpHeightIn??null,best_jump_height_in:result.summary.bestJumpHeightIn??null,
     })
     if (error){
       console.error('HopTestPanel: failed to save hop test result',error)
@@ -139,6 +140,18 @@ export default function HopTestPanel({pitcherId}:{pitcherId:string}){
               <div style={{fontSize:10,color:C.purple,marginBottom:3}}>Avg Ground Contact</div>
               <div style={{fontSize:16,fontWeight:700,color:C.white}}>{result.summary.avgGroundContactSec.toFixed(3)}s</div>
             </div>
+            {result.summary.avgJumpHeightIn!=null&&(
+              <div style={{background:'rgba(163,113,247,0.08)',borderRadius:8,padding:10}}>
+                <div style={{fontSize:10,color:C.purple,marginBottom:3}}>Avg Jump Height</div>
+                <div style={{fontSize:16,fontWeight:700,color:C.white}}>{result.summary.avgJumpHeightIn.toFixed(1)} in</div>
+              </div>
+            )}
+            {result.summary.bestJumpHeightIn!=null&&(
+              <div style={{background:'rgba(163,113,247,0.08)',borderRadius:8,padding:10}}>
+                <div style={{fontSize:10,color:C.purple,marginBottom:3}}>Best Jump Height</div>
+                <div style={{fontSize:16,fontWeight:700,color:C.white}}>{result.summary.bestJumpHeightIn.toFixed(1)} in</div>
+              </div>
+            )}
             {result.summary.avgRsi!=null&&(
               <div style={{background:'rgba(163,113,247,0.08)',borderRadius:8,padding:10}}>
                 <div style={{fontSize:10,color:C.purple,marginBottom:3}}>Avg RSI</div>
@@ -187,6 +200,7 @@ export default function HopTestPanel({pitcherId}:{pitcherId:string}){
               </div>
               <div style={{display:'flex',gap:12,flexWrap:'wrap' as const,fontSize:12}}>
                 <span style={{color:C.textMuted}}>{row.valid_hop_count} hops</span>
+                {row.avg_jump_height_in!=null&&<span style={{color:C.gold}}>↑ {row.avg_jump_height_in.toFixed(1)} in</span>}
                 {row.avg_rsi!=null&&<span style={{color:C.purple}}>Avg RSI {row.avg_rsi.toFixed(2)}</span>}
                 {row.best_rsi!=null&&<span style={{color:C.gold}}>Best RSI {row.best_rsi.toFixed(2)}</span>}
                 {row.rsi_consistency_pct!=null&&<span style={{color:C.teal}}>CV {row.rsi_consistency_pct.toFixed(1)}%</span>}

@@ -6,6 +6,7 @@ export type BenchmarkKey =
   | 'hip_rotation_trail_deg' | 'hip_rotation_lead_deg' | 'shoulder_rotation_deg'
   | 'squat_jump_in'
   | 'cmj_jump_height_in' | 'cmj_peak_power_per_kg'
+  | 'hop_jump_height_in' | 'hop_rsi'
 
 export type BenchmarkDef = {
   key: BenchmarkKey
@@ -24,8 +25,14 @@ export type BenchmarkDef = {
   // form) when omitted. 'cmj_results' means the value is computed elsewhere (the CMJ tool's
   // flight-time calculation) and just displayed here too, via cmjField below -- there's no
   // separate manual entry for it on this page.
-  source?: 'athletic_benchmarks' | 'cmj_results'
+  source?: 'athletic_benchmarks' | 'cmj_results' | 'hop_test_results'
   cmjField?: 'jump_height_in' | 'peak_power_per_kg'
+  hopField?: 'avg_jump_height_in' | 'avg_rsi'
+  // Pearson r to pitch velocity, from a real sourced dataset -- never a placeholder or a guess.
+  // Coach-facing only (see AthleticBenchmarks.tsx's showCorrelations prop); omit entirely rather
+  // than inventing a number for a metric with no sourced correlation.
+  correlationR?: number
+  correlationNote?: string
 }
 
 // scaleMin/scaleMax are a display convenience (roughly 1.3x the highest reference point) —
@@ -44,8 +51,8 @@ export type BenchmarkDef = {
 export const BENCHMARKS: BenchmarkDef[] = [
   {key:'broad_jump_in',label:'Broad Jump',unit:'in',tier:1,p50:96,scaleMin:0,scaleMax:130},
   {key:'lateral_broad_jump_lr_in',label:'Lateral Broad Jump (L+R)',unit:'in',tier:1,p50:156,scaleMin:0,scaleMax:210},
-  {key:'cmj_jump_height_in',label:'CMJ Jump Height',unit:'in',tier:1,p50:15.67,scaleMin:3.9,scaleMax:24.53,source:'cmj_results',cmjField:'jump_height_in'},
-  {key:'cmj_peak_power_per_kg',label:'CMJ Peak Power / Bodyweight',unit:'W/kg',tier:1,p50:55.4,scaleMin:24.3,scaleMax:84.4,source:'cmj_results',cmjField:'peak_power_per_kg'},
+  {key:'cmj_jump_height_in',label:'CMJ Jump Height',unit:'in',tier:1,p50:15.67,scaleMin:3.9,scaleMax:24.53,source:'cmj_results',cmjField:'jump_height_in',correlationR:0.725,correlationNote:'All levels, 1,934-session reference dataset.'},
+  {key:'cmj_peak_power_per_kg',label:'CMJ Peak Power / Bodyweight',unit:'W/kg',tier:1,p50:55.4,scaleMin:24.3,scaleMax:84.4,source:'cmj_results',cmjField:'peak_power_per_kg',correlationR:0.707,correlationNote:'All levels, 1,934-session reference dataset.'},
   {key:'sprint_10yd_sec',label:'10-Yard Sprint',unit:'sec',tier:2,p50:1.70,elite:1.60,lowerIsBetter:true,scaleMin:1.3,scaleMax:2.1},
   {key:'total_body_strength_lbs',label:'Total Body Strength (Squat + Bench + Deadlift)',unit:'lbs',tier:2,p50:400,scaleMin:0,scaleMax:650},
   {key:'shoulder_er_ir_lbs',label:'Shoulder ER/IR Strength',unit:'lbs',tier:2,p50:63,scaleMin:0,scaleMax:100},
@@ -55,10 +62,33 @@ export const BENCHMARKS: BenchmarkDef[] = [
   // Measured the same way as the CMJ tool's flight-time method, just from a static squat
   // pause instead of a countermovement -- no force plate needed, a phone timer is enough.
   // Velocity correlation in that dataset: r=0.631 (all levels) -- Tier 2, not quite Tier 1.
-  {key:'squat_jump_in',label:'Squat Jump Height',unit:'in',tier:2,p50:14.02,scaleMin:3.62,scaleMax:22.4},
+  {key:'squat_jump_in',label:'Squat Jump Height',unit:'in',tier:2,p50:14.02,scaleMin:3.62,scaleMax:22.4,correlationR:0.631,correlationNote:'All levels, 1,934-session reference dataset.'},
   {key:'grip_strength_right_lbs',label:'Grip Strength (Right)',unit:'lbs',tier:2,p50:105,p75:120,scaleMin:0,scaleMax:160},
   {key:'grip_strength_left_lbs',label:'Grip Strength (Left)',unit:'lbs',tier:2,p50:105,p75:115,scaleMin:0,scaleMax:160},
   {key:'wingspan_in',label:'Wingspan',unit:'in',tier:2,p50:72,scaleMin:60,scaleMax:84},
+  // Hop Test and Plyo Push-Up reference data: college pitchers only, from a coach-supplied
+  // analysis of a Driveline-style "high_performance.csv" dataset (1,934 rows / 1,162 athletes,
+  // velocity = pitch_speed_mph, test within 14 days of the pitching session). Hop Test maps
+  // cleanly onto this app's own math -- "ht" columns there are jump height from flight time and
+  // RSI = flight/ground-contact time, exactly what lib/hopTest.ts already computes (calcHopMetrics'
+  // flightTimeJumpHeightIn and rsi). p50/p25/p75 below are that dataset's college-level values
+  // (n=441 hops), cm converted to inches for jump height; RSI is unitless, no conversion.
+  // Correlation to velocity in that same college sample: jump height r=0.30 raw / 0.32 adjusted
+  // for bodyweight; RSI r=0.26 raw / 0.31 adjusted. Weaker than CMJ/squat jump above (r~0.3 means
+  // roughly 10% of velocity variance, not a strong predictor on its own) -- shown as-is, not
+  // inflated. Per the source analysis: "don't use these as pass/fail benchmarks, use them as the
+  // roster's reference range next to your own athletes' data."
+  {key:'hop_jump_height_in',label:'Hop Test Jump Height',unit:'in',tier:2,p50:12.01,p75:13.78,scaleMin:6.8,scaleMax:18.7,source:'hop_test_results',hopField:'avg_jump_height_in',correlationR:0.30,correlationNote:'College pitchers (n=441), raw; 0.32 adjusted for bodyweight.'},
+  {key:'hop_rsi',label:'Hop Test RSI',unit:'',tier:2,p50:2.50,p75:2.70,scaleMin:1.4,scaleMax:3.6,source:'hop_test_results',hopField:'avg_rsi',correlationR:0.26,correlationNote:'College pitchers (n=441), raw; 0.31 adjusted for bodyweight.'},
+  // Plyo Push-Up is deliberately NOT added as a BenchmarkDef entry here, unlike Hop Test above.
+  // The source dataset measured peak force-plate force (N) and force/bodyweight (xBW); this
+  // app's Plyo Push-Up panel (lib/plyoPushup.ts) only has ground-contact/flight TIMING from
+  // video, no force plate, no bodyweight captured in that form -- there is no real p50/percentile
+  // in inches for "estimated jump height from flight time" to cite, so giving this a p50 here
+  // would mean inventing a reference point this BenchmarkDef type presents as sourced. Per the
+  // approved approach, it's instead computed and shown directly in the pitcher Overview card
+  // (app/pitcher/page.tsx) as a plain approximated number with no tier/percentile bar -- see the
+  // disclaimer copy there.
   {key:'hip_rotation_trail_deg',label:'Hip Total Rotation (Trail Leg)',unit:'°',tier:3,p50:67,scaleMin:0,scaleMax:100},
   {key:'hip_rotation_lead_deg',label:'Hip Total Rotation (Lead Leg)',unit:'°',tier:3,p50:65,scaleMin:0,scaleMax:100},
   {key:'shoulder_rotation_deg',label:'Shoulder Total Rotation',unit:'°',tier:3,p50:150,normalRange:[160,180],scaleMin:0,scaleMax:200},

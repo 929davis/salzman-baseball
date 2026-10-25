@@ -66,6 +66,10 @@ export type HopTestSummary={
   rsiConsistencyPct?:number
   leftAvgRsi?:number
   rightAvgRsi?:number
+  // Jump height derived from flight time (same projectile-motion formula as CMJ) -- undefined
+  // with fewer than 2 valid hops, same condition as RSI, since both need a following landing.
+  avgJumpHeightIn?:number
+  bestJumpHeightIn?:number
 }
 
 export function summarizeHopTest(metrics:HopMetrics[]):HopTestSummary{
@@ -88,5 +92,8 @@ export function summarizeHopTest(metrics:HopMetrics[]):HopTestSummary{
   const rightRsi=metrics.filter(m=>m.limb==='right'&&m.rsi!=null).map(m=>m.rsi as number)
   const leftAvgRsi=leftRsi.length?leftRsi.reduce((a,b)=>a+b,0)/leftRsi.length:undefined
   const rightAvgRsi=rightRsi.length?rightRsi.reduce((a,b)=>a+b,0)/rightRsi.length:undefined
-  return {validHopCount,avgGroundContactSec,bestGroundContactSec,avgRsi,bestRsi,rsiConsistencyPct,leftAvgRsi,rightAvgRsi}
+  const jumpHeights=metrics.map(m=>m.flightTimeJumpHeightIn).filter((v):v is number=>v!=null)
+  const avgJumpHeightIn=jumpHeights.length?jumpHeights.reduce((a,b)=>a+b,0)/jumpHeights.length:undefined
+  const bestJumpHeightIn=jumpHeights.length?Math.max(...jumpHeights):undefined
+  return {validHopCount,avgGroundContactSec,bestGroundContactSec,avgRsi,bestRsi,rsiConsistencyPct,leftAvgRsi,rightAvgRsi,avgJumpHeightIn,bestJumpHeightIn}
 }

@@ -69,7 +69,7 @@ function ScreenBadge({label,status,history,hasVideo,onOpen}:{label:string,status
   )
 }
 
-function BenchmarkBar({def,value,history,videos,onSaveVideo}:{def:BenchmarkDef,value:number|null|undefined,history:{date:string,value:number}[],videos:Record<string,string>,onSaveVideo:(key:string,url:string)=>void}){
+function BenchmarkBar({def,value,history,videos,onSaveVideo,showCorrelation}:{def:BenchmarkDef,value:number|null|undefined,history:{date:string,value:number}[],videos:Record<string,string>,onSaveVideo:(key:string,url:string)=>void,showCorrelation?:boolean}){
   const status=benchmarkStatus(def,value)
   const fillPct=value!=null&&!isNaN(value)?scalePct(def,value):0
   const p50Pct=scalePct(def,def.p50)
@@ -82,6 +82,9 @@ function BenchmarkBar({def,value,history,videos,onSaveVideo}:{def:BenchmarkDef,v
           {status&&<span style={{fontWeight:400,fontSize:11,marginLeft:6}}>· {status.label}</span>}
         </span>
       </div>
+      {showCorrelation&&def.correlationR!=null&&(
+        <div style={{fontSize:10,color:C.purple,marginBottom:4}}>r = {def.correlationR.toFixed(3)} to velocity{def.correlationNote?` — ${def.correlationNote}`:''}</div>
+      )}
       <div style={{position:'relative' as const,height:16,background:C.bg3,borderRadius:4,overflow:'visible' as const}}>
         {def.normalRange&&(
           <div style={{position:'absolute' as const,left:`${scalePct(def,def.normalRange[0])}%`,width:`${scalePct(def,def.normalRange[1])-scalePct(def,def.normalRange[0])}%`,top:0,bottom:0,background:'rgba(57,211,83,0.12)',borderLeft:'1px dashed rgba(57,211,83,0.5)',borderRight:'1px dashed rgba(57,211,83,0.5)'}}/>
@@ -143,10 +146,12 @@ function RecommendedWorkList({items, getRecommendation}:{items:{key:string,label
   )
 }
 
-// cmjResults: passed in rather than fetched here -- both coach and pitcher pages already load
-// this for the separate CMJ tool, so this avoids a second fetch of the same data. Used only
-// for the two BENCHMARKS entries with source:'cmj_results' (see lib/benchmarks.ts).
-export default function AthleticBenchmarks({pitcherId, getRecommendation, cmjResults=[]}:{pitcherId:string, getRecommendation?:(key:string)=>Recommendation, cmjResults?:any[]}){
+// cmjResults/hopResults: passed in rather than fetched here -- coach and pitcher pages already
+// load these for the separate CMJ/Hop Test tools, so this avoids a second fetch of the same
+// data. Used only for the BENCHMARKS entries with source:'cmj_results'/'hop_test_results' (see
+// lib/benchmarks.ts). showCorrelations is coach-only -- see lib/benchmarks.ts's correlationR
+// comment for why this is never shown to a pitcher.
+export default function AthleticBenchmarks({pitcherId, getRecommendation, cmjResults=[], hopResults=[], showCorrelations=false}:{pitcherId:string, getRecommendation?:(key:string)=>Recommendation, cmjResults?:any[], hopResults?:any[], showCorrelations?:boolean}){
   const supabase=createClient()
   const {videos,saveVideo}=useTestVideos()
   const [benchHistory,setBenchHistory]=useState<any[]>([])
@@ -178,8 +183,11 @@ export default function AthleticBenchmarks({pitcherId, getRecommendation, cmjRes
   // Resolves a benchmark's current value regardless of which table it actually lives in --
   // used both for rendering the bar and for deciding what counts as "Below average" for the
   // Recommended Corrective Work list below, so those two never drift out of sync.
-  const valueForDef=(def:BenchmarkDef)=>
-    def.source==='cmj_results'&&def.cmjField ? cmjResults[0]?.[def.cmjField] : latest?.[def.key]
+  const valueForDef=(def:BenchmarkDef)=>{
+    if (def.source==='cmj_results'&&def.cmjField) return cmjResults[0]?.[def.cmjField]
+    if (def.source==='hop_test_results'&&def.hopField) return hopResults[0]?.[def.hopField]
+    return latest?.[def.key]
+  }
 
   const submit=async()=>{
     setSaving(true); setFormError('')
@@ -332,9 +340,11 @@ export default function AthleticBenchmarks({pitcherId, getRecommendation, cmjRes
           {BENCHMARKS.filter(b=>b.tier===tier).map(def=>{
             const history = def.source==='cmj_results'&&def.cmjField
               ? cmjResults.map((r:any)=>({date:r.test_date,value:r[def.cmjField as string]})).filter((h:any)=>h.value!=null).reverse()
+              : def.source==='hop_test_results'&&def.hopField
+              ? hopResults.map((r:any)=>({date:r.test_date,value:r[def.hopField as string]})).filter((h:any)=>h.value!=null).reverse()
               : benchHistory.map(r=>({date:r.test_date,value:r[def.key]})).filter(h=>h.value!=null)
             return <BenchmarkBar key={def.key} def={def} value={valueForDef(def)}
-              history={history} videos={videos} onSaveVideo={saveVideo}/>
+              history={history} videos={videos} onSaveVideo={saveVideo} showCorrelation={showCorrelations}/>
           })}
         </div>
       ))}

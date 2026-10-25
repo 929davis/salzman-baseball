@@ -448,6 +448,10 @@ export default function CoachDashboard(){
   const [structuredDays,setStructuredDays]=useState<any>({})
   const [logs,setLogs]=useState<any[]>([])
   const [cmjResults,setCmjResults]=useState<any[]>([])
+  const [hopResults,setHopResults]=useState<any[]>([])
+  const [editingProfile,setEditingProfile]=useState(false)
+  const [profileForm,setProfileForm]=useState({height_in:'',somatotype:'',isa_classification:''})
+  const [profileSaveError,setProfileSaveError]=useState('')
   const [cmjModal,setCmjModal]=useState(false)
   const [cmjForm,setCmjForm]=useState({date:new Date().toISOString().split('T')[0],bodyweight:'',weightUnit:'lbs',fps:'240',startTime:'',bottomTime:'',takeoffTime:'',landingTime:'',stabilizationTime:'',uprightTime:''})
   const [cmjCalc,setCmjCalc]=useState<any>(null)
@@ -605,8 +609,10 @@ export default function CoachDashboard(){
 
   const selectPitcher=async(p:any)=>{
     setSelected(p);setTab('overview');setView('roster')
+    setEditingProfile(false);setProfileSaveError('')
+    setProfileForm({height_in:p.height_in?.toString()||'',somatotype:p.somatotype||'',isa_classification:p.isa_classification||''})
     const sevenDaysAgo=new Date(Date.now()-7*24*60*60*1000).toISOString().split('T')[0]
-    const [logsRes,cmjRes,,foodRes,fuelRes,weekFuelRes,throwRes]=await Promise.all([
+    const [logsRes,cmjRes,,foodRes,fuelRes,weekFuelRes,throwRes,hopRes]=await Promise.all([
       supabase.from('session_logs').select('*').eq('pitcher_id',p.id).order('log_date',{ascending:false}),
       supabase.from('cmj_results').select('*').eq('pitcher_id',p.id).order('test_date',{ascending:false}),
       loadProgramForWeek(p.id,currentWeekOf()),
@@ -614,6 +620,7 @@ export default function CoachDashboard(){
       supabase.from('daily_fuel_scores').select('*').eq('pitcher_id',p.id).eq('log_date',today).maybeSingle(),
       supabase.from('daily_fuel_scores').select('*').eq('pitcher_id',p.id).gte('log_date',sevenDaysAgo).order('log_date'),
       supabase.from('throw_volume_entries').select('*').eq('pitcher_id',p.id).order('created_at'),
+      supabase.from('hop_test_results').select('*').eq('pitcher_id',p.id).order('test_date',{ascending:false}),
     ])
     setLogs(logsRes.data||[])
     setCmjResults(cmjRes.data||[])
@@ -621,6 +628,24 @@ export default function CoachDashboard(){
     setTodayFuelScore(fuelRes.data||null)
     setWeekFuelScores(weekFuelRes.data||[])
     setThrowEntries(throwRes.data||[])
+    setHopResults(hopRes.data||[])
+  }
+
+  const saveProfileClassification=async()=>{
+    if (!selected)return
+    setProfileSaveError('')
+    const {error}=await supabase.from('profiles').update({
+      height_in:profileForm.height_in?parseFloat(profileForm.height_in):null,
+      somatotype:profileForm.somatotype||null,
+      isa_classification:profileForm.isa_classification||null,
+    }).eq('id',selected.id)
+    if (error){
+      console.error('coach dashboard: failed to save profile classification',error)
+      setProfileSaveError('Could not save — check your connection and try again.')
+      return
+    }
+    setSelected((prev:any)=>({...prev,height_in:profileForm.height_in?parseFloat(profileForm.height_in):null,somatotype:profileForm.somatotype||null,isa_classification:profileForm.isa_classification||null}))
+    setEditingProfile(false)
   }
 
   const refetchThrowEntries=async()=>{
@@ -1344,7 +1369,39 @@ Write next week's program by day and category (Pre-Throwing, Throwing, Post-Thro
                     <div style={{fontSize:14,fontWeight:700,color:logs[0]?.readiness?READINESS_COLORS[logs[0].readiness]:C.textDim}}>{logs[0]?.readiness?READINESS_OPTIONS.find(o=>o.value===logs[0].readiness)?.label:'—'}</div>
                   </div>
                   <button onClick={()=>setShowThrowEntries(s=>!s)} title="Manage throw volume entries" style={{background:'transparent',border:`1px solid ${C.border}`,borderRadius:8,width:32,height:32,display:'flex',alignItems:'center',justifyContent:'center',color:C.textMuted,cursor:'pointer',fontSize:14,flexShrink:0}}>✎</button>
+                  <button onClick={()=>setEditingProfile(s=>!s)} title="Edit height, somatotype, ISA classification" style={{background:'transparent',border:`1px solid ${C.border}`,borderRadius:8,width:32,height:32,display:'flex',alignItems:'center',justifyContent:'center',color:C.textMuted,cursor:'pointer',fontSize:14,flexShrink:0}}>📏</button>
                 </div>
+                {editingProfile&&(
+                  <div style={{width:'100%',background:C.bg3,border:`1px solid ${C.border}`,borderRadius:8,padding:14}}>
+                    <div style={{fontSize:11,fontWeight:700,color:C.gold,textTransform:'uppercase' as const,letterSpacing:'0.5px',marginBottom:10}}>Body Classification</div>
+                    <div style={{display:'flex',gap:12,flexWrap:'wrap' as const,alignItems:'flex-end'}}>
+                      <div>
+                        <div style={{fontSize:10,color:C.textMuted,textTransform:'uppercase' as const,letterSpacing:'0.5px',marginBottom:4}}>Height (in)</div>
+                        <input type="number" style={{...S.input,width:100}} placeholder="e.g. 73" value={profileForm.height_in} onChange={e=>setProfileForm(f=>({...f,height_in:e.target.value}))}/>
+                      </div>
+                      <div>
+                        <div style={{fontSize:10,color:C.textMuted,textTransform:'uppercase' as const,letterSpacing:'0.5px',marginBottom:4}}>Somatotype</div>
+                        <select style={{...S.input,width:150}} value={profileForm.somatotype} onChange={e=>setProfileForm(f=>({...f,somatotype:e.target.value}))}>
+                          <option value="">— Not set —</option>
+                          <option value="ectomorph">Ectomorph</option>
+                          <option value="mesomorph">Mesomorph</option>
+                          <option value="endomorph">Endomorph</option>
+                        </select>
+                      </div>
+                      <div>
+                        <div style={{fontSize:10,color:C.textMuted,textTransform:'uppercase' as const,letterSpacing:'0.5px',marginBottom:4}}>ISA Classification</div>
+                        <select style={{...S.input,width:150}} value={profileForm.isa_classification} onChange={e=>setProfileForm(f=>({...f,isa_classification:e.target.value}))}>
+                          <option value="">— Not set —</option>
+                          <option value="narrow">Narrow</option>
+                          <option value="wide">Wide</option>
+                        </select>
+                      </div>
+                      <button onClick={saveProfileClassification} style={S.btn('gold')}>Save</button>
+                    </div>
+                    <div style={{fontSize:10,color:C.textDim,marginTop:8}}>ISA needs a coach/PT feel of the lower rib margins or a relaxed side-on photo — not something to guess from eye alone.</div>
+                    {profileSaveError&&<div style={{fontSize:12,color:C.red,marginTop:8,padding:'8px 10px',background:'rgba(248,81,73,0.1)',borderRadius:6}}>{profileSaveError}</div>}
+                  </div>
+                )}
                 {showThrowEntries&&(
                   <div style={{width:'100%'}}>
                     {throwEntries.length>0&&(
@@ -1765,7 +1822,7 @@ Write next week's program by day and category (Pre-Throwing, Throwing, Post-Thro
               )}
 
               {tab==='benchmarks'&&(
-                <div style={{padding:4}}><AthleticBenchmarks pitcherId={selected.id} getRecommendation={getRecommendation} cmjResults={cmjResults}/></div>
+                <div style={{padding:4}}><AthleticBenchmarks pitcherId={selected.id} getRecommendation={getRecommendation} cmjResults={cmjResults} hopResults={hopResults} showCorrelations/></div>
               )}
 
               {tab==='hop'&&(
