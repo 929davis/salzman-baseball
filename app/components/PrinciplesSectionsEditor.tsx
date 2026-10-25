@@ -157,7 +157,7 @@ export default function PrinciplesSectionsEditor(){
                 </div>
                 <label style={{display:'flex',alignItems:'center',gap:6,fontSize:12,color:C.textMuted}}>
                   <input type="checkbox" checked={form.is_engine_rule} onChange={e=>setNewForms(prev=>({...prev,[doc]:{...form,is_engine_rule:e.target.checked}}))}/>
-                  Engine rule (always included in the program-writing prompt)
+                  Engine rule (candidate for code enforcement in lib/engine — does not affect the prompt)
                 </label>
                 <button style={btn('gold')} onClick={()=>addSection(doc)}>Add</button>
               </div>
@@ -174,7 +174,7 @@ export default function PrinciplesSectionsEditor(){
                     <span style={{fontSize:11,color:C.textDim,width:16}}>{isOpen?'▾':'▸'}</span>
                     <span style={{fontSize:12,color:C.gold,fontWeight:700,minWidth:44}}>{s.section_number}</span>
                     <span style={{fontSize:13,color:C.white,fontWeight:600,flex:1}}>{s.title}</span>
-                    {s.is_engine_rule && <span title="Always included in the program-writing prompt" style={{fontSize:9,fontWeight:700,padding:'2px 7px',borderRadius:10,background:C.goldBg,color:C.gold,border:`1px solid ${C.goldDim}`,textTransform:'uppercase' as const,letterSpacing:'0.4px'}}>Engine Rule</span>}
+                    {s.is_engine_rule && <span title="Deterministic rule -- a candidate for code enforcement in lib/engine, not a prompt-inclusion signal" style={{fontSize:9,fontWeight:700,padding:'2px 7px',borderRadius:10,background:C.goldBg,color:C.gold,border:`1px solid ${C.goldDim}`,textTransform:'uppercase' as const,letterSpacing:'0.4px'}}>Engine Rule</span>}
                     {(s.tags||[]).slice(0,3).map(t=>(
                       <span key={t} style={{fontSize:9,color:C.textMuted,background:C.bg3,border:`1px solid ${C.border}`,borderRadius:10,padding:'2px 7px'}}>{t}</span>
                     ))}
@@ -204,9 +204,9 @@ export default function PrinciplesSectionsEditor(){
                         <label style={lbl}>Body (markdown)</label>
                         <textarea style={{...inp,minHeight:180,lineHeight:1.6,resize:'vertical' as const,fontFamily:'monospace'}} value={draft.body} onChange={e=>updateDraft(s.id,{body:e.target.value})}/>
                       </div>
-                      <label style={{display:'flex',alignItems:'center',gap:6,fontSize:12,color:C.textMuted}} title="Engine rule sections are always included in the program-writing prompt, regardless of any athlete's context tags. Use this for rules that apply to every pitcher every time — not situational guidance.">
+                      <label style={{display:'flex',alignItems:'center',gap:6,fontSize:12,color:C.textMuted}} title="Marks a deterministic rule -- one precise enough to be enforced in code (see lib/engine) rather than left as prose for the AI to interpret. Does NOT affect what goes into the program-writing prompt -- every section is always included there regardless of this flag (see lib/principlesSections.ts's bundleAllPrinciples).">
                         <input type="checkbox" checked={draft.is_engine_rule} onChange={e=>updateDraft(s.id,{is_engine_rule:e.target.checked})}/>
-                        Engine rule <span style={{color:C.textDim}}>(always included in the program-writing prompt — hover for details)</span>
+                        Engine rule <span style={{color:C.textDim}}>(code-enforcement candidate, not a prompt filter — hover for details)</span>
                       </label>
                       <div style={{display:'flex',alignItems:'center',gap:10}}>
                         <button style={btn('gold')} disabled={savingId===s.id} onClick={()=>saveSection(s)}>{savingId===s.id?'Saving...':'Save'}</button>
