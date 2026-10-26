@@ -469,7 +469,7 @@ export default function PitcherDashboard(){
               {latestCMJ?.estimated_velocity!=null?(
                 <>
                   <div style={{fontSize:48,fontWeight:700,color:C.white,letterSpacing:'-2px',marginBottom:4}}>{latestCMJ.estimated_velocity.toFixed(1)}<span style={{fontSize:16,color:C.textMuted,fontWeight:400}}> MPH</span></div>
-                  <div style={{fontSize:11,color:C.textMuted}}>video-estimated ceiling from your CMJ test, not a measurement — exceeded only ~{latestCMJ.estimated_velocity_exceedance_pct||5}% of the time</div>
+                  <div style={{fontSize:11,color:C.textMuted}}>estimated ceiling from your tests — exceeded only ~{latestCMJ.estimated_velocity_exceedance_pct||5}% of the time</div>
                 </>
               ):<div style={{fontSize:13,color:C.textDim,padding:'10px 0'}}>No CMJ test yet — complete one in Assess to see this.</div>}
             </div>
