@@ -74,15 +74,15 @@ function HowToRead() {
 
 function FitRow({ label, fit }: { label: string, fit: WeightedFit | null }) {
   if (!fit) return null
-  const strength = Math.abs(fit.r) >= 0.6 ? 'strong' : Math.abs(fit.r) >= 0.3 ? 'moderate' : 'weak'
+  const strength = Math.abs(fit.r) >= 0.6 ? 'Strong' : Math.abs(fit.r) >= 0.3 ? 'Moderate' : 'Weak'
   const strengthColor = Math.abs(fit.r) >= 0.6 ? C.gold : Math.abs(fit.r) >= 0.3 ? C.blue : C.textDim
   return (
     <tr style={{borderBottom:`1px solid ${C.border}`}}>
       <td style={{padding:'8px 10px',fontSize:12,color:C.text}}>{label}</td>
-      <td style={{padding:'8px 10px',textAlign:'right' as const,fontFamily:'monospace',fontSize:12,color:C.text}}>{fit.r>=0?'+':''}{fit.r.toFixed(2)}</td>
       <td style={{padding:'8px 10px',textAlign:'right' as const}}>
-        <span style={{fontSize:11,fontWeight:700,color:strengthColor,textTransform:'uppercase' as const,letterSpacing:'0.5px'}}>{strength}</span>
+        <span style={{fontSize:12,fontWeight:700,color:strengthColor}}>{strength}</span>
       </td>
+      <td style={{padding:'8px 10px',textAlign:'right' as const,fontFamily:'monospace',fontSize:11,color:C.textDim}}>{fit.r>=0?'+':''}{fit.r.toFixed(2)}</td>
     </tr>
   )
 }
@@ -189,17 +189,17 @@ export default function EffectiveVelocityTool(){
         </ResponsiveContainer>
       </div>
 
-      <div style={{fontSize:12,fontWeight:700,color:C.text,marginBottom:8}}>The Weights — Sample-Weighted Correlation, Our Data</div>
+      <div style={{fontSize:12,fontWeight:700,color:C.text,marginBottom:8}}>The Weights — How Strongly Each One Actually Shows Up</div>
       <div style={{fontSize:10,color:C.textDim,marginBottom:8,lineHeight:1.5}}>
-        How strongly each differential actually tracks each outcome (r, weighted by bucket sample size) — this is what "effectiveness" means here: a measured relationship, not an assumed one.
+        How strongly each differential actually tracks each outcome in our data (weighted so bigger, more reliable buckets count more than thin ones) — this is what "effectiveness" means here: a measured relationship, not an assumed one. <b>Strong/Moderate/Weak</b> is the number that matters; the small "r" value next to it is the underlying correlation stat (-1 to +1) for anyone who wants it.
       </div>
       <div style={{overflowX:'auto' as const,marginBottom:16}}>
         <table style={{width:'100%',borderCollapse:'collapse' as const,minWidth:420}}>
           <thead>
             <tr style={{borderBottom:`1px solid ${C.border}`}}>
               <th style={{textAlign:'left' as const,padding:'8px 10px',fontSize:10,color:C.textMuted,textTransform:'uppercase' as const,letterSpacing:'0.5px'}}>Relationship</th>
-              <th style={{textAlign:'right' as const,padding:'8px 10px',fontSize:10,color:C.textMuted,textTransform:'uppercase' as const,letterSpacing:'0.5px'}}>r</th>
               <th style={{textAlign:'right' as const,padding:'8px 10px',fontSize:10,color:C.textMuted,textTransform:'uppercase' as const,letterSpacing:'0.5px'}}>Strength</th>
+              <th style={{textAlign:'right' as const,padding:'8px 10px',fontSize:10,color:C.textMuted,textTransform:'uppercase' as const,letterSpacing:'0.5px'}}>r</th>
             </tr>
           </thead>
           <tbody>

@@ -46,7 +46,7 @@ function stage2For(r: ScoreRow) { return r.primary_metric === 'whiff' ? r.stage2
 function liftLabel(v: number | null) {
   if (v == null) return '—'
   const sign = v >= 0 ? '+' : ''
-  return `${sign}${(v * 100).toFixed(0)}pp`
+  return `${sign}${(v * 100).toFixed(0)} pts`
 }
 function liftColor(v: number | null) {
   if (v == null) return C.textDim
@@ -92,7 +92,7 @@ function PitchRow({ r, showDate }: { r: ScoreRow, showDate: boolean }) {
   )
 }
 
-const ROW_HEADERS = ['Matchup', 'Pitch', 'Count', 'Result', 'Reading', 'Stage 1', 'Stage 2', 'Lift (pp)', 'Why', '']
+const ROW_HEADERS = ['Matchup', 'Pitch', 'Count', 'Result', 'Reading', 'Pitch Alone', 'Pitch + Situation', 'Change', 'Why', '']
 
 // The wide table (10 columns) works fine on the coach's desktop screen but this same
 // component also renders inside the pitcher dashboard's ~480px-wide mobile shell, where a
@@ -175,10 +175,10 @@ function HowToRead() {
   return (
     <HowToReadPanel title="How to Read Timing IQ">
       <div>
-        <b style={{ color: C.blue }}>Stage 1</b> is what the pitch's own shape says, alone — its velocity, where it crossed the zone, and how much it kept moving after the point research says a hitter has already committed to swinging or not (roughly the midpoint of ball flight). It has no idea what count it is, what's been thrown earlier in the at-bat, or who's hitting.
+        <b style={{ color: C.blue }}>Pitch Alone</b> is what the pitch's own shape says, by itself — its velocity, where it crossed the zone, and how much it kept moving after the point research says a hitter has already committed to swinging or not (roughly the midpoint of ball flight). It has no idea what count it is, what's been thrown earlier in the at-bat, or who's hitting.
       </div>
       <div>
-        <b style={{ color: C.gold }}>Stage 2</b> adds three things Stage 1 can't see: what the hitter has already been shown earlier in this at-bat, whether this pitcher's release point matches his own normal spot for this pitch type (or looks off — a tip, fatigue, mechanics drifting), and this specific hitter's own measured tendency to time fastballs differently than breaking balls.
+        <b style={{ color: C.gold }}>Pitch + Situation</b> adds three things the pitch alone can't see: what the hitter has already been shown earlier in this at-bat, whether this pitcher's release point matches his own normal spot for this pitch type (or looks off — a tip, fatigue, mechanics drifting), and this specific hitter's own measured tendency to time fastballs differently than breaking balls.
       </div>
       <div>
         Both numbers are a percent chance of <i>one</i> outcome — but which outcome depends on what actually happened, and that's what the <b>Reading</b> badge on each row tells you:
@@ -188,16 +188,16 @@ function HowToRead() {
         </div>
       </div>
       <div>
-        <b>Lift (pp)</b> is just Stage 2 minus Stage 1, in <b>percentage points</b> (pp) — e.g. +20pp means the probability read 20 points higher (like 30%→50%), not "20% higher." A big lift (either direction) means context — not the pitch's own shape — is what moved the number. A lift near zero means the pitch's shape alone already told most of the story.
+        <b>Change</b> is just "Pitch + Situation" minus "Pitch Alone," in points — e.g. +20 pts means the probability read 20 points higher (like 30%→50%), not "20% higher." A big change (either direction) means context — not the pitch's own shape — is what moved the number. A change near zero means the pitch's shape alone already told most of the story.
       </div>
       <div>
         <b>Why</b> is the single biggest factor behind that specific pitch's number, in plain language — not everything the model weighed, just the top one.
       </div>
       <div>
-        <b>Blank Stage 2</b> means this was the first pitch of the at-bat — there's nothing earlier in the PA yet for Stage 2 to use, so only Stage 1 applies.
+        <b>Blank "Pitch + Situation"</b> means this was the first pitch of the at-bat — there's nothing earlier in the PA yet for it to use, so only the pitch's own shape applies.
       </div>
       <div style={{ borderTop: `1px solid ${C.border}`, paddingTop: 10 }}>
-        <b>Model Validation</b> (below) is a completely different pair of numbers from the per-pitch table above — it isn't about any one pitch, it's whether Stage 2 actually beats Stage 1 across thousands of pitches the model never trained on. Its <b>Score</b> is a stat called AUC: 0.50 (coin flip) to 1.00 (perfect). Both stages score clearly above a coin flip, and Stage 2 scores higher than Stage 1 on both targets — that <b>Gain</b> is the real evidence sequencing adds something, not a claim about any single pitch below. Each target row also says in plain language why that specific prediction is worth having, not just that the model scores well on it.
+        <b>Model Validation</b> (below) is a completely different pair of numbers from the per-pitch table above — it isn't about any one pitch, it's whether adding situation actually beats the pitch alone across thousands of pitches the model never trained on. Its <b>Score</b> is on a 0-100 scale: 50 means no better than a guess, 100 means perfect. Both scored clearly above a guess, and adding situation scored higher on both targets — that <b>Improvement</b> is the real evidence sequencing adds something, not a claim about any single pitch below. Each target row also says in plain language why that specific prediction is worth having, not just that the model scores well on it.
       </div>
       <div style={{ color: C.textDim, fontSize: 11 }}>
         <b>What this isn't:</b> a certainty about any one pitch. It's a pattern learned across thousands of pitches and hundreds of pitchers and hitters — good for flagging which specific pitches are worth a second look on video, not a guarantee about what should have happened on that pitch.
@@ -306,19 +306,19 @@ export default function TimingIQTool() {
 
       <div style={{ fontSize: 12, fontWeight: 700, color: C.text, marginBottom: 8 }}>Model Validation — Does Sequencing Actually Add Anything?</div>
       <div style={{ fontSize: 10, color: C.textDim, marginBottom: 8, lineHeight: 1.5 }}>
-        Two models per target: physics-only (pitch's own velocity/angle/movement, Stage 1) vs. physics + what the hitter had already seen this at-bat + this pitcher's own release-point norms + this hitter's own timing-adjustment profile (Stage 2). Measured on held-out games the models never trained on.
+        Two models per target: the pitch alone (its own velocity/angle/movement) vs. the pitch plus what the hitter had already seen this at-bat, this pitcher's own release-point norms, and this hitter's own timing-adjustment profile. Measured on held-out games the models never trained on.
       </div>
       <div style={{ fontSize: 10, color: C.textDim, marginBottom: 8, lineHeight: 1.5, background: C.bg3, border: `1px solid ${C.border}`, borderRadius: 8, padding: 10 }}>
-        <b style={{ color: C.text }}>Score</b> = ranking accuracy, a stat called <b>AUC</b>: 0.50 means no better than a coin flip, 1.00 means perfect. Higher is always better. <b style={{ color: C.text }}>Gain</b> = Stage 2's score minus Stage 1's — a positive gain here is the actual proof sequencing helps, measured once across thousands of held-out pitches (not something recalculated per pitch below).
+        <b style={{ color: C.text }}>Score</b> = how well the model separates what actually happened from what didn't, on a 0-100 scale: 50 means no better than a guess, 100 means perfect. Higher is always better. <b style={{ color: C.text }}>Improvement</b> = the "pitch + situation" score minus the "pitch alone" score — a positive number here is the actual proof sequencing helps, measured once across thousands of held-out pitches (not something recalculated per pitch below).
       </div>
       <div style={{ overflowX: 'auto' as const, marginBottom: 20 }}>
         <table style={{ width: '100%', borderCollapse: 'collapse' as const, minWidth: 420 }}>
           <thead>
             <tr style={{ borderBottom: `1px solid ${C.border}` }}>
               <Th>Target — Why It Matters</Th>
-              <th style={{ textAlign: 'right' as const, padding: '8px 10px', fontSize: 10, color: C.textMuted, textTransform: 'uppercase' as const, letterSpacing: '0.5px' }}>Stage 1 Score</th>
-              <th style={{ textAlign: 'right' as const, padding: '8px 10px', fontSize: 10, color: C.textMuted, textTransform: 'uppercase' as const, letterSpacing: '0.5px' }}>Stage 2 Score</th>
-              <th style={{ textAlign: 'right' as const, padding: '8px 10px', fontSize: 10, color: C.textMuted, textTransform: 'uppercase' as const, letterSpacing: '0.5px' }}>Gain</th>
+              <th style={{ textAlign: 'right' as const, padding: '8px 10px', fontSize: 10, color: C.textMuted, textTransform: 'uppercase' as const, letterSpacing: '0.5px' }}>Pitch Alone</th>
+              <th style={{ textAlign: 'right' as const, padding: '8px 10px', fontSize: 10, color: C.textMuted, textTransform: 'uppercase' as const, letterSpacing: '0.5px' }}>Pitch + Situation</th>
+              <th style={{ textAlign: 'right' as const, padding: '8px 10px', fontSize: 10, color: C.textMuted, textTransform: 'uppercase' as const, letterSpacing: '0.5px' }}>Improvement</th>
             </tr>
           </thead>
           <tbody>
@@ -328,9 +328,9 @@ export default function TimingIQTool() {
                   <div style={{ fontSize: 12, fontWeight: 700, color: C.text }}>{v.target}</div>
                   <div style={{ fontSize: 10, color: C.textDim, marginTop: 2, maxWidth: 380 }}>{v.why}</div>
                 </td>
-                <td style={{ padding: '8px 10px', textAlign: 'right' as const, fontFamily: 'monospace', fontSize: 12, color: C.textMuted, verticalAlign: 'top' as const }}>{v.base.toFixed(3)}</td>
-                <td style={{ padding: '8px 10px', textAlign: 'right' as const, fontFamily: 'monospace', fontSize: 12, color: C.gold, fontWeight: 700, verticalAlign: 'top' as const }}>{v.full.toFixed(3)}</td>
-                <td style={{ padding: '8px 10px', textAlign: 'right' as const, fontFamily: 'monospace', fontSize: 12, color: C.teal, verticalAlign: 'top' as const }}>+{(v.full - v.base).toFixed(3)}</td>
+                <td style={{ padding: '8px 10px', textAlign: 'right' as const, fontFamily: 'monospace', fontSize: 12, color: C.textMuted, verticalAlign: 'top' as const }}>{Math.round(v.base * 100)}</td>
+                <td style={{ padding: '8px 10px', textAlign: 'right' as const, fontFamily: 'monospace', fontSize: 12, color: C.gold, fontWeight: 700, verticalAlign: 'top' as const }}>{Math.round(v.full * 100)}</td>
+                <td style={{ padding: '8px 10px', textAlign: 'right' as const, fontFamily: 'monospace', fontSize: 12, color: C.teal, verticalAlign: 'top' as const }}>+{Math.round((v.full - v.base) * 100)} pts</td>
               </tr>
             ))}
           </tbody>
@@ -366,13 +366,13 @@ export default function TimingIQTool() {
             </div>
             <div style={{ background: C.bg2, border: `1px solid ${C.border}`, borderRadius: 10, padding: 14, flex: 1, minWidth: 160 }}>
               <div style={{ fontSize: 10, color: C.textMuted, marginBottom: 6 }}>Avg sequence lift (points)</div>
-              <div style={{ fontSize: 18, fontWeight: 700, color: C.gold }}>{summary.avgLiftAbs != null ? `${(summary.avgLiftAbs * 100).toFixed(1)}pp` : '—'}</div>
+              <div style={{ fontSize: 18, fontWeight: 700, color: C.gold }}>{summary.avgLiftAbs != null ? `${(summary.avgLiftAbs * 100).toFixed(1)} pts` : '—'}</div>
             </div>
           </div>
 
           <div style={{ fontSize: 12, fontWeight: 700, color: C.text, marginBottom: 4 }}>{pitcherId ? pitchers.find(p => p.id === pitcherId)?.name : 'All Pitchers'} — Pitch-Level Scores</div>
           <div style={{ fontSize: 10, color: C.textDim, marginBottom: 8, lineHeight: 1.5 }}>
-            Showing up to 40, sorted by {sortMode === 'lift' ? 'how much sequence context changed the read vs. raw physics alone' : 'most recent'}. <b>pp = percentage points</b> — a Lift of +20pp means Stage 2's probability read 20 points higher than Stage 1's (e.g. 30% → 50%), not "20% higher."
+            Showing up to 40, sorted by {sortMode === 'lift' ? 'how much sequence context changed the read vs. the pitch alone' : 'most recent'}. A Change of +20 pts means "Pitch + Situation" read 20 points higher than "Pitch Alone" (e.g. 30% → 50%), not "20% higher."
           </div>
           <PitchList rows={filtered} showDate />
         </>

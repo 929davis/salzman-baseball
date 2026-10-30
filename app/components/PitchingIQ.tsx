@@ -24,6 +24,13 @@ const METRICS = ['whiff','chase','hard_hit','xwoba','home_run']
 const METRIC_LABELS:Record<string,string> = {
   whiff:'Whiff %',chase:'Chase %',hard_hit:'Hard-hit %',xwoba:'xwOBA',home_run:'HR %',
 }
+const METRIC_DEFINITIONS:Record<string,string> = {
+  whiff:'Batter swung and missed completely',
+  chase:'Batter swung at a pitch outside the strike zone',
+  hard_hit:'Ball hit 95+ mph off the bat',
+  xwoba:"Estimated damage on contact, on roughly a batting-average scale — lower is better for the pitcher",
+  home_run:'Pitch resulted in a home run',
+}
 const ZONE_GRID = [
   [null,11,12,13,null],
   [14,1,2,3,14],
@@ -326,6 +333,11 @@ export default function PitchingIQ() {
             </div>
           </div>
         </div>
+      </div>
+      <div style={{display:'flex',flexWrap:'wrap' as const,gap:10,marginBottom:12,fontSize:10,color:C.textDim}}>
+        {METRICS.map(m=>(
+          <span key={m}><b style={{color:C.textMuted}}>{METRIC_LABELS[m]}</b> — {METRIC_DEFINITIONS[m]}</span>
+        ))}
       </div>
       {insight&&<div style={{background:C.goldBg,border:`1px solid ${C.goldDim}`,borderRadius:8,padding:'10px 14px',marginBottom:12,fontSize:12,color:C.gold,lineHeight:1.5}}><span style={{fontWeight:700}}>Insight: </span>{insight}</div>}
       {loading?(
