@@ -12,6 +12,11 @@ import { createClient } from '@supabase/supabase-js'
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const DB_PATH = path.join(__dirname, '..', 'data', 'statcast_2026.duckdb')
 const DRY_RUN = process.argv.includes('--dry-run')
+// Uploads ONLY bs_anchor_pairs (the new At-Bat Anchor Model table), leaving the other 10
+// already-live bs_* tables completely untouched -- for adding the new table without
+// refreshing/risking the data already backing the existing Base Scenario and Effective
+// Velocity tabs in production.
+const ONLY_ANCHOR = process.argv.includes('--only-anchor')
 
 // Frozen to the 2026 first half (Opening Day through the All-Star break cutoff) — matches
 // the statcast_pitches table backfilled by scripts/backfill-statcast-pitches.mjs, replacing
@@ -493,6 +498,106 @@ async function computeEvPairs(con) {
   `)
 }
 
+// ---------------------------------------------------------------------------
+// At-Bat Anchor Model — extends the EV pairs test above (which only looks at the pitch
+// immediately before this one) to the hitter's "anchor speed" built from everything he's
+// swung at SO FAR this at-bat, per the conversation's "Attention Instinct" idea: a hitter
+// doesn't just react to the last pitch, he's sitting on a speed shaped by his swings earlier
+// in the at-bat. Takes don't update the anchor (he didn't commit, so a take tells us nothing
+// about where his timing was) -- only swings do, matching the explicit design decision.
+//
+// Two anchor variants, computed in parallel so they can be compared side by side rather than
+// picked between in advance:
+//   running_avg -- AVG(EV) of every prior swing this at-bat
+//   mode        -- MODE() of prior swings' EV rounded to the nearest 3mph tier (the speed
+//                  he's seen repeated most, not just blended with everything else)
+// Both use DuckDB's NULL-skipping aggregate semantics (CASE WHEN is_swing THEN ev END) inside
+// a window frame of "every row before this one in the same at-bat" -- a take pitch
+// contributes a NULL to that window and is correctly ignored by both AVG and MODE. If there
+// are zero prior swings, both anchors are NULL and the row is dropped (filtered out below)
+// rather than fabricating a "no signal yet" anchor of 0.
+//
+// direction/bb_type (DIRECTION_SQL, defined above in the batted-ball section) are the
+// validated real-hit-coordinate fields -- NOT attack_direction, which that section's own
+// comment already found doesn't reliably track where the ball actually went. Pull/Center/
+// Opposite here doubles as the Early/On-Time/Late timing read for contact swings (pulled =
+// early, opposite field = late) -- restricted to balls actually in play, since hc_x/hc_y
+// (and therefore direction/bb_type) aren't populated for fouls or whiffs.
+//
+// "Pull-side rollover ground ball" (the specific weak-contact pattern asked about) = pull +
+// bb_type='ground_ball'. Its "low value" claim isn't asserted via an invented expected-BA
+// cutoff (this pipeline doesn't carry a real xBA field) -- instead sum_delta_run_exp/_sq let
+// the client compute this subset's actual mean run value with a CI, so the number itself
+// shows whether it's low-value instead of a hardcoded threshold asserting it.
+//
+// Whiffs get no Early/On-Time/Late tag (no contact = no attack geometry to read) -- instead
+// a coarse vertical miss-location (high/middle/low by zone) answers a different, answerable
+// question about how the miss happened.
+async function computeAnchorPairs(con) {
+  return all(con, `
+    WITH base AS (
+      SELECT *,
+        (description IN ('swinging_strike','swinging_strike_blocked','foul','foul_tip','foul_bunt','hit_into_play')) AS is_swing,
+        (${evSql('')}) AS ev
+      FROM classified
+      WHERE release_speed IS NOT NULL AND plate_x IS NOT NULL AND plate_z IS NOT NULL
+        AND sz_top IS NOT NULL AND sz_bot IS NOT NULL
+    ),
+    windowed AS (
+      SELECT *,
+        AVG(CASE WHEN is_swing THEN ev END) OVER w AS anchor_avg,
+        MODE(CASE WHEN is_swing THEN ROUND(ev/3.0)*3 END) OVER w AS anchor_mode,
+        ${DIRECTION_SQL} AS direction
+      FROM base
+      WINDOW w AS (PARTITION BY game_pk, at_bat_number ORDER BY pitch_number ROWS BETWEEN UNBOUNDED PRECEDING AND 1 PRECEDING)
+    ),
+    tagged AS (
+      SELECT *,
+        (zone IS NOT NULL AND zone >= 10) AS is_out_of_zone,
+        (outcome = 'swinging_strike') AS is_whiff,
+        (outcome IN ('out_in_play','single','double','triple','home_run')) AS is_in_play,
+        (outcome IN ('out_in_play','single','double','triple','home_run') AND launch_speed IS NOT NULL AND launch_speed >= 95) AS is_hard_hit,
+        (outcome IN ('out_in_play','single','double','triple','home_run') AND launch_speed IS NOT NULL AND launch_angle IS NOT NULL AND ${BARREL_SQL}) AS is_barrel,
+        (outcome = 'strikeout' AND description = 'called_strike') AS is_k_looking,
+        (outcome = 'strikeout' AND description IN ('swinging_strike','swinging_strike_blocked')) AS is_k_swinging,
+        (CASE WHEN zone IN (1,2,3,11,12,13) THEN 'high' WHEN zone IN (4,5,6) THEN 'middle' WHEN zone IN (7,8,9,14) THEN 'low' ELSE NULL END) AS whiff_zone_group
+      FROM windowed
+    ),
+    anchored AS (
+      SELECT *, 'running_avg' AS anchor_type, (ev - anchor_avg) AS anchor_diff FROM tagged WHERE anchor_avg IS NOT NULL
+      UNION ALL
+      SELECT *, 'mode' AS anchor_type, (ev - anchor_mode) AS anchor_diff FROM tagged WHERE anchor_mode IS NOT NULL
+    ),
+    bucketed AS (
+      SELECT *, (ROUND(anchor_diff/2.0)*2)::INTEGER AS anchor_diff_bucket
+      FROM anchored
+    )
+    SELECT anchor_type, anchor_diff_bucket,
+      COUNT(*)::INTEGER AS n,
+      SUM(CASE WHEN is_whiff THEN 1 ELSE 0 END)::INTEGER AS n_whiff,
+      SUM(CASE WHEN is_whiff AND whiff_zone_group='high' THEN 1 ELSE 0 END)::INTEGER AS n_whiff_high,
+      SUM(CASE WHEN is_whiff AND whiff_zone_group='middle' THEN 1 ELSE 0 END)::INTEGER AS n_whiff_middle,
+      SUM(CASE WHEN is_whiff AND whiff_zone_group='low' THEN 1 ELSE 0 END)::INTEGER AS n_whiff_low,
+      SUM(CASE WHEN is_out_of_zone THEN 1 ELSE 0 END)::INTEGER AS n_out_of_zone,
+      SUM(CASE WHEN is_out_of_zone AND is_swing THEN 1 ELSE 0 END)::INTEGER AS n_chase,
+      SUM(CASE WHEN is_in_play THEN 1 ELSE 0 END)::INTEGER AS n_in_play,
+      SUM(CASE WHEN is_hard_hit THEN 1 ELSE 0 END)::INTEGER AS n_hard_hit,
+      SUM(CASE WHEN is_barrel THEN 1 ELSE 0 END)::INTEGER AS n_barrel,
+      SUM(CASE WHEN is_in_play AND direction='pull' THEN 1 ELSE 0 END)::INTEGER AS n_pull,
+      SUM(CASE WHEN is_in_play AND direction='center' THEN 1 ELSE 0 END)::INTEGER AS n_center,
+      SUM(CASE WHEN is_in_play AND direction='opposite' THEN 1 ELSE 0 END)::INTEGER AS n_oppo,
+      SUM(CASE WHEN is_in_play AND direction='pull' AND bb_type='ground_ball' THEN 1 ELSE 0 END)::INTEGER AS n_pull_ground_ball,
+      COALESCE(SUM(CASE WHEN is_in_play AND direction='pull' AND bb_type='ground_ball' THEN delta_run_exp ELSE 0 END),0) AS sum_pull_gb_run_exp,
+      COALESCE(SUM(CASE WHEN is_in_play AND direction='pull' AND bb_type='ground_ball' THEN delta_run_exp*delta_run_exp ELSE 0 END),0) AS sum_pull_gb_run_exp_sq,
+      SUM(CASE WHEN is_k_looking THEN 1 ELSE 0 END)::INTEGER AS n_strikeout_looking,
+      SUM(CASE WHEN is_k_swinging THEN 1 ELSE 0 END)::INTEGER AS n_strikeout_swinging,
+      COALESCE(SUM(delta_run_exp), 0) AS sum_delta_run_exp,
+      COALESCE(SUM(delta_run_exp*delta_run_exp), 0) AS sum_delta_run_exp_sq
+    FROM bucketed
+    GROUP BY 1,2
+  `)
+}
+
 async function computeReMarginal(con) {
   return all(con, `
     SELECT outs_when_up, base_state, count_bucket, COUNT(*)::INTEGER AS n,
@@ -623,6 +728,10 @@ async function main() {
   const evPairs = await computeEvPairs(con)
   console.log(`  ${evPairs.length} cells`)
 
+  console.log('Computing bs_anchor_pairs...')
+  const anchorPairs = await computeAnchorPairs(con)
+  console.log(`  ${anchorPairs.length} cells`)
+
   con.close()
 
   if (DRY_RUN) {
@@ -644,6 +753,8 @@ async function main() {
     console.log('sequenceAny total n:', sequenceAny.reduce((s,r)=>s+r.n,0))
     console.log('evPairs[0]:', evPairs[0])
     console.log('evPairs total n:', evPairs.reduce((s,r)=>s+r.n,0))
+    console.log('anchorPairs[0]:', anchorPairs[0])
+    console.log('anchorPairs total n:', anchorPairs.reduce((s,r)=>s+r.n,0))
     return
   }
 
@@ -651,6 +762,11 @@ async function main() {
   const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_KEY)
 
   console.log('\nUploading to Supabase...')
+  if (ONLY_ANCHOR) {
+    await upsert(supabase, 'bs_anchor_pairs', anchorPairs, 'anchor_type,anchor_diff_bucket')
+    console.log('Done (--only-anchor: skipped the other 10 tables).')
+    return
+  }
   await upsert(supabase, 'bs_joint', joint, 'p_throws,bats,pitch_type_group,count_bucket,outs_when_up,base_state')
   await upsert(supabase, 'bs_pitch_marginal', pitchMarginal, 'p_throws,bats,pitch_type_group,count_bucket')
   // bs_re_marginal / bs_re24_split / bs_re24_base upserts removed -- those tables were never
@@ -665,6 +781,7 @@ async function main() {
   await upsert(supabase, 'bs_sequence_pa', sequencePA, 'p_throws,bats,pt1,loc1,pt2,loc2')
   await upsert(supabase, 'bs_sequence_any', sequenceAny, 'p_throws,bats,pt1,loc1,pt2,loc2')
   await upsert(supabase, 'bs_ev_pairs', evPairs, 'ev_diff_bucket,actual_diff_bucket,within_attention_zone,same_direction')
+  await upsert(supabase, 'bs_anchor_pairs', anchorPairs, 'anchor_type,anchor_diff_bucket')
   console.log('Done.')
 }
 
