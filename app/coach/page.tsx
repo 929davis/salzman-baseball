@@ -448,7 +448,7 @@ export default function CoachDashboard(){
   const [latestMobilityScreens,setLatestMobilityScreens]=useState<any>(null)
   const [editingProfile,setEditingProfile]=useState(false)
   const [profileForm,setProfileForm]=useState({
-    height_in:'',somatotype:'',isa_classification:'',
+    height_in:'',weight_lbs:'',somatotype:'',isa_classification:'',
     humeral_torsion_throwing_arm:'',humeral_torsion_glove_arm:'',
     femoral_torsion_trail_leg:'',femoral_torsion_lead_leg:'',
     foot_arch_type:'',elbow_carrying_angle:'',elbow_laxity:'',
@@ -610,7 +610,7 @@ export default function CoachDashboard(){
     setSelected(p);setTab('overview');setView('roster')
     setEditingProfile(false);setProfileSaveError('')
     setProfileForm({
-      height_in:p.height_in?.toString()||'',somatotype:p.somatotype||'',isa_classification:p.isa_classification||'',
+      height_in:p.height_in?.toString()||'',weight_lbs:p.weight_lbs?.toString()||'',somatotype:p.somatotype||'',isa_classification:p.isa_classification||'',
       humeral_torsion_throwing_arm:p.humeral_torsion_throwing_arm||'',humeral_torsion_glove_arm:p.humeral_torsion_glove_arm||'',
       femoral_torsion_trail_leg:p.femoral_torsion_trail_leg||'',femoral_torsion_lead_leg:p.femoral_torsion_lead_leg||'',
       foot_arch_type:p.foot_arch_type||'',elbow_carrying_angle:p.elbow_carrying_angle||'',elbow_laxity:p.elbow_laxity||'',
@@ -641,6 +641,7 @@ export default function CoachDashboard(){
     setProfileSaveError('')
     const update={
       height_in:profileForm.height_in?parseFloat(profileForm.height_in):null,
+      weight_lbs:profileForm.weight_lbs?parseFloat(profileForm.weight_lbs):null,
       somatotype:profileForm.somatotype||null,
       isa_classification:profileForm.isa_classification||null,
       humeral_torsion_throwing_arm:profileForm.humeral_torsion_throwing_arm||null,
@@ -1398,6 +1399,10 @@ Write next week's program by day and category (Pre-Throwing, Throwing, Post-Thro
                       <div>
                         <div style={{fontSize:10,color:C.textMuted,textTransform:'uppercase' as const,letterSpacing:'0.5px',marginBottom:4}}>Height (in)</div>
                         <input type="number" style={{...S.input,width:100}} placeholder="e.g. 73" value={profileForm.height_in} onChange={e=>setProfileForm(f=>({...f,height_in:e.target.value}))}/>
+                      </div>
+                      <div>
+                        <div style={{fontSize:10,color:C.textMuted,textTransform:'uppercase' as const,letterSpacing:'0.5px',marginBottom:4}}>Weight (lbs)</div>
+                        <input type="number" style={{...S.input,width:100}} placeholder="e.g. 195" value={profileForm.weight_lbs} onChange={e=>setProfileForm(f=>({...f,weight_lbs:e.target.value}))}/>
                       </div>
                       <div>
                         <div style={{fontSize:10,color:C.textMuted,textTransform:'uppercase' as const,letterSpacing:'0.5px',marginBottom:4}}>Somatotype</div>
