@@ -453,6 +453,7 @@ export default function CoachDashboard(){
     femoral_torsion_trail_leg:'',femoral_torsion_lead_leg:'',
     foot_arch_type:'',elbow_carrying_angle:'',elbow_laxity:'',
     shoulder_laxity:'',hip_laxity:'',
+    upper_arm_in:'',forearm_in:'',upper_leg_in:'',lower_leg_in:'',shoulder_width_in:'',trunk_length_in:'',
   })
   const [profileSaveError,setProfileSaveError]=useState('')
   const [cmjModal,setCmjModal]=useState(false)
@@ -614,6 +615,9 @@ export default function CoachDashboard(){
       femoral_torsion_trail_leg:p.femoral_torsion_trail_leg||'',femoral_torsion_lead_leg:p.femoral_torsion_lead_leg||'',
       foot_arch_type:p.foot_arch_type||'',elbow_carrying_angle:p.elbow_carrying_angle||'',elbow_laxity:p.elbow_laxity||'',
       shoulder_laxity:p.shoulder_laxity||'',hip_laxity:p.hip_laxity||'',
+      upper_arm_in:p.upper_arm_in?.toString()||'',forearm_in:p.forearm_in?.toString()||'',
+      upper_leg_in:p.upper_leg_in?.toString()||'',lower_leg_in:p.lower_leg_in?.toString()||'',
+      shoulder_width_in:p.shoulder_width_in?.toString()||'',trunk_length_in:p.trunk_length_in?.toString()||'',
     })
     const [logsRes,cmjRes,,throwRes,hopRes,benchRes,screenRes]=await Promise.all([
       supabase.from('session_logs').select('*').eq('pitcher_id',p.id).order('log_date',{ascending:false}),
@@ -648,6 +652,12 @@ export default function CoachDashboard(){
       elbow_laxity:profileForm.elbow_laxity||null,
       shoulder_laxity:profileForm.shoulder_laxity||null,
       hip_laxity:profileForm.hip_laxity||null,
+      upper_arm_in:profileForm.upper_arm_in?parseFloat(profileForm.upper_arm_in):null,
+      forearm_in:profileForm.forearm_in?parseFloat(profileForm.forearm_in):null,
+      upper_leg_in:profileForm.upper_leg_in?parseFloat(profileForm.upper_leg_in):null,
+      lower_leg_in:profileForm.lower_leg_in?parseFloat(profileForm.lower_leg_in):null,
+      shoulder_width_in:profileForm.shoulder_width_in?parseFloat(profileForm.shoulder_width_in):null,
+      trunk_length_in:profileForm.trunk_length_in?parseFloat(profileForm.trunk_length_in):null,
     }
     const {error}=await supabase.from('profiles').update(update).eq('id',selected.id)
     if (error){
@@ -1452,7 +1462,23 @@ Write next week's program by day and category (Pre-Throwing, Throwing, Post-Thro
                       </div>
                       )
                     })}
-                    <button onClick={saveProfileClassification} style={S.btn('gold')}>Save</button>
+
+                    <div style={{fontSize:11,fontWeight:700,color:C.gold,textTransform:'uppercase' as const,letterSpacing:'0.5px',margin:'16px 0 10px'}}>Body Segment Measurements (tape measure)</div>
+                    <div style={{display:'flex',gap:12,flexWrap:'wrap' as const}}>
+                      {([
+                        ['upper_arm_in','Upper Arm'],['forearm_in','Forearm to Wrist'],
+                        ['upper_leg_in','Upper Leg'],['lower_leg_in','Lower Leg'],
+                        ['shoulder_width_in','Shoulder Width'],['trunk_length_in','Trunk Length'],
+                      ] as const).map(([key,label])=>(
+                        <div key={key}>
+                          <div style={{fontSize:10,color:C.textMuted,textTransform:'uppercase' as const,letterSpacing:'0.5px',marginBottom:4}}>{label} (in)</div>
+                          <input type="number" style={{...S.input,width:100}} placeholder="e.g. 14.5" value={(profileForm as any)[key]} onChange={e=>setProfileForm(prev=>({...prev,[key]:e.target.value}))}/>
+                        </div>
+                      ))}
+                    </div>
+                    <div style={{fontSize:10,color:C.textDim,marginTop:8}}>Single value per measurement, not per side. Not yet used in any calculation — stored for reference only.</div>
+
+                    <button onClick={saveProfileClassification} style={{...S.btn('gold'),marginTop:16}}>Save</button>
                     {profileSaveError&&<div style={{fontSize:12,color:C.red,marginTop:8,padding:'8px 10px',background:'rgba(248,81,73,0.1)',borderRadius:6}}>{profileSaveError}</div>}
                   </div>
                 )}

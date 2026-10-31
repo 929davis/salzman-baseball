@@ -25,7 +25,44 @@ const KEY_EVENTS = [
   'Release',
 ]
 
-type CameraView = 'side' | 'front' | 'back'
+// Published research associations — NOT verified ceilings, and NOT verified at 95+ mph
+// specifically. Shown next to the athlete's own measured duration as context, never as a
+// pass/fail target.
+const FOOT_PLANT_TO_RELEASE_ASSOC_SEC:[number,number] = [0.14,0.15]
+const MER_TO_RELEASE_ASSOC_SEC:[number,number] = [0,0.05]
+
+type PhaseDuration = { fromEvent:string, toEvent:string, durationSec:number }
+type PhaseDurationResult = { consecutive:PhaseDuration[], footPlantToRelease:number|null, merToRelease:number|null }
+
+// Finds each canonical KEY_EVENT's timestamp within ONE session (matched by session_label,
+// since mechanics_frame_logs has no session_id/foreign key -- free-text label matching is a
+// real limitation, documented rather than hidden). If an event was logged more than once in
+// the same session, the most recently saved tag wins (entries arrive already sorted
+// newest-first). Returns both the full consecutive-phase chain AND the two specific
+// non-adjacent comparisons (foot plant->release, MER->release) that have a published
+// research association to show alongside them.
+function computePhaseDurations(entries:LogEntry[], sessionLabel:string):PhaseDurationResult{
+  const scoped = sessionLabel ? entries.filter(e=>e.sessionLabel===sessionLabel) : []
+  const byEvent = new Map<string,LogEntry>()
+  for (const e of scoped){ if (e.keyEvent && KEY_EVENTS.includes(e.keyEvent) && !byEvent.has(e.keyEvent)) byEvent.set(e.keyEvent,e) }
+  const gap = (from:string,to:string):number|null=>{
+    const a=byEvent.get(from), b=byEvent.get(to)
+    if (!a||!b||a.time==null||b.time==null) return null
+    return b.time-a.time
+  }
+  const consecutive:PhaseDuration[] = []
+  for (let i=0;i<KEY_EVENTS.length-1;i++){
+    const d=gap(KEY_EVENTS[i],KEY_EVENTS[i+1])
+    if (d!=null) consecutive.push({fromEvent:KEY_EVENTS[i],toEvent:KEY_EVENTS[i+1],durationSec:d})
+  }
+  return {
+    consecutive,
+    footPlantToRelease:gap('Foot Plant (Weight-Bearing)','Release'),
+    merToRelease:gap('Max External Rotation (MER)','Release'),
+  }
+}
+
+type CameraView = 'side' | 'front' | 'back' | 'aerial'
 type Handedness = 'R' | 'L'
 
 type Metrics = {
@@ -46,6 +83,7 @@ type LogEntry = {
   notes:string|null
   cameraView:string|null
   keyEvent:string|null
+  sessionLabel:string|null
   hipPx:{x:number,y:number}|null // only populated for entries logged this session — not persisted in the DB schema
   savedAt?:string
 }
@@ -128,7 +166,13 @@ function drawSkeleton(ctx:CanvasRenderingContext2D, pts:Record<number,{x:number,
 function confidenceBadge(metric:string, view:CameraView):'reliable'|'estimate'{
   const reliableFromSide = ['frontKnee','backKnee','trunkTilt','elbow','stridePctHt']
   const reliableFromFrontBack = ['hipShoulderSep','elbow']
+  // Aerial (directly overhead) sees rotation in the horizontal plane cleanly but foreshortens
+  // the vertical bend angles (knee/elbow flexion, trunk tilt) that side view reads reliably --
+  // a judgment call documented here, not a validated accuracy claim like the badge implies
+  // for side/front/back below.
+  const reliableFromAerial = ['hipShoulderSep']
   if (view==='side') return reliableFromSide.includes(metric) ? 'reliable' : 'estimate'
+  if (view==='aerial') return reliableFromAerial.includes(metric) ? 'reliable' : 'estimate'
   return reliableFromFrontBack.includes(metric) ? 'reliable' : 'estimate'
 }
 
@@ -299,7 +343,8 @@ export default function PitchMechanics2D({pitcherId}:{pitcherId:string}){
     const rows:LogEntry[]=(data||[]).map((r:any)=>({
       id:r.id, time:r.video_timestamp_sec, frontKnee:r.front_knee_deg, backKnee:r.back_knee_deg,
       trunkTilt:r.trunk_tilt_deg, elbow:r.elbow_deg, stridePctHt:r.stride_pct_ht, strideInches:r.stride_inches,
-      hipShoulderSep:r.hip_shoulder_sep_deg, notes:r.notes, cameraView:r.camera_view, keyEvent:r.key_event, hipPx:null, savedAt:r.created_at,
+      hipShoulderSep:r.hip_shoulder_sep_deg, notes:r.notes, cameraView:r.camera_view, keyEvent:r.key_event,
+      sessionLabel:r.session_label, hipPx:null, savedAt:r.created_at,
     }))
     setLogEntries(rows)
     setLogsLoading(false)
@@ -470,7 +515,7 @@ export default function PitchMechanics2D({pitcherId}:{pitcherId:string}){
       setLogEntries(prev=>[{
         id:data.id, time:m.time, frontKnee:m.frontKnee, backKnee:m.backKnee, trunkTilt:m.trunkTilt, elbow:m.elbow,
         stridePctHt:m.stridePctHt, strideInches:m.strideInches, hipShoulderSep:m.hipShoulderSep,
-        notes:frameNotes||null, cameraView:view, keyEvent:keyEvent||null, hipPx:m.hipPx, savedAt:data.created_at,
+        notes:frameNotes||null, cameraView:view, keyEvent:keyEvent||null, sessionLabel:sessionLabel||null, hipPx:m.hipPx, savedAt:data.created_at,
       }, ...prev])
       setFrameNotes('')
       setKeyEvent('')
@@ -496,6 +541,7 @@ export default function PitchMechanics2D({pitcherId}:{pitcherId:string}){
   const entryA=logEntries.find(e=>e.id===rowA)
   const entryB=logEntries.find(e=>e.id===rowB)
   const speedLabel=computeSpeedLabel(entryA,entryB,pxPerInch)
+  const phaseDurations=computePhaseDurations(logEntries,sessionLabel)
 
   const statCard=(label:string,value:string,unit:string,metricKey:string,target?:string)=>{
     const badge=confidenceBadge(metricKey,view)
@@ -586,6 +632,7 @@ export default function PitchMechanics2D({pitcherId}:{pitcherId:string}){
                 <option value="side">Side view</option>
                 <option value="front">Front view</option>
                 <option value="back">Back view</option>
+                <option value="aerial">Aerial (overhead) view</option>
               </select>
             </div>
             <div>
@@ -601,7 +648,12 @@ export default function PitchMechanics2D({pitcherId}:{pitcherId:string}){
             </div>
             <div>
               <label style={lbl}>Frame Rate (fps)</label>
-              <input type="text" inputMode="decimal" value={fps} onChange={e=>setFps(e.target.value)} style={inp}/>
+              <select value={fps} onChange={e=>setFps(e.target.value)} style={inp}>
+                <option value="30">30 FPS (Real Time)</option>
+                <option value="60">60 FPS</option>
+                <option value="120">120 FPS</option>
+                <option value="240">240 FPS (iPhone)</option>
+              </select>
             </div>
             <div>
               <label style={lbl}>Calibration</label>
@@ -705,6 +757,47 @@ export default function PitchMechanics2D({pitcherId}:{pitcherId:string}){
               <div style={{fontSize:11,color:C.textMuted,textTransform:'uppercase' as const,letterSpacing:'0.4px',marginBottom:6}}>Hip Travel Speed</div>
               <div style={{fontFamily:'monospace',fontSize:20,fontWeight:700,color:C.white}}>{speedLabel}</div>
             </div>
+          </div>
+
+          <div>
+            <div style={{fontSize:11,fontWeight:700,color:C.textMuted,textTransform:'uppercase' as const,letterSpacing:'0.5px',marginBottom:4,paddingBottom:8,borderBottom:`1px solid ${C.border}`}}>Phase Durations — This Session</div>
+            <div style={{fontSize:10,color:C.textDim,marginBottom:10}}>Needs every phase tagged via Key Event under the SAME Session Label above, each only once. Matched by that label as plain text — relabeling or reusing a label will mix sessions.</div>
+            {sessionLabel==='' ? (
+              <div style={{padding:16,textAlign:'center' as const,color:C.textDim,fontSize:12,background:C.bg2,border:`1px solid ${C.border}`,borderRadius:8}}>Enter a Session Label above to compute phase durations for this pitch.</div>
+            ) : phaseDurations.consecutive.length===0 ? (
+              <div style={{padding:16,textAlign:'center' as const,color:C.textDim,fontSize:12,background:C.bg2,border:`1px solid ${C.border}`,borderRadius:8}}>No two consecutive Key Events are tagged yet for session "{sessionLabel}".</div>
+            ) : (
+              <div style={{background:C.bg2,border:`1px solid ${C.border}`,borderRadius:8,overflow:'hidden'}}>
+                {phaseDurations.consecutive.map((d,i)=>(
+                  <div key={i} style={{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'7px 10px',borderBottom:i<phaseDurations.consecutive.length-1?`1px solid ${C.border}`:'none'}}>
+                    <span style={{fontSize:11,color:C.textMuted}}>{d.fromEvent} → {d.toEvent}</span>
+                    <span style={{fontFamily:'monospace',fontSize:13,fontWeight:700,color:C.white}}>{d.durationSec.toFixed(3)}s</span>
+                  </div>
+                ))}
+              </div>
+            )}
+            {(phaseDurations.footPlantToRelease!=null||phaseDurations.merToRelease!=null) && (
+              <div style={{marginTop:10,display:'flex',flexDirection:'column' as const,gap:8}}>
+                {phaseDurations.footPlantToRelease!=null && (
+                  <div style={{background:C.goldBg,border:`1px solid ${C.goldDim}`,borderRadius:8,padding:'8px 10px'}}>
+                    <div style={{display:'flex',justifyContent:'space-between'}}>
+                      <span style={{fontSize:11,color:C.gold}}>Foot Plant → Release</span>
+                      <span style={{fontFamily:'monospace',fontSize:13,fontWeight:700,color:C.white}}>{phaseDurations.footPlantToRelease.toFixed(3)}s</span>
+                    </div>
+                    <div style={{fontSize:9,color:C.textDim,marginTop:3}}>Published association for this phase: {FOOT_PLANT_TO_RELEASE_ASSOC_SEC[0]}–{FOOT_PLANT_TO_RELEASE_ASSOC_SEC[1]}s. An association seen in other research, not a verified ceiling and not specific to this athlete.</div>
+                  </div>
+                )}
+                {phaseDurations.merToRelease!=null && (
+                  <div style={{background:C.goldBg,border:`1px solid ${C.goldDim}`,borderRadius:8,padding:'8px 10px'}}>
+                    <div style={{display:'flex',justifyContent:'space-between'}}>
+                      <span style={{fontSize:11,color:C.gold}}>Max External Rotation → Release</span>
+                      <span style={{fontFamily:'monospace',fontSize:13,fontWeight:700,color:C.white}}>{phaseDurations.merToRelease.toFixed(3)}s</span>
+                    </div>
+                    <div style={{fontSize:9,color:C.textDim,marginTop:3}}>Published association for arm acceleration: ~{MER_TO_RELEASE_ASSOC_SEC[1]}s. Not verified at 95+ mph specifically — context, not a target.</div>
+                  </div>
+                )}
+              </div>
+            )}
           </div>
         </div>
       </div>
