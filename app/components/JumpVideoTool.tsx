@@ -31,6 +31,7 @@ const C = {
 
 const PLAYBACK_FPS = 30
 const CAPTURE_OPTIONS = [
+  { fps: 480, label: '480 fps (16× slow-mo)' },
   { fps: 240, label: '240 fps (8× slow-mo)' },
   { fps: 120, label: '120 fps (4× slow-mo)' },
   { fps: 60, label: '60 fps (2× slow-mo)' },

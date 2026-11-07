@@ -2,6 +2,7 @@
 import { useEffect, useState, useCallback } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { parseTime } from '@/lib/cmj'
+import RepVideoTool, { type PushupFormFill } from '@/app/components/RepVideoTool'
 import { validatePlyoPushupSequence, calcPlyoPushupMetrics, summarizePlyoPushupTest, type PlyoPushupInput } from '@/lib/plyoPushup'
 
 const C = {
@@ -103,12 +104,20 @@ export default function PlyoPushupPanel({pitcherId}:{pitcherId:string}){
         </div>
       </div>
 
-      <div style={card}>
+      <RepVideoTool kind="pushup"
+        history={history.filter(r=>r.avg_flight_sec!=null).map(r=>({date:r.test_date,value:r.avg_flight_sec}))}
+        onApply={(f:PushupFormFill)=>{
+          setFps(f.fps);setRows(f.rows);setFinalContactTime(f.finalContactTime);setStabilizationTime(f.stabilizationTime)
+          setResult(null);setErr('')
+          setTimeout(()=>document.getElementById('pushup-form')?.scrollIntoView({behavior:'smooth',block:'start'}),50)
+        }}/>
+
+      <div id="pushup-form" style={card}>
         <label style={lbl}>Date</label>
         <input type="date" style={inp} value={date} onChange={e=>setDate(e.target.value)}/>
         <label style={lbl}>FPS</label>
         <select style={inp} value={fps} onChange={e=>setFps(e.target.value)}>
-          <option value="240">240 FPS (iPhone)</option><option value="120">120 FPS</option><option value="480">480 FPS</option><option value="30">30 FPS (Real Time)</option>
+          <option value="240">240 FPS (iPhone)</option><option value="120">120 FPS</option><option value="60">60 FPS</option><option value="480">480 FPS</option><option value="30">30 FPS (Real Time)</option>
         </select>
 
         <label style={lbl}>Reps</label>

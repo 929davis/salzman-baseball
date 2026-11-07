@@ -2,6 +2,7 @@
 import { useEffect, useState, useCallback } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { parseTime } from '@/lib/cmj'
+import RepVideoTool, { type HopFormFill } from '@/app/components/RepVideoTool'
 import { validateHopSequence, calcHopMetrics, summarizeHopTest, type HopEntry, type HopLimb } from '@/lib/hopTest'
 
 const C = {
@@ -96,12 +97,19 @@ export default function HopTestPanel({pitcherId}:{pitcherId:string}){
         </div>
       </div>
 
-      <div style={card}>
+      <RepVideoTool kind="hop"
+        history={history.filter(r=>r.avg_rsi!=null).map(r=>({date:r.test_date,value:r.avg_rsi}))}
+        onApply={(f:HopFormFill)=>{
+          setFps(f.fps);setRows(f.rows);setResult(null);setErr('')
+          setTimeout(()=>document.getElementById('hop-form')?.scrollIntoView({behavior:'smooth',block:'start'}),50)
+        }}/>
+
+      <div id="hop-form" style={card}>
         <label style={lbl}>Date</label>
         <input type="date" style={inp} value={date} onChange={e=>setDate(e.target.value)}/>
         <label style={lbl}>FPS</label>
         <select style={inp} value={fps} onChange={e=>setFps(e.target.value)}>
-          <option value="240">240 FPS (iPhone)</option><option value="120">120 FPS</option><option value="480">480 FPS</option><option value="30">30 FPS (Real Time)</option>
+          <option value="240">240 FPS (iPhone)</option><option value="120">120 FPS</option><option value="60">60 FPS</option><option value="480">480 FPS</option><option value="30">30 FPS (Real Time)</option>
         </select>
         <label style={lbl}>Protocol</label>
         <select style={inp} value={protocolLimb} onChange={e=>setProtocolLimb(e.target.value as HopLimb)}>
