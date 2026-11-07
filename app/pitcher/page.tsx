@@ -9,6 +9,7 @@ import HopTestPanel from '@/app/components/HopTestPanel'
 import PlyoPushupPanel from '@/app/components/PlyoPushupPanel'
 import MiniSparkline from '@/app/components/MiniSparkline'
 import PitchMechanics2D from '@/app/components/PitchMechanics2D'
+import JumpVideoTool from '@/app/components/JumpVideoTool'
 import TestVideoLink from '@/app/components/TestVideoLink'
 import { useTestVideos } from '@/lib/testVideos'
 import { parseTime, calcCMJFn, classifyCMJ, validateCMJTimestamps } from '@/lib/cmj'
@@ -800,7 +801,7 @@ export default function PitcherDashboard(){
             <div style={{fontSize:18,fontWeight:700,color:C.white,marginBottom:4}}>Assessments</div>
             <div style={{fontSize:12,color:C.textMuted,marginBottom:16}}>Film at 240 FPS · Open in Photos · Edit · Scrub to find timestamps</div>
             <div style={{display:'flex',gap:6,marginBottom:16,overflowX:'auto' as const,paddingBottom:4}}>
-              {[{id:'cmj',label:'CMJ'},{id:'hop',label:'Hop Test'},{id:'pushup',label:'Plyo Push-Up'},{id:'benchmarks',label:'Benchmarks'},{id:'mechanics',label:'Mechanics'}].map(t=>(
+              {[{id:'cmj',label:'CMJ'},{id:'jumpvideo',label:'Jump Video'},{id:'hop',label:'Hop Test'},{id:'pushup',label:'Plyo Push-Up'},{id:'benchmarks',label:'Benchmarks'},{id:'mechanics',label:'Mechanics'}].map(t=>(
                 <button key={t.id} onClick={()=>setAssessTab(t.id)} style={{background:assessTab===t.id?C.gold:C.bg3,color:assessTab===t.id?C.bg:C.textMuted,border:`1px solid ${assessTab===t.id?C.gold:C.border}`,borderRadius:8,padding:'8px 14px',fontSize:12,fontWeight:assessTab===t.id?700:400,cursor:'pointer',whiteSpace:'nowrap' as const,flexShrink:0}}>{t.label}</button>
               ))}
             </div>
@@ -897,6 +898,8 @@ export default function PitcherDashboard(){
                 )}
               </div>
             )}
+
+            {assessTab==='jumpvideo'&&<JumpVideoTool/>}
 
             {assessTab==='hop'&&profile&&(
               <HopTestPanel pitcherId={profile.id}/>
