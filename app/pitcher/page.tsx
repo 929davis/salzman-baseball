@@ -353,7 +353,7 @@ export default function PitcherDashboard(){
     })
     if (error){
       console.error('pitcher dashboard: failed to save CMJ result',error)
-      setCmjSaveError('Could not save — check your connection and try again. Your result is still shown above.')
+      setCmjSaveError(`Could not save — ${error.message||'check your connection and try again'}${error.code?` (${error.code})`:''}. Your result is still shown above.`)
       return
     }
     const {data}=await supabase.from('cmj_results').select('*').eq('pitcher_id',profile.id).order('test_date',{ascending:false})
