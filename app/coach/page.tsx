@@ -2256,7 +2256,7 @@ Accessory | Single Arm DB Row | 3 x 6 @ 70%`}
           <div style={{fontSize:12,color:C.textMuted,marginBottom:16}}>{cmjEditingId?'Correcting a previously logged test. Re-check the frame timestamps and recalculate.':'Film at 240fps, scrub in Photos app, enter timestamps below.'}</div>
 
           <div style={{marginBottom:16}}>
-            <JumpVideoTool onApply={(t:CmjFormTimes)=>{setCmjForm(f=>({...f,...t}));setCmjCalc(null);setCmjErr('')}}/>
+            <JumpVideoTool history={cmjResults.filter(r=>r.jump_height_in!=null).map(r=>({date:r.test_date,heightIn:r.jump_height_in}))} onApply={(t:CmjFormTimes)=>{setCmjForm(f=>({...f,...t}));setCmjCalc(null);setCmjErr('')}}/>
           </div>
 
           <div style={{fontSize:11,color:C.textMuted,fontWeight:600,marginBottom:6,textTransform:'uppercase' as const,letterSpacing:'0.5px'}}>Date</div>

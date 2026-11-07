@@ -49,7 +49,10 @@ const fmtClock = (s: number, decimals = 0) => {
   return `${m}:${sec.toFixed(decimals).padStart(decimals ? decimals + 3 : 2, '0')}`
 }
 
-export default function JumpVideoTool({ onApply }: { onApply?: (fields: CmjFormTimes) => void }) {
+// A previously saved CMJ result, used only for comparison (no video is stored with it).
+export type CmjHistoryEntry = { date: string; heightIn: number }
+
+export default function JumpVideoTool({ onApply, history }: { onApply?: (fields: CmjFormTimes) => void; history?: CmjHistoryEntry[] }) {
   const videoRef = useRef<HTMLVideoElement>(null)
   const scrollRef = useRef<HTMLDivElement>(null)
   const fileRef = useRef<HTMLInputElement>(null)
@@ -92,6 +95,15 @@ export default function JumpVideoTool({ onApply }: { onApply?: (fields: CmjFormT
     const tau = (t - takeoff) / slowMo
     return 0.5 * G * tau * (pair.flightSec - tau) * 39.3701
   }, [pair, takeoff, landing, t, slowMo])
+
+  // Past-result comparison: best ever and most recent saved test for this athlete.
+  const compare = useMemo(() => {
+    const valid = (history ?? []).filter(h => Number.isFinite(h.heightIn) && h.heightIn > 0)
+    if (!valid.length) return null
+    const byDateDesc = [...valid].sort((a, b) => b.date.localeCompare(a.date))
+    const best = valid.reduce((a, b) => (b.heightIn > a.heightIn ? b : a))
+    return { best, last: byDateDesc[0], count: valid.length }
+  }, [history])
 
   const implausible = pair != null && (pair.heightIn < 3 || pair.heightIn > 40)
 
@@ -319,6 +331,17 @@ export default function JumpVideoTool({ onApply }: { onApply?: (fields: CmjFormT
 
         {loadError && <div style={{ margin: '0 14px 10px', color: C.red, fontSize: 12, padding: '8px 10px', background: 'rgba(248,81,73,0.1)', borderRadius: 8 }}>{loadError}</div>}
 
+        {/* Comparison against saved results */}
+        {compare && (
+          <div style={{ borderTop: `1px solid ${C.border}`, padding: '10px 14px', display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 10 }}>
+            <CompareCell label="This jump" value={pair ? `${pair.heightIn.toFixed(1)} in` : '—'} sub={pair ? `${inToCm(pair.heightIn).toFixed(1)} cm` : 'mark takeoff + landing'} color={C.cyan} />
+            <CompareCell label="Your best" value={`${compare.best.heightIn.toFixed(1)} in`} sub={compare.best.date}
+              delta={pair ? pair.heightIn - compare.best.heightIn : null} color={C.gold} />
+            <CompareCell label="Last test" value={`${compare.last.heightIn.toFixed(1)} in`} sub={compare.last.date}
+              delta={pair ? pair.heightIn - compare.last.heightIn : null} color={C.textMuted} />
+          </div>
+        )}
+
         {/* Timeline */}
         <div style={{ borderTop: `1px solid ${C.border}`, background: '#0b1220', opacity: hasVideo ? 1 : 0.45 }}>
           <div ref={scrollRef} style={{ overflowX: zoom > 1 ? 'auto' : 'hidden', overflowY: 'hidden', scrollbarWidth: 'thin' }}>
@@ -334,15 +357,28 @@ export default function JumpVideoTool({ onApply }: { onApply?: (fields: CmjFormT
                 </div>
               ))}
 
-              {/* flight window + parabola */}
-              {pair && takeoff != null && landing != null && (
-                <>
-                  <div style={{ position: 'absolute', left: xOf(takeoff), width: xOf(landing) - xOf(takeoff), top: 26, height: 70, background: 'rgba(61,217,240,0.10)', pointerEvents: 'none' }} />
-                  <svg style={{ position: 'absolute', left: xOf(takeoff), top: 26, pointerEvents: 'none' }} width={Math.max(1, xOf(landing) - xOf(takeoff))} height={70} viewBox="0 0 100 70" preserveAspectRatio="none">
-                    <path d="M0 70 Q50 -30 100 70" fill="none" stroke={C.cyan} strokeWidth={2} strokeDasharray="5 4" vectorEffect="non-scaling-stroke" />
-                  </svg>
-                </>
-              )}
+              {/* flight window + parabola (arc height scales against the athlete's best saved jump) */}
+              {pair && takeoff != null && landing != null && (() => {
+                const APEX_MAX = 56
+                const refMax = Math.max(pair.heightIn, compare?.best.heightIn ?? 0)
+                const apex = APEX_MAX * (pair.heightIn / refMax)
+                const ctrl = 70 - 2 * apex
+                const bestY = compare ? 70 - APEX_MAX * (compare.best.heightIn / refMax) : null
+                const w = Math.max(1, xOf(landing) - xOf(takeoff))
+                return (
+                  <>
+                    <div style={{ position: 'absolute', left: xOf(takeoff), width: w, top: 26, height: 70, background: 'rgba(61,217,240,0.10)', pointerEvents: 'none' }} />
+                    {bestY != null && (
+                      <div style={{ position: 'absolute', left: xOf(takeoff), width: w, top: 26 + bestY, borderTop: `1px dashed ${C.gold}`, pointerEvents: 'none' }}>
+                        <span style={{ position: 'absolute', right: 2, top: -14, fontSize: 9, color: C.gold, whiteSpace: 'nowrap' }}>Best {compare!.best.heightIn.toFixed(1)} in</span>
+                      </div>
+                    )}
+                    <svg style={{ position: 'absolute', left: xOf(takeoff), top: 26, pointerEvents: 'none' }} width={w} height={70} viewBox="0 0 100 70" preserveAspectRatio="none">
+                      <path d={`M0 70 Q50 ${ctrl} 100 70`} fill="none" stroke={C.cyan} strokeWidth={2} strokeDasharray="5 4" vectorEffect="non-scaling-stroke" />
+                    </svg>
+                  </>
+                )
+              })()}
 
               {/* markers */}
               {onApply && startT != null && <Marker x={xOf(startT)} color={C.gold} label="Start Time" align="left" />}
@@ -549,4 +585,19 @@ function Stat({ label, value, unit, sub }: { label: string; value: string; unit?
 
 function Badge({ text }: { text: string }) {
   return <span style={{ background: 'rgba(61,217,240,0.18)', color: C.cyan, border: `1px solid ${C.cyan}66`, borderRadius: 10, padding: '1px 7px', fontSize: 9, fontWeight: 700 }}>{text}</span>
+}
+
+function CompareCell({ label, value, sub, delta, color }: { label: string; value: string; sub: string; delta?: number | null; color: string }) {
+  return (
+    <div>
+      <div style={{ fontSize: 10, color: C.textMuted, marginBottom: 2 }}>{label}</div>
+      <div style={{ fontSize: 16, fontWeight: 800, color }}>{value}</div>
+      <div style={{ fontSize: 10, color: C.textDim }}>{sub}</div>
+      {delta != null && (
+        <div style={{ fontSize: 11, fontWeight: 700, marginTop: 2, color: delta >= 0 ? C.teal : C.gold }}>
+          {delta >= 0 ? '+' : '−'}{Math.abs(delta).toFixed(1)} in
+        </div>
+      )}
+    </div>
+  )
 }

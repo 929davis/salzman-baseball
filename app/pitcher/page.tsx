@@ -813,7 +813,7 @@ export default function PitcherDashboard(){
                   <div style={{fontSize:12,color:C.textMuted,lineHeight:1.6,marginBottom:6}}>Squat down then jump as high as possible. Film at 240fps and record the timestamps below.</div>
                   <TestVideoLink testKey="cmj" videos={testVideos} onSave={saveTestVideo}/>
                 </div>
-                <JumpVideoTool onApply={(t:CmjFormTimes)=>{
+                <JumpVideoTool history={cmjResults.filter(r=>r.jump_height_in!=null).map(r=>({date:r.test_date,heightIn:r.jump_height_in}))} onApply={(t:CmjFormTimes)=>{
                   setCmjForm(f=>({...f,...t}));setCmjResult(null);setCmjErr('')
                   setTimeout(()=>document.getElementById('cmj-form')?.scrollIntoView({behavior:'smooth',block:'start'}),50)
                 }}/>
