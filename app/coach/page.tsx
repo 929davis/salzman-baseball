@@ -8,6 +8,7 @@ import AthleticBenchmarks, { RecommendedWorkList } from '@/app/components/Athlet
 import HopTestPanel from '@/app/components/HopTestPanel'
 import PlyoPushupPanel from '@/app/components/PlyoPushupPanel'
 import PitchMechanics2D from '@/app/components/PitchMechanics2D'
+import JumpVideoTool, { type CmjFormTimes } from '@/app/components/JumpVideoTool'
 import ProgressOverview from '@/app/components/ProgressOverview'
 import MiniSparkline from '@/app/components/MiniSparkline'
 import TestVideoLink from '@/app/components/TestVideoLink'
@@ -2250,9 +2251,13 @@ Accessory | Single Arm DB Row | 3 x 6 @ 70%`}
     )}
     {cmjModal&&selected&&(
       <div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.7)',zIndex:9999,display:'flex',alignItems:'center',justifyContent:'center'}} onClick={()=>{setCmjModal(false);setCmjEditingId(null)}}>
-        <div style={{background:C.bg2,border:`1px solid ${C.border}`,borderRadius:12,padding:24,width:420,maxWidth:'90vw',maxHeight:'85vh',overflowY:'auto' as const}} onClick={e=>e.stopPropagation()}>
+        <div style={{background:C.bg2,border:`1px solid ${C.border}`,borderRadius:12,padding:24,width:600,maxWidth:'94vw',maxHeight:'90vh',overflowY:'auto' as const}} onClick={e=>e.stopPropagation()}>
           <div style={{fontSize:15,fontWeight:700,color:C.white,marginBottom:4}}>{cmjEditingId?'Edit CMJ':'Log CMJ'} — {selected.full_name}</div>
           <div style={{fontSize:12,color:C.textMuted,marginBottom:16}}>{cmjEditingId?'Correcting a previously logged test. Re-check the frame timestamps and recalculate.':'Film at 240fps, scrub in Photos app, enter timestamps below.'}</div>
+
+          <div style={{marginBottom:16}}>
+            <JumpVideoTool onApply={(t:CmjFormTimes)=>{setCmjForm(f=>({...f,...t}));setCmjCalc(null);setCmjErr('')}}/>
+          </div>
 
           <div style={{fontSize:11,color:C.textMuted,fontWeight:600,marginBottom:6,textTransform:'uppercase' as const,letterSpacing:'0.5px'}}>Date</div>
           <input type="date" style={{...S.input,marginBottom:12}} value={cmjForm.date} onChange={e=>setCmjForm(f=>({...f,date:e.target.value}))}/>
@@ -2265,7 +2270,7 @@ Accessory | Single Arm DB Row | 3 x 6 @ 70%`}
 
           <div style={{fontSize:11,color:C.textMuted,fontWeight:600,marginBottom:6,textTransform:'uppercase' as const,letterSpacing:'0.5px'}}>FPS</div>
           <select style={{...S.input,marginBottom:12}} value={cmjForm.fps} onChange={e=>setCmjForm(f=>({...f,fps:e.target.value}))}>
-            <option value="240">240 FPS (iPhone)</option><option value="120">120 FPS</option><option value="480">480 FPS</option><option value="30">30 FPS (Real Time)</option>
+            <option value="240">240 FPS (iPhone)</option><option value="120">120 FPS</option><option value="60">60 FPS</option><option value="480">480 FPS</option><option value="30">30 FPS (Real Time)</option>
           </select>
 
           {[{key:'startTime',label:'Start Time'},{key:'bottomTime',label:'Bottom of Loading Phase',optional:true},{key:'takeoffTime',label:'Takeoff Time'},{key:'landingTime',label:'Landing Time'},{key:'stabilizationTime',label:'Landing Stabilization',optional:true},{key:'uprightTime',label:'Return to Upright',optional:true}].map(f=>(

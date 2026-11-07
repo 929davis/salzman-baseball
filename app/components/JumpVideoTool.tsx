@@ -1,6 +1,18 @@
 'use client'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { calcJumpHeight } from '@/lib/cmj'
+import { calcJumpHeight, validateCMJTimestamps } from '@/lib/cmj'
+
+// Fields the CMJ forms (athlete + coach) already use. Times are REAL seconds (video time divided
+// by the slow-mo factor) because calcCMJFn treats them as real time; '' means "not marked".
+export type CmjFormTimes = {
+  fps: string
+  startTime: string
+  bottomTime: string
+  takeoffTime: string
+  landingTime: string
+  stabilizationTime: string
+  uprightTime: string
+}
 
 // Frame-stepped jump-height tool. Load a video, scrub to the last frame with both feet on the
 // floor (Set takeoff) and the first frame feet touch down (Set landing), log the jump, repeat.
@@ -37,7 +49,7 @@ const fmtClock = (s: number, decimals = 0) => {
   return `${m}:${sec.toFixed(decimals).padStart(decimals ? decimals + 3 : 2, '0')}`
 }
 
-export default function JumpVideoTool() {
+export default function JumpVideoTool({ onApply }: { onApply?: (fields: CmjFormTimes) => void }) {
   const videoRef = useRef<HTMLVideoElement>(null)
   const scrollRef = useRef<HTMLDivElement>(null)
   const fileRef = useRef<HTMLInputElement>(null)
@@ -58,6 +70,12 @@ export default function JumpVideoTool() {
   const [landing, setLanding] = useState<number | null>(null)
   const [jumps, setJumps] = useState<Jump[]>([])
   const nextId = useRef(1)
+  // Optional CMJ phase markers (only shown when the tool is embedded with an onApply handler).
+  const [startT, setStartT] = useState<number | null>(null)
+  const [bottomT, setBottomT] = useState<number | null>(null)
+  const [stableT, setStableT] = useState<number | null>(null)
+  const [uprightT, setUprightT] = useState<number | null>(null)
+  const [applyMsg, setApplyMsg] = useState<{ ok: boolean; text: string } | null>(null)
 
   const slowMo = captureFps / PLAYBACK_FPS
 
@@ -113,6 +131,7 @@ export default function JumpVideoTool() {
     urlRef.current = url
     setLoadError('')
     setTakeoff(null); setLanding(null); setJumps([]); setT(0); setDuration(0); setPlaying(false)
+    setStartT(null); setBottomT(null); setStableT(null); setUprightT(null); setApplyMsg(null)
     setSrc(url)
   }, [])
 
@@ -204,6 +223,24 @@ export default function JumpVideoTool() {
     const existing = jumps.find(j => Math.abs(j.takeoff - takeoff) < 1e-3)
     const entry: Jump = { id: existing?.id ?? nextId.current++, takeoff, landing, flightSec: pair.flightSec, heightIn: pair.heightIn }
     setJumps(prev => existing ? prev.map(j => j.id === existing.id ? entry : j) : [...prev, entry])
+  }
+  const applyToCmj = () => {
+    if (!onApply) return
+    if (startT == null || takeoff == null || landing == null) {
+      setApplyMsg({ ok: false, text: 'Set Start Time, Takeoff Time and Landing Time first.' })
+      return
+    }
+    const err = validateCMJTimestamps({
+      startTime: startT, bottomTime: bottomT ?? undefined, takeoffTime: takeoff, landingTime: landing,
+      stabilizationTime: stableT ?? undefined, uprightTime: uprightT ?? undefined,
+    })
+    if (err) { setApplyMsg({ ok: false, text: err[0].toUpperCase() + err.slice(1) + '.' }); return }
+    const real = (v: number | null) => (v == null ? '' : (v / slowMo).toFixed(4))
+    onApply({
+      fps: String(captureFps), startTime: real(startT), bottomTime: real(bottomT), takeoffTime: real(takeoff),
+      landingTime: real(landing), stabilizationTime: real(stableT), uprightTime: real(uprightT),
+    })
+    setApplyMsg({ ok: true, text: 'Times sent to the form. Enter body weight and tap Calculate.' })
   }
   const viewJump = (j: Jump) => { setTakeoff(j.takeoff); setLanding(j.landing); videoRef.current?.pause(); seek(j.takeoff) }
   const removeJump = (id: number) => setJumps(prev => prev.filter(j => j.id !== id))
@@ -308,6 +345,10 @@ export default function JumpVideoTool() {
               )}
 
               {/* markers */}
+              {onApply && startT != null && <Marker x={xOf(startT)} color={C.gold} label="Start Time" align="left" />}
+              {onApply && bottomT != null && <Marker x={xOf(bottomT)} color={C.blue} label="Bottom" align="left" />}
+              {onApply && stableT != null && <Marker x={xOf(stableT)} color={C.teal} label="Stabilized" align="left" />}
+              {onApply && uprightT != null && <Marker x={xOf(uprightT)} color="#a371f7" label="Upright" align="left" />}
               {takeoff != null && (
                 <Marker x={xOf(takeoff)} color={C.takeoff} label="Takeoff" align="right" />
               )}
@@ -348,14 +389,58 @@ export default function JumpVideoTool() {
 
         {/* Marker actions */}
         <div style={{ borderTop: `1px solid ${C.border}`, padding: 12, display: 'flex', flexWrap: 'wrap', gap: 8, alignItems: 'center', opacity: hasVideo ? 1 : 0.45, pointerEvents: hasVideo ? 'auto' : 'none' }}>
-          <button style={bigBtn(C.takeoff)} onClick={() => setTakeoff(videoRef.current?.currentTime ?? t)}>Set takeoff</button>
-          <button style={bigBtn(C.landing)} onClick={() => setLanding(videoRef.current?.currentTime ?? t)}>Set landing</button>
+          {!onApply && <button style={bigBtn(C.takeoff)} onClick={() => setTakeoff(videoRef.current?.currentTime ?? t)}>Set takeoff</button>}
+          {!onApply && <button style={bigBtn(C.landing)} onClick={() => setLanding(videoRef.current?.currentTime ?? t)}>Set landing</button>}
           <button style={{ ...bigBtn(C.cyan), opacity: pair ? 1 : 0.4 }} disabled={!pair} onClick={logJump}>+ Log Jump</button>
-          <div style={{ marginLeft: 'auto', display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-            <span style={chip(C.takeoff)}>Takeoff: {takeoff != null ? `${takeoff.toFixed(3)} s` : '—'}</span>
-            <span style={chip(C.landing)}>Landing: {landing != null ? `${landing.toFixed(3)} s` : '—'}</span>
-          </div>
+          {onApply && <span style={{ fontSize: 11, color: C.textDim }}>Mark Takeoff and Landing below, then log it to add to the session summary.</span>}
+          {!onApply && (
+            <div style={{ marginLeft: 'auto', display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+              <span style={chip(C.takeoff)}>Takeoff: {takeoff != null ? `${takeoff.toFixed(3)} s` : '—'}</span>
+              <span style={chip(C.landing)}>Landing: {landing != null ? `${landing.toFixed(3)} s` : '—'}</span>
+            </div>
+          )}
         </div>
+
+        {/* The six CMJ measurements, in order, named exactly as in the CMJ form (embedded use only) */}
+        {onApply && (
+          <div style={{ borderTop: `1px solid ${C.border}`, padding: 12, opacity: hasVideo ? 1 : 0.45, pointerEvents: hasVideo ? 'auto' : 'none' }}>
+            <div style={{ fontSize: 11, color: C.textMuted, marginBottom: 10, lineHeight: 1.5 }}>
+              Step to each moment, then tap its Set button. Start Time, Takeoff Time and Landing Time are required.
+            </div>
+            {([
+              { label: 'Start Time', optional: false, color: C.gold, val: startT, set: setStartT },
+              { label: 'Bottom of Loading Phase', optional: true, color: C.blue, val: bottomT, set: setBottomT },
+              { label: 'Takeoff Time', optional: false, color: C.takeoff, val: takeoff, set: setTakeoff },
+              { label: 'Landing Time', optional: false, color: C.landing, val: landing, set: setLanding },
+              { label: 'Landing Stabilization', optional: true, color: C.teal, val: stableT, set: setStableT },
+              { label: 'Return to Upright', optional: true, color: '#a371f7', val: uprightT, set: setUprightT },
+            ] as const).map((row, i) => (
+              <div key={row.label} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 0', borderTop: i ? `1px solid ${C.border}` : 'none' }}>
+                <span style={{ width: 8, height: 8, borderRadius: '50%', background: row.color, flexShrink: 0 }} />
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontSize: 13, color: C.white, fontWeight: 600 }}>
+                    {row.label}{row.optional && <span style={{ color: C.textMuted, fontWeight: 400 }}> (optional)</span>}
+                  </div>
+                  <div style={{ fontSize: 11, color: row.val != null ? row.color : C.textDim }}>
+                    {row.val != null ? `${row.val.toFixed(3)} s` : 'Not set'}
+                  </div>
+                </div>
+                {row.val != null && (
+                  <button aria-label={`Clear ${row.label}`} onClick={() => row.set(null)}
+                    style={{ background: 'transparent', border: 'none', color: C.textMuted, cursor: 'pointer', fontSize: 16 }}>×</button>
+                )}
+                <button onClick={() => row.set(videoRef.current?.currentTime ?? t)}
+                  style={{ ...bigBtn('transparent', row.color), border: `1px solid ${row.color}`, padding: '8px 14px' }}>
+                  {row.val != null ? 'Reset' : 'Set'}
+                </button>
+              </div>
+            ))}
+            <button style={{ ...bigBtn(C.gold), width: '100%', marginTop: 12 }} onClick={applyToCmj}>Use in CMJ form ↓</button>
+            {applyMsg && (
+              <div style={{ fontSize: 12, marginTop: 8, padding: '8px 10px', borderRadius: 8, color: applyMsg.ok ? C.teal : C.red, background: applyMsg.ok ? 'rgba(57,211,83,0.1)' : 'rgba(248,81,73,0.1)' }}>{applyMsg.text}</div>
+            )}
+          </div>
+        )}
 
         {/* Capture speed */}
         <div style={{ borderTop: `1px solid ${C.border}`, padding: 12 }}>
@@ -384,7 +469,7 @@ export default function JumpVideoTool() {
       <div style={{ background: C.panel, border: `1px solid ${C.border}`, borderRadius: 14, padding: 16 }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
           <div style={{ fontSize: 14, fontWeight: 700, color: C.white }}>Session summary</div>
-          <button onClick={() => { setJumps([]); setTakeoff(null); setLanding(null) }} disabled={!jumps.length && takeoff == null && landing == null}
+          <button onClick={() => { setJumps([]); setTakeoff(null); setLanding(null); setStartT(null); setBottomT(null); setStableT(null); setUprightT(null); setApplyMsg(null) }} disabled={!jumps.length && takeoff == null && landing == null && startT == null}
             style={{ background: 'transparent', color: C.textMuted, border: `1px solid ${C.border}`, borderRadius: 8, padding: '7px 12px', fontSize: 12, cursor: 'pointer' }}>Reset all</button>
         </div>
 

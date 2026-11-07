@@ -9,7 +9,7 @@ import HopTestPanel from '@/app/components/HopTestPanel'
 import PlyoPushupPanel from '@/app/components/PlyoPushupPanel'
 import MiniSparkline from '@/app/components/MiniSparkline'
 import PitchMechanics2D from '@/app/components/PitchMechanics2D'
-import JumpVideoTool from '@/app/components/JumpVideoTool'
+import JumpVideoTool, { type CmjFormTimes } from '@/app/components/JumpVideoTool'
 import TestVideoLink from '@/app/components/TestVideoLink'
 import { useTestVideos } from '@/lib/testVideos'
 import { parseTime, calcCMJFn, classifyCMJ, validateCMJTimestamps } from '@/lib/cmj'
@@ -801,7 +801,7 @@ export default function PitcherDashboard(){
             <div style={{fontSize:18,fontWeight:700,color:C.white,marginBottom:4}}>Assessments</div>
             <div style={{fontSize:12,color:C.textMuted,marginBottom:16}}>Film at 240 FPS · Open in Photos · Edit · Scrub to find timestamps</div>
             <div style={{display:'flex',gap:6,marginBottom:16,overflowX:'auto' as const,paddingBottom:4}}>
-              {[{id:'cmj',label:'CMJ'},{id:'jumpvideo',label:'Jump Video'},{id:'hop',label:'Hop Test'},{id:'pushup',label:'Plyo Push-Up'},{id:'benchmarks',label:'Benchmarks'},{id:'mechanics',label:'Mechanics'}].map(t=>(
+              {[{id:'cmj',label:'CMJ'},{id:'hop',label:'Hop Test'},{id:'pushup',label:'Plyo Push-Up'},{id:'benchmarks',label:'Benchmarks'},{id:'mechanics',label:'Mechanics'}].map(t=>(
                 <button key={t.id} onClick={()=>setAssessTab(t.id)} style={{background:assessTab===t.id?C.gold:C.bg3,color:assessTab===t.id?C.bg:C.textMuted,border:`1px solid ${assessTab===t.id?C.gold:C.border}`,borderRadius:8,padding:'8px 14px',fontSize:12,fontWeight:assessTab===t.id?700:400,cursor:'pointer',whiteSpace:'nowrap' as const,flexShrink:0}}>{t.label}</button>
               ))}
             </div>
@@ -813,7 +813,11 @@ export default function PitcherDashboard(){
                   <div style={{fontSize:12,color:C.textMuted,lineHeight:1.6,marginBottom:6}}>Squat down then jump as high as possible. Film at 240fps and record the timestamps below.</div>
                   <TestVideoLink testKey="cmj" videos={testVideos} onSave={saveTestVideo}/>
                 </div>
-                <div style={card}>
+                <JumpVideoTool onApply={(t:CmjFormTimes)=>{
+                  setCmjForm(f=>({...f,...t}));setCmjResult(null);setCmjErr('')
+                  setTimeout(()=>document.getElementById('cmj-form')?.scrollIntoView({behavior:'smooth',block:'start'}),50)
+                }}/>
+                <div id="cmj-form" style={{...card,marginTop:12}}>
                   <label style={lbl}>Date</label>
                   <input type="date" style={inp} value={cmjForm.date} onChange={e=>setCmjForm(f=>({...f,date:e.target.value}))}/>
                   <label style={lbl}>Body Weight</label>
@@ -822,7 +826,7 @@ export default function PitcherDashboard(){
                     <select style={{...inp,width:80}} value={cmjForm.weightUnit} onChange={e=>setCmjForm(f=>({...f,weightUnit:e.target.value}))}><option value="lbs">lbs</option><option value="kg">kg</option></select>
                   </div>
                   <label style={lbl}>FPS</label>
-                  <select style={inp} value={cmjForm.fps} onChange={e=>setCmjForm(f=>({...f,fps:e.target.value}))}><option value="240">240 FPS (iPhone)</option><option value="120">120 FPS</option><option value="480">480 FPS</option><option value="30">30 FPS (Real Time)</option></select>
+                  <select style={inp} value={cmjForm.fps} onChange={e=>setCmjForm(f=>({...f,fps:e.target.value}))}><option value="240">240 FPS (iPhone)</option><option value="120">120 FPS</option><option value="60">60 FPS</option><option value="480">480 FPS</option><option value="30">30 FPS (Real Time)</option></select>
                   <FrameInputs form={cmjForm} setForm={setCmjForm} inp={inp} lbl={lbl} fields={[{key:'startTime',label:'Start Time',placeholder:'e.g. 0:03.20'},{key:'bottomTime',label:'Bottom of Loading Phase',placeholder:'e.g. 0:03.20',optional:true},{key:'takeoffTime',label:'Takeoff Time',placeholder:'e.g. 0:03.20'},{key:'landingTime',label:'Landing Time',placeholder:'e.g. 0:03.20'},{key:'stabilizationTime',label:'Landing Stabilization',placeholder:'e.g. 0:03.20',optional:true},{key:'uprightTime',label:'Return to Upright',placeholder:'e.g. 0:03.20',optional:true}]}/>
                   {cmjErr&&<div style={{color:C.red,fontSize:13,marginTop:8,padding:'10px',background:'rgba(248,81,73,0.1)',borderRadius:8}}>{cmjErr}</div>}
                   <button style={btn('gold')} onClick={calcCMJHandler}>Calculate</button>
@@ -898,8 +902,6 @@ export default function PitcherDashboard(){
                 )}
               </div>
             )}
-
-            {assessTab==='jumpvideo'&&<JumpVideoTool/>}
 
             {assessTab==='hop'&&profile&&(
               <HopTestPanel pitcherId={profile.id}/>
