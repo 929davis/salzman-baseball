@@ -1,6 +1,6 @@
 export type BenchmarkKey =
   | 'broad_jump_in' | 'lateral_broad_jump_lr_in'
-  | 'sprint_10yd_sec' | 'total_body_strength_lbs' | 'shoulder_er_ir_lbs'
+  | 'sprint_10yd_sec' | 'total_body_strength_lbs'
   | 'vertical_jump_in' | 'vertical_jump_225_in'
   | 'grip_strength_right_lbs' | 'grip_strength_left_lbs' | 'wingspan_in'
   | 'hip_rotation_trail_deg' | 'hip_rotation_lead_deg' | 'shoulder_rotation_deg'
@@ -13,7 +13,9 @@ export type BenchmarkDef = {
   label: string
   unit: string
   tier: 1 | 2 | 3
-  p50: number
+  // Optional: a benchmark with no sourced reference values shows the athlete's number and
+  // history only -- no Average/Strong markers and no status label.
+  p50?: number
   p75?: number
   elite?: number
   mlbAvg?: number
@@ -55,9 +57,12 @@ export const BENCHMARKS: BenchmarkDef[] = [
   {key:'cmj_peak_power_per_kg',label:'CMJ Peak Power / Bodyweight',unit:'W/kg',tier:1,p50:55.4,scaleMin:24.3,scaleMax:84.4,source:'cmj_results',cmjField:'peak_power_per_kg',correlationR:0.707,correlationNote:'All levels, 1,934-session reference dataset.'},
   {key:'sprint_10yd_sec',label:'10-Yard Sprint',unit:'sec',tier:2,p50:1.70,elite:1.60,lowerIsBetter:true,scaleMin:1.3,scaleMax:2.1},
   {key:'total_body_strength_lbs',label:'Total Body Strength (Squat + Bench + Deadlift)',unit:'lbs',tier:2,p50:400,scaleMin:0,scaleMax:650},
-  {key:'shoulder_er_ir_lbs',label:'Shoulder ER/IR Strength',unit:'lbs',tier:2,p50:63,scaleMin:0,scaleMax:100},
   {key:'vertical_jump_in',label:'Vertical Jump',unit:'in',tier:2,p50:26,mlbAvg:24.4,scaleMin:0,scaleMax:36},
-  {key:'vertical_jump_225_in',label:'Vertical Jump @225 lbs',unit:'in',tier:2,p50:20,p75:22,scaleMin:0,scaleMax:30},
+  // Vertical jump with 6-10 lb of added resistance (renamed from "Vertical Jump @225 lbs"). The
+  // storage key/column is still named vertical_jump_225_in to avoid a live-database migration;
+  // only the label changed. Reference values (50th 20in / 75th 22in) are the original ones, kept
+  // as-is per the coach, who confirms they come from the same study.
+  {key:'vertical_jump_225_in',label:'Vertical Jump w/ 6–10 lb Resistance',unit:'in',tier:2,p50:20,p75:22,scaleMin:0,scaleMax:30},
   // Same reference dataset as the two CMJ entries above (median/min/max converted cm->in).
   // Measured the same way as the CMJ tool's flight-time method, just from a static squat
   // pause instead of a countermovement -- no force plate needed, a phone timer is enough.
@@ -102,6 +107,7 @@ export const TIER_INFO: Record<1|2|3,{label:string,desc:string}> = {
 
 export function benchmarkStatus(def: BenchmarkDef, value: number | null | undefined): {label:string,color:string} | null {
   if (value==null || isNaN(value)) return null
+  if (def.p50==null) return null
   const dir = def.lowerIsBetter ? -1 : 1
   const v = value*dir
   const eliteThreshold = def.elite!=null ? def.elite*dir : (def.p75!=null ? def.p75*dir : null)
@@ -191,18 +197,11 @@ export const MOBILITY_SCREENS: MobilityScreenDef[] = [
   {key:'pelvic_tilt',label:'Pelvic Tilt',description:'Standing, actively tilt the pelvis forward and back through its full range. Checks lumbo-pelvic control.'},
   {key:'pelvic_rotation',label:'Pelvic Rotation',description:'Standing, rotate the pelvis side to side while keeping the shoulders still. Checks hip/trunk dissociation.'},
   {key:'lower_quarter_rotation',label:'Lower Quarter Rotation',description:'Seated with knees together, rotate the lower leg and foot inward and outward. Checks hip internal/external rotation.'},
-  {key:'toe_touch',label:'Toe Touch',description:'Standing with knees straight, bend forward and reach toward the toes. Checks posterior chain (hamstring/low back) flexibility.'},
   {key:'seated_trunk_rotation',label:'Seated Trunk Rotation',description:'Seated with a bar or club across the shoulders, rotate the trunk each direction. Checks thoracic rotation with the hips locked out.'},
   {key:'torso_rotation',label:'Torso Rotation',description:'Standing, rotate the upper body each direction while keeping the hips stable. Checks standing thoracic rotation.'},
   {key:'lat_length',label:'Lat Length',description:'Lying on the back, raise both arms straight overhead. Checks lat and shoulder flexion range.'},
   {key:'shoulder_90_90',label:'90/90 Shoulder',description:'Arm out at 90° with the elbow bent 90°, rotate the shoulder internally and externally. Checks shoulder rotational range.'},
   {key:'single_leg_balance',label:'Single Leg Balance',description:'Stand on one leg, eyes open then eyes closed. Checks single-leg stability and proprioception.'},
-  {key:'overhead_deep_squat',label:'Overhead Deep Squat',description:'Arms overhead, squat as deep as possible while keeping heels down and arms up. Checks the full-body mobility pattern.'},
-  {key:'bridge_leg_extension',label:'Bridge + Leg Extension',description:'From a glute bridge position, extend one leg straight out while holding hip height. Checks glute and core stability.'},
-  {key:'cervical_rotation',label:'Cervical Rotation',description:'Rotate the head and neck as far as possible each direction. Checks cervical spine mobility.'},
-  {key:'forearm_rotation',label:'Forearm Rotation',description:'Elbow tucked at the side, rotate the forearm from palm-up to palm-down. Checks pronation/supination range.'},
-  {key:'wrist_hinge',label:'Wrist Hinge',description:'Forearm supported on a table, deviate the wrist side to side (toward the thumb, then toward the pinky). Checks radial/ulnar deviation.'},
-  {key:'wrist_flex_ext',label:'Wrist Flex/Ext',description:'Forearm supported on a table, bend the wrist up and down through its full range. Checks flexion/extension range.'},
 ]
 
 export const SCREEN_STATUS_COLORS: Record<ScreenStatus,string> = {

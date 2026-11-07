@@ -24,7 +24,6 @@ type FlaggedMetric = {
 // Athlete-facing relabeling for the handful of coach/scout-jargon metric names —
 // everything else (e.g. "Broad Jump", "Vertical Jump") is already plain enough as-is.
 const ATHLETE_LABELS: Record<string,string> = {
-  shoulder_er_ir_lbs: 'Shoulder Rotation Strength',
   hip_rotation_trail_deg: 'Hip Rotation (Back Leg)',
   hip_rotation_lead_deg: 'Hip Rotation (Front Leg)',
   shoulder_rotation_deg: 'Shoulder Rotation',

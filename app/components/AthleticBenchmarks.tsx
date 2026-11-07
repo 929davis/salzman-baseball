@@ -21,14 +21,14 @@ const lbl:React.CSSProperties = {fontSize:10,color:C.textMuted,fontWeight:600,ma
 
 type FormState = {
   date:string,broad_jump_in:string,lateral_broad_jump_lr_in:string,sprint_10yd_sec:string,
-  squat_lbs:string,bench_lbs:string,deadlift_lbs:string,shoulder_er_ir_lbs:string,
+  squat_lbs:string,bench_lbs:string,deadlift_lbs:string,
   vertical_jump_in:string,vertical_jump_225_in:string,squat_jump_in:string,grip_strength_right_lbs:string,grip_strength_left_lbs:string,
   wingspan_in:string,hip_rotation_trail_deg:string,hip_rotation_lead_deg:string,shoulder_rotation_deg:string,
   mb_seated_chest_pass_ft:string,mb_situp_throw_ft:string,mb_rotational_pass_ft:string,
 }
 const BLANK_FORM:FormState = {
   date:new Date().toISOString().split('T')[0],broad_jump_in:'',lateral_broad_jump_lr_in:'',sprint_10yd_sec:'',
-  squat_lbs:'',bench_lbs:'',deadlift_lbs:'',shoulder_er_ir_lbs:'',
+  squat_lbs:'',bench_lbs:'',deadlift_lbs:'',
   vertical_jump_in:'',vertical_jump_225_in:'',squat_jump_in:'',grip_strength_right_lbs:'',grip_strength_left_lbs:'',
   wingspan_in:'',hip_rotation_trail_deg:'',hip_rotation_lead_deg:'',shoulder_rotation_deg:'',
   mb_seated_chest_pass_ft:'',mb_situp_throw_ft:'',mb_rotational_pass_ft:'',
@@ -72,7 +72,7 @@ function ScreenBadge({label,status,history,hasVideo,onOpen}:{label:string,status
 function BenchmarkBar({def,value,history,videos,onSaveVideo,showCorrelation}:{def:BenchmarkDef,value:number|null|undefined,history:{date:string,value:number}[],videos:Record<string,string>,onSaveVideo:(key:string,url:string)=>void,showCorrelation?:boolean}){
   const status=benchmarkStatus(def,value)
   const fillPct=value!=null&&!isNaN(value)?scalePct(def,value):0
-  const p50Pct=scalePct(def,def.p50)
+  const p50Pct=def.p50!=null?scalePct(def,def.p50):null
   return (
     <div style={{marginBottom:16}}>
       <div style={{display:'flex',justifyContent:'space-between',alignItems:'baseline',marginBottom:4}}>
@@ -89,8 +89,8 @@ function BenchmarkBar({def,value,history,videos,onSaveVideo,showCorrelation}:{de
         {def.normalRange&&(
           <div style={{position:'absolute' as const,left:`${scalePct(def,def.normalRange[0])}%`,width:`${scalePct(def,def.normalRange[1])-scalePct(def,def.normalRange[0])}%`,top:0,bottom:0,background:'rgba(57,211,83,0.12)',borderLeft:'1px dashed rgba(57,211,83,0.5)',borderRight:'1px dashed rgba(57,211,83,0.5)'}}/>
         )}
-        <div style={{position:'absolute' as const,left:0,top:0,bottom:0,width:`${fillPct}%`,background:status?status.color:C.border,borderRadius:4,transition:'width 0.2s'}}/>
-        <div style={{position:'absolute' as const,left:`${p50Pct}%`,top:-2,bottom:-2,width:1,background:C.white,opacity:0.6}} title={`Average: ${def.p50}${def.unit}`}/>
+        <div style={{position:'absolute' as const,left:0,top:0,bottom:0,width:`${fillPct}%`,background:status?status.color:(value!=null&&!isNaN(value)?C.blue:C.border),borderRadius:4,transition:'width 0.2s'}}/>
+        {p50Pct!=null&&<div style={{position:'absolute' as const,left:`${p50Pct}%`,top:-2,bottom:-2,width:1,background:C.white,opacity:0.6}} title={`Average: ${def.p50}${def.unit}`}/>}
         {def.p75!=null&&(
           <div style={{position:'absolute' as const,left:`${scalePct(def,def.p75)}%`,top:-2,bottom:-2,width:1,background:C.teal}} title={`Strong: ${def.p75}${def.unit}`}/>
         )}
@@ -102,7 +102,7 @@ function BenchmarkBar({def,value,history,videos,onSaveVideo,showCorrelation}:{de
         )}
       </div>
       <div style={{display:'flex',gap:10,fontSize:9,color:C.textDim,marginTop:3,flexWrap:'wrap' as const}}>
-        <span>Average: {def.p50}{def.unit}</span>
+        {def.p50!=null?<span>Average: {def.p50}{def.unit}</span>:<span>No reference values yet — tracks your own progress</span>}
         {def.p75!=null&&<span style={{color:C.teal}}>Strong: {def.p75}{def.unit}</span>}
         {def.elite!=null&&<span style={{color:C.teal}}>Elite: {def.elite}{def.unit}</span>}
         {def.mlbAvg!=null&&<span style={{color:C.purple}}>MLB average: {def.mlbAvg}{def.unit}</span>}
@@ -199,7 +199,6 @@ export default function AthleticBenchmarks({pitcherId, getRecommendation, cmjRes
       broad_jump_in:num(form.broad_jump_in),lateral_broad_jump_lr_in:num(form.lateral_broad_jump_lr_in),
       sprint_10yd_sec:num(form.sprint_10yd_sec),
       squat_lbs:squat,bench_lbs:bench,deadlift_lbs:deadlift,total_body_strength_lbs:total,
-      shoulder_er_ir_lbs:num(form.shoulder_er_ir_lbs),
       vertical_jump_in:num(form.vertical_jump_in),vertical_jump_225_in:num(form.vertical_jump_225_in),squat_jump_in:num(form.squat_jump_in),
       grip_strength_right_lbs:num(form.grip_strength_right_lbs),grip_strength_left_lbs:num(form.grip_strength_left_lbs),
       wingspan_in:num(form.wingspan_in),
@@ -292,9 +291,8 @@ export default function AthleticBenchmarks({pitcherId, getRecommendation, cmjRes
                   {numField('squat_lbs','Squat (lbs)','e.g. 315')}
                   {numField('bench_lbs','Bench (lbs)','e.g. 225')}
                   {numField('deadlift_lbs','Deadlift (lbs)','e.g. 405')}
-                  {numField('shoulder_er_ir_lbs','Shoulder ER/IR Strength (lbs)','e.g. 60')}
                   {numField('vertical_jump_in','Vertical Jump (in)','e.g. 25')}
-                  {numField('vertical_jump_225_in','Vertical Jump @225 lbs (in)','e.g. 19')}
+                  {numField('vertical_jump_225_in','Vertical Jump w/ 6–10 lb Resistance (in)','e.g. 20')}
                   {numField('squat_jump_in','Squat Jump Height (in)','e.g. 14')}
                   {numField('grip_strength_right_lbs','Grip Strength Right (lbs)','e.g. 100')}
                   {numField('grip_strength_left_lbs','Grip Strength Left (lbs)','e.g. 98')}
