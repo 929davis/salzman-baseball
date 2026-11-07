@@ -2,6 +2,7 @@
 import { useState, useRef, useEffect, useCallback } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { angleAt } from '@/lib/angles'
+import DeliveryTimeline, { type DeliveryEventDef } from '@/app/components/DeliveryTimeline'
 
 const C = {
   bg:'#0d1117',bg2:'#161b22',bg3:'#1c2333',border:'#30363d',
@@ -25,6 +26,17 @@ const KEY_EVENTS = [
   'Release',
 ]
 
+// Timeline presentation for each key event: short pin label + colour. Order must match KEY_EVENTS.
+const EVENT_DEFS:DeliveryEventDef[] = [
+  {name:'Front Foot Off Ground',short:'Foot off',color:'#58a6ff'},
+  {name:'Peak Leg Lift',short:'Peak lift',color:'#39d3c3'},
+  {name:'Hand Break',short:'Hand break',color:'#39d353'},
+  {name:'Foot Plant (Weight-Bearing)',short:'Foot plant',color:'#e8b84b'},
+  {name:'Hip Rotation Stop',short:'Hips stop',color:'#f0883e'},
+  {name:'Max External Rotation (MER)',short:'MER',color:'#f85149'},
+  {name:'Release',short:'Release',color:'#a371f7'},
+]
+
 // Published research associations — NOT verified ceilings, and NOT verified at 95+ mph
 // specifically. Shown next to the athlete's own measured duration as context, never as a
 // pass/fail target.
@@ -41,10 +53,15 @@ type PhaseDurationResult = { consecutive:PhaseDuration[], footPlantToRelease:num
 // newest-first). Returns both the full consecutive-phase chain AND the two specific
 // non-adjacent comparisons (foot plant->release, MER->release) that have a published
 // research association to show alongside them.
-function computePhaseDurations(entries:LogEntry[], sessionLabel:string):PhaseDurationResult{
+function latestEventEntries(entries:LogEntry[], sessionLabel:string):Map<string,LogEntry>{
   const scoped = sessionLabel ? entries.filter(e=>e.sessionLabel===sessionLabel) : []
   const byEvent = new Map<string,LogEntry>()
   for (const e of scoped){ if (e.keyEvent && KEY_EVENTS.includes(e.keyEvent) && !byEvent.has(e.keyEvent)) byEvent.set(e.keyEvent,e) }
+  return byEvent
+}
+
+function computePhaseDurations(entries:LogEntry[], sessionLabel:string):PhaseDurationResult{
+  const byEvent = latestEventEntries(entries,sessionLabel)
   const gap = (from:string,to:string):number|null=>{
     const a=byEvent.get(from), b=byEvent.get(to)
     if (!a||!b||a.time==null||b.time==null) return null
@@ -247,6 +264,8 @@ export default function PitchMechanics2D({pitcherId}:{pitcherId:string}){
   const [frameNotes,setFrameNotes]=useState('')
   const [keyEvent,setKeyEvent]=useState('')
   const [saving,setSaving]=useState(false)
+  const [currentTime,setCurrentTime]=useState(0)
+  const [videoDuration,setVideoDuration]=useState(0)
 
   const videoRef=useRef<HTMLVideoElement>(null)
   const canvasRef=useRef<HTMLCanvasElement>(null)
@@ -366,6 +385,7 @@ export default function PitchMechanics2D({pitcherId}:{pitcherId:string}){
   const seekAndAnalyze=useCallback(()=>{
     const video=videoRef.current; if (!video) return
     if (timecodeRef.current) timecodeRef.current.textContent=video.currentTime.toFixed(2)+'s'
+    setCurrentTime(video.currentTime)
     const handler=()=>{ video.removeEventListener('seeked',handler); analyzeCurrentFrame() }
     video.addEventListener('seeked',handler)
   },[analyzeCurrentFrame])
@@ -379,6 +399,9 @@ export default function PitchMechanics2D({pitcherId}:{pitcherId:string}){
     objectUrlRef.current=url
     video.src=url
     setVideoLoaded(true)
+    setCurrentTime(0); setVideoDuration(0)
+    // Phase durations are matched by session label, so give a new clip one automatically (still editable).
+    setSessionLabel(prev=>prev||`${new Date().toISOString().slice(0,10)} · ${file.name}`)
     setStatusLine({text:`Loading "${file.name}" (${(file.size/1024/1024).toFixed(0)}MB)…`,kind:'loading'})
 
     const loadTimeout=setTimeout(()=>{
@@ -396,6 +419,7 @@ export default function PitchMechanics2D({pitcherId}:{pitcherId:string}){
     video.onloadedmetadata=()=>{
       clearTimeout(loadTimeout)
       setConvertVisible(false)
+      setVideoDuration(video.duration)
       const canvas=canvasRef.current
       if (canvas){ canvas.width=video.videoWidth; canvas.height=video.videoHeight }
       if (scrubRef.current){ scrubRef.current.max=String(video.duration); scrubRef.current.step=String(1/parseFloat(fps||'30')) }
@@ -416,6 +440,7 @@ export default function PitchMechanics2D({pitcherId}:{pitcherId:string}){
     analyzeCurrentFrame().then(()=>{
       if (scrubRef.current) scrubRef.current.value=String(video.currentTime)
       if (timecodeRef.current) timecodeRef.current.textContent=video.currentTime.toFixed(2)+'s'
+      setCurrentTime(video.currentTime)
       requestAnimationFrame(playLoop)
     })
   },[analyzeCurrentFrame])
@@ -491,9 +516,10 @@ export default function PitchMechanics2D({pitcherId}:{pitcherId:string}){
     }
   }
 
-  const logFrame=async()=>{
+  const logFrame=async(eventOverride?:string)=>{
     const m=latestMetricsRef.current
     if (!m) return
+    const eventToLog=eventOverride??keyEvent
     setSaving(true)
     const {data,error}=await supabase.from('mechanics_frame_logs').insert({
       pitcher_id:pitcherId,
@@ -507,7 +533,7 @@ export default function PitchMechanics2D({pitcherId}:{pitcherId:string}){
       stride_pct_ht:m.stridePctHt,
       stride_inches:m.strideInches,
       hip_shoulder_sep_deg:m.hipShoulderSep,
-      key_event:keyEvent||null,
+      key_event:eventToLog||null,
       notes:frameNotes||null,
     }).select().single()
     setSaving(false)
@@ -515,10 +541,10 @@ export default function PitchMechanics2D({pitcherId}:{pitcherId:string}){
       setLogEntries(prev=>[{
         id:data.id, time:m.time, frontKnee:m.frontKnee, backKnee:m.backKnee, trunkTilt:m.trunkTilt, elbow:m.elbow,
         stridePctHt:m.stridePctHt, strideInches:m.strideInches, hipShoulderSep:m.hipShoulderSep,
-        notes:frameNotes||null, cameraView:view, keyEvent:keyEvent||null, sessionLabel:sessionLabel||null, hipPx:m.hipPx, savedAt:data.created_at,
+        notes:frameNotes||null, cameraView:view, keyEvent:eventToLog||null, sessionLabel:sessionLabel||null, hipPx:m.hipPx, savedAt:data.created_at,
       }, ...prev])
       setFrameNotes('')
-      setKeyEvent('')
+      if (!eventOverride) setKeyEvent('')
     }
   }
 
@@ -542,6 +568,13 @@ export default function PitchMechanics2D({pitcherId}:{pitcherId:string}){
   const entryB=logEntries.find(e=>e.id===rowB)
   const speedLabel=computeSpeedLabel(entryA,entryB,pxPerInch)
   const phaseDurations=computePhaseDurations(logEntries,sessionLabel)
+  const markedEvents=Array.from(latestEventEntries(logEntries,sessionLabel).values())
+    .filter(e=>e.time!=null).map(e=>({name:e.keyEvent as string,time:e.time as number}))
+  const seekTo=(t:number)=>{
+    const video=videoRef.current; if (!video) return
+    video.currentTime=Math.max(0,Math.min(video.duration||0,t))
+    seekAndAnalyze()
+  }
 
   const statCard=(label:string,value:string,unit:string,metricKey:string,target?:string)=>{
     const badge=confidenceBadge(metricKey,view)
@@ -622,8 +655,20 @@ export default function PitchMechanics2D({pitcherId}:{pitcherId:string}){
             <button onClick={()=>stepFrame(1)} disabled={!videoLoaded} style={{...btnStyle(),opacity:videoLoaded?1:0.35}}>+1 frame ⏭</button>
             <input ref={scrubRef} type="range" min={0} max={100} defaultValue={0} onChange={onScrub} disabled={!videoLoaded} style={{flex:1,minWidth:140,accentColor:C.gold}}/>
             <span ref={timecodeRef} style={{fontFamily:'monospace',fontSize:12,color:C.textMuted,minWidth:70}}>0.00s</span>
-            <button onClick={logFrame} disabled={!videoLoaded||!latestMetrics||saving} style={{...btnStyle(true),opacity:(videoLoaded&&latestMetrics&&!saving)?1:0.35}}>{saving?'Saving...':'Log Frame'}</button>
+            <button onClick={()=>logFrame()} disabled={!videoLoaded||!latestMetrics||saving} style={{...btnStyle(true),opacity:(videoLoaded&&latestMetrics&&!saving)?1:0.35}}>{saving?'Saving...':'Log Frame'}</button>
           </div>
+
+          <DeliveryTimeline
+            events={EVENT_DEFS} marked={markedEvents} duration={videoDuration} currentTime={currentTime}
+            onSeek={seekTo} onMark={name=>logFrame(name)}
+            canMark={videoLoaded&&!!latestMetrics&&!!sessionLabel.trim()}
+            markHint={!videoLoaded?'Load a video first.':!sessionLabel.trim()?'Enter a Session Label below so the marks group into one pitch.':'Step or play a frame so pose tracking has a reading, then mark.'}
+            busy={saving}
+            references={[
+              {from:'Foot Plant (Weight-Bearing)',to:'Release',low:FOOT_PLANT_TO_RELEASE_ASSOC_SEC[0],high:FOOT_PLANT_TO_RELEASE_ASSOC_SEC[1],note:`Published association for this phase: ${FOOT_PLANT_TO_RELEASE_ASSOC_SEC[0]}–${FOOT_PLANT_TO_RELEASE_ASSOC_SEC[1]}s. Context from other research, not a verified ceiling or target.`},
+              {from:'Max External Rotation (MER)',to:'Release',low:MER_TO_RELEASE_ASSOC_SEC[0],high:MER_TO_RELEASE_ASSOC_SEC[1],note:`Published association for arm acceleration: ~${MER_TO_RELEASE_ASSOC_SEC[1]}s. Not verified at 95+ mph specifically.`},
+            ]}
+          />
 
           <div style={{background:C.bg2,border:`1px solid ${C.border}`,borderRadius:8,padding:14,marginTop:14,display:'grid',gridTemplateColumns:'1fr 1fr',gap:12}}>
             <div>
