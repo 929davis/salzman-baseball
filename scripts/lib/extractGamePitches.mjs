@@ -61,6 +61,9 @@ export async function extractGamePitches(gamePk, batterProfiles) {
   const gameDate = data.gameData?.datetime?.officialDate ?? null
   const awayTeam = data.gameData?.teams?.away?.name ?? null
   const homeTeam = data.gameData?.teams?.home?.name ?? null
+  // 'R' = regular season, 'S' = spring training, 'F'/'D'/'L'/'W' = postseason rounds. Timing IQ
+  // is regular-season only; the Python loader refuses anything else, so this is recorded per row.
+  const gameType = data.gameData?.game?.type ?? null
 
   const rows = []
   for (const play of plays) {
@@ -78,7 +81,7 @@ export async function extractGamePitches(gamePk, batterProfiles) {
 
       const pitchNumInPa = i + 1
       const seq = computeSequenceFeatures(ev, c, pitchNumInPa, typesSeenSoFar, lastPitchByType, priorPitch, locSumX, locSumZ, locCount)
-      const row = computePitchRow(gamePk, gameDate, awayTeam, homeTeam, play, ev, c, pitchNumInPa, priorBalls, priorStrikes, seq, priorPitch, batterProfiles)
+      const row = computePitchRow(gamePk, gameDate, gameType, awayTeam, homeTeam, play, ev, c, pitchNumInPa, priorBalls, priorStrikes, seq, priorPitch, batterProfiles)
       rows.push(row)
 
       // Update running PA state AFTER computing this pitch's features (so a pitch's own
@@ -131,7 +134,7 @@ function computeSequenceFeatures(ev, c, pitchNumInPa, typesSeenSoFar, lastPitchB
   }
 }
 
-function computePitchRow(gamePk, gameDate, awayTeam, homeTeam, play, ev, c, pitchNumInPa, priorBalls, priorStrikes, seq, priorPitch, batterProfiles) {
+function computePitchRow(gamePk, gameDate, gameType, awayTeam, homeTeam, play, ev, c, pitchNumInPa, priorBalls, priorStrikes, seq, priorPitch, batterProfiles) {
   const { x0, y0, z0, vX0, vY0, vZ0, aX, aY, aZ, pX, pZ } = c
   const T = ev.pitchData.plateTime // MLB-computed total release-to-plate flight time (sec)
   const tD = DECISION_POINT_FRACTION * T
@@ -171,6 +174,7 @@ function computePitchRow(gamePk, gameDate, awayTeam, homeTeam, play, ev, c, pitc
   return {
     game_pk: gamePk,
     game_date: gameDate,
+    game_type: gameType,
     away_team: awayTeam,
     home_team: homeTeam,
     inning: play.about.inning,
@@ -185,6 +189,13 @@ function computePitchRow(gamePk, gameDate, awayTeam, homeTeam, play, ev, c, pitc
     pitch_type: ev.details.type?.code ?? null,
     pitch_type_desc: ev.details.type?.description ?? null,
     start_speed: ev.pitchData.startSpeed,
+    // Release extension (ft in front of the rubber) and spin axis (degrees, MLB's
+    // `spinDirection`; 180 = pure backspin on a fastball) -- both flagged in audit/findings.md
+    // as relevant to the release-point premise. Whether they stay in the model is decided by
+    // train_stage2_model.py on the holdout, not assumed here.
+    release_extension: ev.pitchData.extension ?? null,
+    spin_rate: ev.pitchData.breaks?.spinRate ?? null,
+    spin_axis_deg: ev.pitchData.breaks?.spinDirection ?? null,
     x0, y0, z0, vX0, vY0, vZ0, aX, aY, aZ, pX, pZ,
     strike_zone_top: top,
     strike_zone_bottom: bottom,
