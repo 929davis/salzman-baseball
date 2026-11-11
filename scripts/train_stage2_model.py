@@ -43,10 +43,26 @@ METRICS_PATH = 'lib/timing-iq-metrics.json'
 N_BOOT = 2000
 
 # The batter profile (Savant swing-path leaderboard) is a season-level aggregate. It is only
-# leakage-free if the export was taken BEFORE the first game in the dataset. See
-# scripts/build-batter-swing-profiles.mjs and audit/timing-iq-audit.md for how the current
-# file was produced; flip this to False to drop the batter features from the deployed model.
+# leakage-free if the export window ENDS BEFORE the first game in the dataset. The window is
+# recorded by scripts/fetch-swing-path-exports.mjs in data/swing-path/export_manifest.json and
+# checked below; if the manifest is missing or its end date is not before the data, the batter
+# features are dropped from every model automatically (and the JSON says so).
 INCLUDE_BATTER_FEATURES = True
+BATTER_MANIFEST_PATH = 'data/swing-path/export_manifest.json'
+
+
+def batter_profile_status(first_game_date):
+    """Returns (include: bool, manifest: dict|None, reason: str)."""
+    if not INCLUDE_BATTER_FEATURES:
+        return False, None, 'disabled by INCLUDE_BATTER_FEATURES'
+    try:
+        with open(BATTER_MANIFEST_PATH) as f:
+            manifest = json.load(f)
+    except FileNotFoundError:
+        return False, None, f'{BATTER_MANIFEST_PATH} not found -- the batter profile window is unknown, so it is treated as leaky and excluded'
+    if manifest.get('date_end', '9999') >= str(first_game_date):
+        return False, manifest, f"batter profile window ends {manifest.get('date_end')}, not before the first game ({first_game_date}) -- excluded as leaky"
+    return True, manifest, f"batter profile window {manifest.get('date_start')}..{manifest.get('date_end')} ends before the first game ({first_game_date})"
 
 # Pre-registered rule for the candidate EXTRA features (release_extension, spin_axis_deg):
 # keep them only if the paired bootstrap CI of their improvement over FULL excludes 0 on at
@@ -58,8 +74,11 @@ def extra_features_keep_rule(deltas):
     return any(lower_bounds_positive) and all(point_nonneg)
 
 
+_include_batter = {'value': INCLUDE_BATTER_FEATURES}
+
+
 def feature_sets():
-    full = T.BASE_FEATURES + T.SEQ_FEATURES + T.BASELINE_FEATURES + (T.BATTER_FEATURES if INCLUDE_BATTER_FEATURES else [])
+    full = T.BASE_FEATURES + T.SEQ_FEATURES + T.BASELINE_FEATURES + (T.BATTER_FEATURES if _include_batter['value'] else [])
     return {
         'BASE': T.BASE_FEATURES,
         'BASE+COUNT': T.BASE_FEATURES + T.COUNT_FEATURES,
@@ -137,6 +156,9 @@ def run_target(train, holdout, label_col, filter_fn=None):
 
 def main():
     df_all = T.load_data()
+    include_batter, batter_manifest, batter_reason = batter_profile_status(df_all.game_date.min())
+    _include_batter['value'] = include_batter
+    print(f'Batter profile: {"INCLUDED" if include_batter else "EXCLUDED"} -- {batter_reason}')
     df_all = T.add_expanding_pitcher_baselines(df_all, min_n=T.MIN_BASELINE_N)
     extra_available = bool(df_all[T.EXTRA_FEATURES].notna().all(axis=1).mean() > 0.5)
     df = df_all[df_all['pitch_num_in_pa'] >= 2].copy()
@@ -183,7 +205,9 @@ def main():
         'method': {
             'split': 'by date; holdout = most recent dates until >= 15% of games', 'min_baseline_n': T.MIN_BASELINE_N,
             'baselines': 'prior pitches only (earlier games and earlier in the same game), never the pitch itself or anything after it',
-            'n_bootstrap': N_BOOT, 'xgb_params': T.XGB_PARAMS, 'include_batter_features': INCLUDE_BATTER_FEATURES,
+            'n_bootstrap': N_BOOT, 'xgb_params': T.XGB_PARAMS, 'include_batter_features': include_batter,
+            'batter_profile': {'included': include_batter, 'reason': batter_reason,
+                               'window': None if not batter_manifest else {'date_start': batter_manifest.get('date_start'), 'date_end': batter_manifest.get('date_end'), 'fetched_at': batter_manifest.get('fetched_at'), 'groups': batter_manifest.get('groups')}},
         },
         'deployed_features': deployed,
         'extra_features': {'candidates': T.EXTRA_FEATURES, 'available': extra_available, 'decision': extra_decision, 'reason': extra_reason, 'deltas': extra_deltas},
