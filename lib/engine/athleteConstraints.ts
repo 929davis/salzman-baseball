@@ -31,7 +31,7 @@
 // athlete_state, throw_log, cmj_results, and the exercise library.
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { EngineAthleteState, EngineExercise, Gate, EquipmentTier } from './types'
-import { resolveRequiredGate, GATE_LABELS } from './gateRequirement'
+import { resolveRequiredGate, GATE_LABELS, GATES_DISABLED } from './gateRequirement'
 import { meetsEquipmentTier } from './equipmentGate'
 import { classifyCMJ } from '../cmj'
 import { computeThrowLoadRatio, type ThrowLoadResult } from '../throwLog'
@@ -188,7 +188,9 @@ export async function computeAthleteConstraints(
   // Gates not passed, and what each currently blocks -- scanned against the real exercise
   // pool, not a hardcoded description. A gate with nothing wired to it (G4, T1-T4 today) says
   // so plainly instead of silently listing nothing with no explanation.
-  const gates_not_passed: GateBlock[] = ALL_GATES
+  // When the gate kill switch is on (see gateRequirement.ts), nothing is blocked, so the list
+  // is empty rather than naming every gate with "(nothing currently wired to this gate)".
+  const gates_not_passed: GateBlock[] = (GATES_DISABLED ? [] : ALL_GATES)
     .filter(g => !gates_passed.includes(g))
     .map(gate => ({
       gate,

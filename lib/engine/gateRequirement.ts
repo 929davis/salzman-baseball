@@ -42,11 +42,21 @@ export const GATE_LABELS: Record<Gate, string> = {
   T4: 'High-Intent Mechanical Change',
 }
 
+// Kill switch, 2026-11-11: all gates (G1-G4, T1-T4) are OFF. The coach asked for them to be
+// removed for now because they were getting in the way of writing programs. Nothing is
+// deleted: the requirements above, the per-athlete gates_passed toggles, and the engine tests
+// stay in place, so flipping this back to false restores the old behaviour with no data change.
+// While true, resolveRequiredGate() returns undefined for every exercise, which is what every
+// caller (the import/add checks in app/coach/page.tsx and the athlete-constraints block for the
+// AI prompt) keys off.
+export const GATES_DISABLED = true
+
 // Exposed separately from checkGateRequirement so callers that need to know WHAT a gate
 // unlocks (e.g. athleteConstraints.ts building a "gates not passed, and what each blocks"
 // list) can resolve any given exercise's requirement without re-deriving this lookup order
 // themselves. Precedence: exercise-specific, then movement_category, then throwing_phase.
 export function resolveRequiredGate(exercise: EngineExercise): Gate | undefined {
+  if (GATES_DISABLED) return undefined
   return (
     EXERCISE_GATE_REQUIREMENTS[exercise.id] ??
     (exercise.movement_category ? CATEGORY_GATE_REQUIREMENTS[exercise.movement_category] : undefined) ??
