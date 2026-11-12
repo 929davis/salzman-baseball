@@ -61,12 +61,15 @@ function latestEventEntries(entries:LogEntry[], sessionLabel:string):Map<string,
   return byEvent
 }
 
-function computePhaseDurations(entries:LogEntry[], sessionLabel:string):PhaseDurationResult{
+// Durations are REAL seconds. Marks are stored as raw video time (so every saved record stays valid
+// and the timeline can still seek the video), and are converted here with the same slow-motion rule
+// the jump tools use. Without this, a 240 fps clip's delivery read 8x too long.
+function computePhaseDurations(entries:LogEntry[], sessionLabel:string, captureFps:number):PhaseDurationResult{
   const byEvent = latestEventEntries(entries,sessionLabel)
   const gap = (from:string,to:string):number|null=>{
     const a=byEvent.get(from), b=byEvent.get(to)
     if (!a||!b||a.time==null||b.time==null) return null
-    return b.time-a.time
+    return videoToRealSec(b.time-a.time,captureFps)
   }
   const consecutive:PhaseDuration[] = []
   for (let i=0;i<KEY_EVENTS.length-1;i++){
@@ -300,10 +303,10 @@ function waitForGlobal(name:string, timeoutMs=15000):Promise<any>{
   })
 }
 
-function computeSpeedLabel(a:LogEntry|undefined, b:LogEntry|undefined, pxPerInch:number|null):string{
+function computeSpeedLabel(a:LogEntry|undefined, b:LogEntry|undefined, pxPerInch:number|null, captureFps:number):string{
   if (!a||!b||a.id===b.id) return '—'
   if (!a.hipPx||!b.hipPx) return 'Pixel position only available for entries logged this session'
-  const dt=Math.abs((b.time??0)-(a.time??0))
+  const dt=videoToRealSec(Math.abs((b.time??0)-(a.time??0)),captureFps) // real seconds, not slowed-video seconds
   if (dt===0) return '—'
   const dPx=Math.hypot(b.hipPx.x-a.hipPx.x, b.hipPx.y-a.hipPx.y)
   if (pxPerInch){
@@ -312,6 +315,9 @@ function computeSpeedLabel(a:LogEntry|undefined, b:LogEntry|undefined, pxPerInch
   }
   return `${(dPx/dt).toFixed(0)} px/s (uncalibrated)`
 }
+
+// Timecode shown under the video: real seconds (video time / slow-motion factor).
+const fmtRealTime = (videoSec:number, captureFps:number)=>videoToRealSec(videoSec,captureFps).toFixed(3)+'s'
 
 const inpBase:React.CSSProperties = {width:'100%',background:C.bg3,border:`1px solid ${C.border}`,borderRadius:6,padding:'8px 10px',fontSize:13,color:C.text,outline:'none'}
 const lbl:React.CSSProperties = {fontSize:10,color:C.textMuted,fontWeight:600,marginBottom:4,textTransform:'uppercase' as const,letterSpacing:'0.5px',display:'block'}
@@ -366,6 +372,8 @@ export default function PitchMechanics2D({pitcherId}:{pitcherId:string}){
   },[])
   // iOS Safari zooms the whole page when a text field under 16px is focused; keep fields at 16px on narrow screens.
   const inp:React.CSSProperties={...inpBase,fontSize:wide?13:16}
+  // Slow-motion rate the clip was filmed at (see lib/slowMotion.ts). 30 = real time, no conversion.
+  const captureFps=parseFloat(fps)||30
 
   const videoRef=useRef<HTMLVideoElement>(null)
   const canvasRef=useRef<HTMLCanvasElement>(null)
@@ -389,6 +397,11 @@ export default function PitchMechanics2D({pitcherId}:{pitcherId:string}){
   const dragFrameRef=useRef<number|null>(null)
   const configRef=useRef({handedness,pxPerInch,heightIn,fps,view})
   useEffect(()=>{ configRef.current={handedness,pxPerInch,heightIn,fps,view} })
+  // Changing the capture rate re-labels the timecode right away (it is otherwise only refreshed on a seek).
+  useEffect(()=>{
+    const v=videoRef.current
+    if (v&&timecodeRef.current) timecodeRef.current.textContent=fmtRealTime(v.currentTime||0,parseFloat(fps)||30)
+  },[fps])
 
   const drawFrame=useCallback(()=>{
     const video=videoRef.current, canvas=canvasRef.current
@@ -521,7 +534,7 @@ export default function PitchMechanics2D({pitcherId}:{pitcherId:string}){
 
   const seekAndAnalyze=useCallback(()=>{
     const video=videoRef.current; if (!video) return
-    if (timecodeRef.current) timecodeRef.current.textContent=video.currentTime.toFixed(2)+'s'
+    if (timecodeRef.current) timecodeRef.current.textContent=fmtRealTime(video.currentTime,parseFloat(configRef.current.fps)||30)
     setCurrentTime(video.currentTime)
     const handler=()=>{ video.removeEventListener('seeked',handler); analyzeCurrentFrame() }
     video.addEventListener('seeked',handler)
@@ -560,7 +573,7 @@ export default function PitchMechanics2D({pitcherId}:{pitcherId:string}){
       const canvas=canvasRef.current
       if (canvas){ canvas.width=video.videoWidth; canvas.height=video.videoHeight }
       if (video.videoWidth&&video.videoHeight) setVideoAspect(video.videoWidth/video.videoHeight)
-      if (scrubRef.current){ scrubRef.current.max=String(video.duration); scrubRef.current.step=String(1/parseFloat(fps||'30')) }
+      if (scrubRef.current){ scrubRef.current.max=String(video.duration); scrubRef.current.step=String(FRAME_STEP_VIDEO_SEC) }
       setStatusLine({text:'Ready. Tracking runs as you play or step through frames.',kind:'ready'})
       seekAndAnalyze()
       // iOS Safari does not decode a frame until the video is played or seeked, and seekAndAnalyze only
@@ -569,7 +582,7 @@ export default function PitchMechanics2D({pitcherId}:{pitcherId:string}){
       if (video.duration>0.01) video.currentTime=0.001
       setTimeout(()=>{ if (!latestLandmarksRef.current) analyzeCurrentFrame() },2500)
     }
-  },[fps,seekAndAnalyze,analyzeCurrentFrame])
+  },[seekAndAnalyze,analyzeCurrentFrame])
 
   const onFileChange=(e:React.ChangeEvent<HTMLInputElement>)=>{ if (e.target.files?.[0]) loadVideoFile(e.target.files[0]) }
   const onDrop=(e:React.DragEvent)=>{ e.preventDefault(); setDragOver(false); if (e.dataTransfer.files?.[0]) loadVideoFile(e.dataTransfer.files[0]) }
@@ -582,7 +595,7 @@ export default function PitchMechanics2D({pitcherId}:{pitcherId:string}){
     if (video.paused||video.ended){ isPlayingRef.current=false; setIsPlaying(false); return }
     analyzeCurrentFrame().then(()=>{
       if (scrubRef.current) scrubRef.current.value=String(video.currentTime)
-      if (timecodeRef.current) timecodeRef.current.textContent=video.currentTime.toFixed(2)+'s'
+      if (timecodeRef.current) timecodeRef.current.textContent=fmtRealTime(video.currentTime,parseFloat(configRef.current.fps)||30)
       setCurrentTime(video.currentTime)
       requestAnimationFrame(playLoop)
     })
@@ -591,13 +604,20 @@ export default function PitchMechanics2D({pitcherId}:{pitcherId:string}){
   const togglePlay=()=>{
     const video=videoRef.current; if (!video) return
     if (isPlayingRef.current){ video.pause(); isPlayingRef.current=false; setIsPlaying(false) }
-    else { video.play(); isPlayingRef.current=true; setIsPlaying(true); playLoop() }
+    else {
+      // play() returns a promise that iOS can reject; only mark the video as playing once it really is.
+      video.play().then(()=>{ isPlayingRef.current=true; setIsPlaying(true); playLoop() })
+        .catch((err:unknown)=>{ console.error('video.play failed',err); isPlayingRef.current=false; setIsPlaying(false) })
+    }
   }
 
+  // One displayed frame, in video time. The slow-motion rate does NOT change how far one frame is on the
+  // video's clock (a 240 fps clip plays at ~30 fps, so a frame is 1/30 of a video second); it only changes
+  // how much REAL time that is. Same convention as the jump tools. (This used to step by 1/fps of the selected
+  // capture rate, which at "240" moved 1/8 of a displayed frame per tap.)
   const stepFrame=(dir:number)=>{
     const video=videoRef.current; if (!video) return
-    const f=parseFloat(fps||'30')
-    video.currentTime=Math.max(0,Math.min(video.duration,video.currentTime+dir*(1/f)))
+    video.currentTime=Math.max(0,Math.min(video.duration,video.currentTime+dir*FRAME_STEP_VIDEO_SEC))
     seekAndAnalyze()
   }
 
@@ -739,12 +759,18 @@ export default function PitchMechanics2D({pitcherId}:{pitcherId:string}){
 
   const exportCsv=()=>{
     if (!logEntries.length) return
-    const header='Time(s),FrontKnee,BackKnee,TrunkTilt,Elbow,Stride%Ht,StrideInches,HipShoulderSep(est),CameraView,KeyEvent,Notes\n'
-    const rows=logEntries.map(e=>[
-      e.time?.toFixed(3)??'', e.frontKnee?.toFixed(1)??'', e.backKnee?.toFixed(1)??'', e.trunkTilt?.toFixed(1)??'',
-      e.elbow?.toFixed(1)??'', e.stridePctHt?e.stridePctHt.toFixed(1):'', e.strideInches?e.strideInches.toFixed(1):'',
-      e.hipShoulderSep?.toFixed(1)??'', e.cameraView??'', e.keyEvent??'', `"${(e.notes??'').replace(/"/g,'""')}"`,
-    ].join(','))
+    // Time(s) stays the raw video-clock time it always was (existing spreadsheets keep working); the
+    // two new columns on the right give real seconds and the capture rate used to get there.
+    const header='Time(s),FrontKnee,BackKnee,TrunkTilt,Elbow,Stride%Ht,StrideInches,HipShoulderSep(est),CameraView,KeyEvent,Notes,RealTime(s),CaptureFps\n'
+    const rows=logEntries.map(e=>{
+      const fpsUsed=e.captureFps||captureFps
+      return [
+        e.time?.toFixed(3)??'', e.frontKnee?.toFixed(1)??'', e.backKnee?.toFixed(1)??'', e.trunkTilt?.toFixed(1)??'',
+        e.elbow?.toFixed(1)??'', e.stridePctHt?e.stridePctHt.toFixed(1):'', e.strideInches?e.strideInches.toFixed(1):'',
+        e.hipShoulderSep?.toFixed(1)??'', e.cameraView??'', e.keyEvent??'', `"${(e.notes??'').replace(/"/g,'""')}"`,
+        e.time!=null?videoToRealSec(e.time,fpsUsed).toFixed(4):'', String(fpsUsed),
+      ].join(',')
+    })
     const csv=header+rows.join('\n')
     const blob=new Blob([csv],{type:'text/csv'})
     const a=document.createElement('a')
@@ -762,14 +788,25 @@ export default function PitchMechanics2D({pitcherId}:{pitcherId:string}){
     :''
   const entryA=logEntries.find(e=>e.id===rowA)
   const entryB=logEntries.find(e=>e.id===rowB)
-  const speedLabel=computeSpeedLabel(entryA,entryB,pxPerInch)
-  const phaseDurations=computePhaseDurations(logEntries,sessionLabel)
+  const speedLabel=computeSpeedLabel(entryA,entryB,pxPerInch,captureFps)
+  const phaseDurations=computePhaseDurations(logEntries,sessionLabel,captureFps)
+  // The delivery timeline works entirely in REAL seconds (axis, marks, playhead, durations), so what it
+  // shows is how long the delivery actually took. Stored marks are video time; they are converted here
+  // and converted back when the timeline asks to seek the video.
+  const toReal=(videoSec:number)=>videoToRealSec(videoSec,captureFps)
   const markedEvents=Array.from(latestEventEntries(logEntries,sessionLabel).values())
-    .filter(e=>e.time!=null).map(e=>({name:e.keyEvent as string,time:e.time as number}))
-  const seekTo=(t:number)=>{
+    .filter(e=>e.time!=null).map(e=>({name:e.keyEvent as string,time:toReal(e.time as number)}))
+  const seekToReal=(realSec:number)=>{
     const video=videoRef.current; if (!video) return
-    video.currentTime=Math.max(0,Math.min(video.duration||0,t))
+    video.currentTime=Math.max(0,Math.min(video.duration||0,realToVideoSec(realSec,captureFps)))
     seekAndAnalyze()
+  }
+  const changeSessionLabel=(label:string)=>{
+    setSessionLabel(label)
+    // Reopening a saved session: restore the slow-motion rate its marks were saved with, so durations
+    // come out right without having to re-pick it. (Only rows saved after capture_fps existed carry it.)
+    const saved=logEntries.find(e=>e.sessionLabel===label.trim()&&e.captureFps)
+    if (saved?.captureFps) setFps(String(saved.captureFps))
   }
 
   const statCard=(label:string,value:string,unit:string,metricKey:string,target?:string)=>{
@@ -855,7 +892,7 @@ export default function PitchMechanics2D({pitcherId}:{pitcherId:string}){
             <button onClick={()=>stepFrame(-1)} disabled={!videoLoaded} style={{...btnStyle(),opacity:videoLoaded?1:0.35}}>⏮ −1 frame</button>
             <button onClick={()=>stepFrame(1)} disabled={!videoLoaded} style={{...btnStyle(),opacity:videoLoaded?1:0.35}}>+1 frame ⏭</button>
             <input ref={scrubRef} type="range" min={0} max={100} defaultValue={0} onChange={onScrub} disabled={!videoLoaded} style={{flex:1,minWidth:140,accentColor:C.gold}}/>
-            <span ref={timecodeRef} style={{fontFamily:'monospace',fontSize:12,color:C.textMuted,minWidth:70}}>0.00s</span>
+            <span ref={timecodeRef} style={{fontFamily:'monospace',fontSize:12,color:C.textMuted,minWidth:70}}>0.000s</span>
             <button onClick={()=>logFrame()} disabled={!videoLoaded||!latestMetrics||saving} style={{...btnStyle(true),opacity:(videoLoaded&&latestMetrics&&!saving)?1:0.35}}>{saving?'Saving...':'Log Frame'}</button>
           </div>
 
@@ -871,8 +908,8 @@ export default function PitchMechanics2D({pitcherId}:{pitcherId:string}){
           )}
 
           <DeliveryTimeline
-            events={EVENT_DEFS} marked={markedEvents} duration={videoDuration} currentTime={currentTime}
-            onSeek={seekTo} onMark={name=>logFrame(name)}
+            events={EVENT_DEFS} marked={markedEvents} duration={toReal(videoDuration)} currentTime={toReal(currentTime)}
+            onSeek={seekToReal} onMark={name=>logFrame(name)}
             canMark={videoLoaded&&!!latestMetrics&&!!sessionLabel.trim()}
             markHint={blockedReason||(!sessionLabel.trim()?'Enter a Session Label below so the marks group into one pitch.':'Step or play a frame so pose tracking has a reading, then mark.')}
             busy={saving}
@@ -904,12 +941,9 @@ export default function PitchMechanics2D({pitcherId}:{pitcherId:string}){
               <input type="text" inputMode="decimal" placeholder="e.g. 72" value={heightIn} onChange={e=>setHeightIn(e.target.value)} style={inp}/>
             </div>
             <div>
-              <label style={lbl}>Frame Rate (fps)</label>
+              <label style={lbl}>Capture Frame Rate</label>
               <select value={fps} onChange={e=>setFps(e.target.value)} style={inp}>
-                <option value="30">30 FPS (Real Time)</option>
-                <option value="60">60 FPS</option>
-                <option value="120">120 FPS</option>
-                <option value="240">240 FPS (iPhone)</option>
+                {CAPTURE_FPS_OPTIONS.map(o=><option key={o.fps} value={String(o.fps)}>{o.label}</option>)}
               </select>
             </div>
             <div>
@@ -918,7 +952,10 @@ export default function PitchMechanics2D({pitcherId}:{pitcherId:string}){
             </div>
             <div>
               <label style={lbl}>Session Label</label>
-              <input type="text" placeholder="e.g. Bullpen 8/16" value={sessionLabel} onChange={e=>setSessionLabel(e.target.value)} style={inp}/>
+              <input type="text" placeholder="e.g. Bullpen 8/16" value={sessionLabel} onChange={e=>changeSessionLabel(e.target.value)} style={inp}/>
+            </div>
+            <div style={{gridColumn:'1/-1',fontSize:11,color:C.textMuted,lineHeight:1.5}}>
+              Pick the rate the phone <b style={{color:C.text}}>filmed</b> at, not how it plays back. An iPhone slow-motion clip is filmed at 240 (or 120) and plays at about 30, so its video clock runs {captureFps>30?`${captureFps/30}×`:'at the same speed as'} real time. Every time and duration below is converted to <b style={{color:C.text}}>real seconds</b> using this. A normal-speed clip should be set to 30.
             </div>
             <div style={{gridColumn:'1/-1'}}>
               <div style={{fontSize:12,color:calibStatus.calibrated?C.teal:C.textMuted}}>{calibStatus.text}</div>
@@ -976,12 +1013,12 @@ export default function PitchMechanics2D({pitcherId}:{pitcherId:string}){
               ):(
                 <table style={{width:'100%',minWidth:640,borderCollapse:'collapse' as const,fontSize:11,fontFamily:'monospace'}}>
                   <thead><tr style={{borderBottom:`1px solid ${C.border}`}}>
-                    {['t(s)','Fr Knee','Bk Knee','Trunk','Elbow','Stride%','Hip-Shd','Event'].map(h=><th key={h} style={{padding:'6px 8px',textAlign:'left' as const,color:C.textMuted,fontSize:9,textTransform:'uppercase' as const,whiteSpace:'nowrap' as const}}>{h}</th>)}
+                    {['t (real s)','Fr Knee','Bk Knee','Trunk','Elbow','Stride%','Hip-Shd','Event'].map(h=><th key={h} style={{padding:'6px 8px',textAlign:'left' as const,color:C.textMuted,fontSize:9,textTransform:'uppercase' as const,whiteSpace:'nowrap' as const}}>{h}</th>)}
                   </tr></thead>
                   <tbody>
                     {logEntries.map(e=>(
                       <tr key={e.id} onClick={()=>{setRowA(rowA===e.id?'':rowA||e.id); if(rowA&&rowA!==e.id) setRowB(e.id)}} style={{borderBottom:'1px solid #1a1f28',cursor:'pointer',background:(rowA===e.id||rowB===e.id)?C.bg3:'transparent'}}>
-                        <td style={{padding:'6px 8px',color:C.text}}>{e.time?.toFixed(2)??'—'}</td>
+                        <td style={{padding:'6px 8px',color:C.text}}>{e.time!=null?videoToRealSec(e.time,captureFps).toFixed(3):'—'}</td>
                         <td style={{padding:'6px 8px',color:C.text}}>{e.frontKnee?.toFixed(0)??'—'}</td>
                         <td style={{padding:'6px 8px',color:C.text}}>{e.backKnee?.toFixed(0)??'—'}</td>
                         <td style={{padding:'6px 8px',color:C.text}}>{e.trunkTilt?.toFixed(0)??'—'}</td>
@@ -1003,11 +1040,11 @@ export default function PitchMechanics2D({pitcherId}:{pitcherId:string}){
             <div style={{display:'flex',gap:8,marginBottom:10}}>
               <select value={rowA} onChange={e=>setRowA(e.target.value)} style={{...inp,flex:1}}>
                 <option value="">—</option>
-                {logEntries.map(e=><option key={e.id} value={e.id}>{e.time?.toFixed(2)}s</option>)}
+                {logEntries.map(e=><option key={e.id} value={e.id}>{e.time!=null?videoToRealSec(e.time,captureFps).toFixed(3):'—'}s</option>)}
               </select>
               <select value={rowB} onChange={e=>setRowB(e.target.value)} style={{...inp,flex:1}}>
                 <option value="">—</option>
-                {logEntries.map(e=><option key={e.id} value={e.id}>{e.time?.toFixed(2)}s</option>)}
+                {logEntries.map(e=><option key={e.id} value={e.id}>{e.time!=null?videoToRealSec(e.time,captureFps).toFixed(3):'—'}s</option>)}
               </select>
             </div>
             <div style={{background:C.bg3,border:`1px solid ${C.border}`,borderRadius:8,padding:'12px 14px'}}>
@@ -1018,7 +1055,7 @@ export default function PitchMechanics2D({pitcherId}:{pitcherId:string}){
 
           <div>
             <div style={{fontSize:11,fontWeight:700,color:C.textMuted,textTransform:'uppercase' as const,letterSpacing:'0.5px',marginBottom:4,paddingBottom:8,borderBottom:`1px solid ${C.border}`}}>Phase Durations — This Session</div>
-            <div style={{fontSize:10,color:C.textDim,marginBottom:10}}>Needs every phase tagged via Key Event under the SAME Session Label above, each only once. Matched by that label as plain text — relabeling or reusing a label will mix sessions.</div>
+            <div style={{fontSize:10,color:C.textDim,marginBottom:10}}>Needs every phase tagged via Key Event under the SAME Session Label above, each only once. Matched by that label as plain text — relabeling or reusing a label will mix sessions. Durations are in <b style={{color:C.textMuted}}>real seconds</b> (video time ÷ {captureFps/30}, from the Capture Frame Rate above).</div>
             {sessionLabel==='' ? (
               <div style={{padding:16,textAlign:'center' as const,color:C.textDim,fontSize:12,background:C.bg2,border:`1px solid ${C.border}`,borderRadius:8}}>Enter a Session Label above to compute phase durations for this pitch.</div>
             ) : phaseDurations.consecutive.length===0 ? (
