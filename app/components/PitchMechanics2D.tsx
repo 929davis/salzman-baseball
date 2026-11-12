@@ -2,6 +2,7 @@
 import { useState, useRef, useEffect, useCallback } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { angleAt } from '@/lib/angles'
+import { CAPTURE_FPS_OPTIONS, FRAME_STEP_VIDEO_SEC, realToVideoSec, videoToRealSec } from '@/lib/slowMotion'
 import DeliveryTimeline, { type DeliveryEventDef } from '@/app/components/DeliveryTimeline'
 
 const C = {
@@ -125,9 +126,32 @@ function resolvePoints(lms:any[], overrides:Record<number,{x:number,y:number}>, 
   return pts
 }
 
-function getCanvasPoint(e:{clientX:number,clientY:number}, canvas:HTMLCanvasElement):{x:number,y:number}{
+// Where the video bitmap actually sits inside the canvas element. The canvas is styled
+// `object-fit: contain`, so if the element's shape differs from the video's (a portrait iPhone
+// clip, a 4:3 clip, or a height-capped box) the bitmap is letterboxed and a plain
+// rect-to-bitmap ratio lands every touch in the wrong place. `scale` is CSS pixels per bitmap
+// pixel; its inverse converts "a finger-sized target in CSS pixels" into bitmap pixels.
+function canvasGeometry(canvas:HTMLCanvasElement):{left:number,top:number,scale:number}|null{
   const rect=canvas.getBoundingClientRect()
-  return {x:(e.clientX-rect.left)*(canvas.width/rect.width), y:(e.clientY-rect.top)*(canvas.height/rect.height)}
+  if (!rect.width||!rect.height||!canvas.width||!canvas.height) return null
+  const scale=Math.min(rect.width/canvas.width, rect.height/canvas.height)
+  return {left:rect.left+(rect.width-canvas.width*scale)/2, top:rect.top+(rect.height-canvas.height*scale)/2, scale}
+}
+
+function getCanvasPoint(e:{clientX:number,clientY:number}, canvas:HTMLCanvasElement):{x:number,y:number}{
+  const g=canvasGeometry(canvas)
+  if (!g) return {x:0,y:0}
+  return {x:(e.clientX-g.left)/g.scale, y:(e.clientY-g.top)/g.scale}
+}
+
+// A fingertip covers roughly 40-50 CSS pixels; this is the radius (CSS px) within which a touch
+// grabs the nearest joint marker. Deliberately generous so a marker is easy to pick up.
+const MARKER_GRAB_RADIUS_CSS_PX = 30
+
+const LM_LABEL:Record<number,string> = {
+  [LM.nose]:'Head', [LM.lShoulder]:'L shoulder', [LM.rShoulder]:'R shoulder', [LM.lElbow]:'L elbow', [LM.rElbow]:'R elbow',
+  [LM.lWrist]:'L wrist', [LM.rWrist]:'R wrist', [LM.lHip]:'L hip', [LM.rHip]:'R hip', [LM.lKnee]:'L knee', [LM.rKnee]:'R knee',
+  [LM.lAnkle]:'L ankle', [LM.rAnkle]:'R ankle',
 }
 
 function lineAngleFromVertical(P1:{x:number,y:number},P2:{x:number,y:number}){
@@ -161,8 +185,11 @@ function computeMetricsFor(pts:Record<number,{x:number,y:number}>, cfg:{handedne
   return {frontKnee,backKnee,elbow,trunkTilt,hipShoulderSep,stridePctHt,strideInches,hipPx:midHip,time:currentTime}
 }
 
-function drawSkeleton(ctx:CanvasRenderingContext2D, pts:Record<number,{x:number,y:number}>, overrides:Record<number,{x:number,y:number}>){
-  ctx.lineWidth=3
+// `px` = bitmap pixels per CSS pixel. The canvas bitmap is the video's native size (e.g. 1920 wide)
+// but is shown ~400 CSS px wide on a phone, so a fixed "4" would draw a 1.5 px dot. Everything is
+// sized in CSS pixels and multiplied by `px`, so markers look the same size on every screen.
+function drawSkeleton(ctx:CanvasRenderingContext2D, pts:Record<number,{x:number,y:number}>, overrides:Record<number,{x:number,y:number}>, px=1, activeIdx:number|null=null){
+  ctx.lineWidth=2.5*px
   ctx.strokeStyle=C.gold
   BONES.forEach(([a,b])=>{
     const A=pts[a], B=pts[b]
@@ -172,12 +199,31 @@ function drawSkeleton(ctx:CanvasRenderingContext2D, pts:Record<number,{x:number,
     const P=pts[i]
     const overridden=!!overrides[i]
     ctx.fillStyle=overridden?C.red:C.text
-    ctx.beginPath(); ctx.arc(P.x,P.y,overridden?6:4,0,Math.PI*2); ctx.fill()
+    ctx.beginPath(); ctx.arc(P.x,P.y,(overridden?7:5.5)*px,0,Math.PI*2); ctx.fill()
+    ctx.strokeStyle='rgba(13,17,23,0.85)'; ctx.lineWidth=1.5*px
+    ctx.beginPath(); ctx.arc(P.x,P.y,(overridden?7:5.5)*px,0,Math.PI*2); ctx.stroke()
     if (overridden){
-      ctx.strokeStyle=C.red; ctx.lineWidth=2
-      ctx.beginPath(); ctx.arc(P.x,P.y,10,0,Math.PI*2); ctx.stroke()
+      ctx.strokeStyle=C.red; ctx.lineWidth=2*px
+      ctx.beginPath(); ctx.arc(P.x,P.y,12*px,0,Math.PI*2); ctx.stroke()
     }
   })
+  // The marker being dragged: a big ring so it is visible around the fingertip, plus a name tag
+  // drawn well above it so the finger does not hide what is being moved.
+  if (activeIdx!=null && pts[activeIdx]){
+    const P=pts[activeIdx]
+    ctx.strokeStyle=C.gold; ctx.lineWidth=2.5*px
+    ctx.beginPath(); ctx.arc(P.x,P.y,22*px,0,Math.PI*2); ctx.stroke()
+    const label=LM_LABEL[activeIdx]??''
+    if (label){
+      ctx.font=`bold ${13*px}px system-ui,-apple-system,sans-serif`
+      const w=ctx.measureText(label).width+14*px, h=22*px
+      let tx=P.x-w/2; const ty=Math.max(2*px,P.y-58*px)
+      tx=Math.max(2*px,Math.min(ctx.canvas.width-w-2*px,tx))
+      ctx.fillStyle='rgba(13,17,23,0.92)'; ctx.fillRect(tx,ty,w,h)
+      ctx.strokeStyle=C.gold; ctx.lineWidth=1*px; ctx.strokeRect(tx,ty,w,h)
+      ctx.fillStyle=C.gold; ctx.textBaseline='middle'; ctx.fillText(label,tx+7*px,ty+h/2)
+    }
+  }
 }
 
 function confidenceBadge(metric:string, view:CameraView):'reliable'|'estimate'{
@@ -233,7 +279,7 @@ function computeSpeedLabel(a:LogEntry|undefined, b:LogEntry|undefined, pxPerInch
   return `${(dPx/dt).toFixed(0)} px/s (uncalibrated)`
 }
 
-const inp:React.CSSProperties = {width:'100%',background:C.bg3,border:`1px solid ${C.border}`,borderRadius:6,padding:'8px 10px',fontSize:13,color:C.text,outline:'none'}
+const inpBase:React.CSSProperties = {width:'100%',background:C.bg3,border:`1px solid ${C.border}`,borderRadius:6,padding:'8px 10px',fontSize:13,color:C.text,outline:'none'}
 const lbl:React.CSSProperties = {fontSize:10,color:C.textMuted,fontWeight:600,marginBottom:4,textTransform:'uppercase' as const,letterSpacing:'0.5px',display:'block'}
 
 export default function PitchMechanics2D({pitcherId}:{pitcherId:string}){
@@ -267,6 +313,21 @@ export default function PitchMechanics2D({pitcherId}:{pitcherId:string}){
   const [currentTime,setCurrentTime]=useState(0)
   const [videoDuration,setVideoDuration]=useState(0)
 
+  // Layout: two columns only when the component itself is wide (the athlete dashboard is a ~480px
+  // phone-width shell even on a desktop screen, so this measures the component, not the window).
+  const rootRef=useRef<HTMLDivElement>(null)
+  const [wide,setWide]=useState(false)
+  // Video shape, so the box can match the clip (portrait or landscape) instead of a fixed 16:9.
+  const [videoAspect,setVideoAspect]=useState(16/9)
+  useEffect(()=>{
+    const el=rootRef.current; if (!el||typeof ResizeObserver==='undefined') return
+    const ro=new ResizeObserver(entries=>{ setWide(entries[0].contentRect.width>=720) })
+    ro.observe(el)
+    return ()=>ro.disconnect()
+  },[])
+  // iOS Safari zooms the whole page when a text field under 16px is focused; keep fields at 16px on narrow screens.
+  const inp:React.CSSProperties={...inpBase,fontSize:wide?13:16}
+
   const videoRef=useRef<HTMLVideoElement>(null)
   const canvasRef=useRef<HTMLCanvasElement>(null)
   const scrubRef=useRef<HTMLInputElement>(null)
@@ -282,7 +343,10 @@ export default function PitchMechanics2D({pitcherId}:{pitcherId:string}){
   // Manual per-frame marker corrections — pixel-space, reset whenever new MediaPipe
   // landmarks arrive (i.e. whenever the video moves to a different frame).
   const markerOverridesRef=useRef<Record<number,{x:number,y:number}>>({})
-  const draggingIndexRef=useRef<number|null>(null)
+  // One active drag at a time: which joint, which pointer (finger), and the offset between where
+  // the finger first touched and the joint's centre, so the marker does not snap under the finger.
+  const dragRef=useRef<{idx:number,pointerId:number,dx:number,dy:number}|null>(null)
+  const dragFrameRef=useRef<number|null>(null)
   const configRef=useRef({handedness,pxPerInch,heightIn,fps,view})
   useEffect(()=>{ configRef.current={handedness,pxPerInch,heightIn,fps,view} })
 
@@ -295,7 +359,8 @@ export default function PitchMechanics2D({pitcherId}:{pitcherId:string}){
     const lms=latestLandmarksRef.current
     if (lms){
       const pts=resolvePoints(lms,markerOverridesRef.current,canvas.width,canvas.height)
-      drawSkeleton(ctx,pts,markerOverridesRef.current)
+      const g=canvasGeometry(canvas)
+      drawSkeleton(ctx,pts,markerOverridesRef.current,g?1/g.scale:1,dragRef.current?.idx??null)
       const m=computeMetricsFor(pts,configRef.current,video.currentTime)
       latestMetricsRef.current=m
       setLatestMetrics(m)
@@ -308,9 +373,17 @@ export default function PitchMechanics2D({pitcherId}:{pitcherId:string}){
     drawFrame()
   },[drawFrame])
 
-  const onCanvasPointerDown=(e:React.MouseEvent<HTMLCanvasElement>)=>{
+  // Pointer events cover mouse, pen, and finger with one code path. (The old mouse-only handlers never
+  // fired for a finger drag on iOS: Safari only synthesises mouse events for a tap.) Combined with
+  // `touch-action: none` on the canvas, a drag moves the marker instead of scrolling the page.
+  const redrawSoon=()=>{
+    if (dragFrameRef.current!=null) return
+    dragFrameRef.current=requestAnimationFrame(()=>{ dragFrameRef.current=null; drawFrame() })
+  }
+  const onCanvasPointerDown=(e:React.PointerEvent<HTMLCanvasElement>)=>{
     const canvas=canvasRef.current, lms=latestLandmarksRef.current
-    if (!canvas||!lms) return
+    if (!canvas||!lms||dragRef.current) return
+    const g=canvasGeometry(canvas); if (!g) return
     const pt=getCanvasPoint(e,canvas)
     const pts=resolvePoints(lms,markerOverridesRef.current,canvas.width,canvas.height)
     let nearest:number|null=null, nearestDist=Infinity
@@ -318,18 +391,31 @@ export default function PitchMechanics2D({pitcherId}:{pitcherId:string}){
       const d=Math.hypot(pts[idx].x-pt.x,pts[idx].y-pt.y)
       if (d<nearestDist){ nearestDist=d; nearest=idx }
     }
-    const hitRadius=Math.max(canvas.width,canvas.height)*0.035
-    if (nearest!=null && nearestDist<=hitRadius) draggingIndexRef.current=nearest
-  }
-  const onCanvasPointerMove=(e:React.MouseEvent<HTMLCanvasElement>)=>{
-    const canvas=canvasRef.current
-    if (draggingIndexRef.current==null||!canvas) return
-    const pt=getCanvasPoint(e,canvas)
-    markerOverridesRef.current={...markerOverridesRef.current,[draggingIndexRef.current]:pt}
+    const grabRadius=MARKER_GRAB_RADIUS_CSS_PX/g.scale // finger-sized, in bitmap pixels
+    if (nearest==null||nearestDist>grabRadius) return
+    e.preventDefault()
+    try{ canvas.setPointerCapture(e.pointerId) }catch{ /* capture is best-effort */ }
+    dragRef.current={idx:nearest,pointerId:e.pointerId,dx:pts[nearest].x-pt.x,dy:pts[nearest].y-pt.y}
     drawFrame()
   }
-  const onCanvasPointerUp=()=>{ draggingIndexRef.current=null }
+  const onCanvasPointerMove=(e:React.PointerEvent<HTMLCanvasElement>)=>{
+    const canvas=canvasRef.current, drag=dragRef.current
+    if (!drag||!canvas||e.pointerId!==drag.pointerId) return
+    const pt=getCanvasPoint(e,canvas)
+    // Keep the marker on the picture even if the finger slides off the edge.
+    const x=Math.max(0,Math.min(canvas.width,pt.x+drag.dx)), y=Math.max(0,Math.min(canvas.height,pt.y+drag.dy))
+    markerOverridesRef.current={...markerOverridesRef.current,[drag.idx]:{x,y}}
+    redrawSoon()
+  }
+  const endDrag=(e:React.PointerEvent<HTMLCanvasElement>)=>{
+    const canvas=canvasRef.current, drag=dragRef.current
+    if (!drag||e.pointerId!==drag.pointerId) return
+    dragRef.current=null
+    try{ canvas?.releasePointerCapture(e.pointerId) }catch{ /* already released */ }
+    drawFrame()
+  }
   const resetCorrections=()=>{ markerOverridesRef.current={}; drawFrame() }
+  useEffect(()=>()=>{ if (dragFrameRef.current!=null) cancelAnimationFrame(dragFrameRef.current) },[])
 
   useEffect(()=>{
     let cancelled=false
@@ -422,6 +508,7 @@ export default function PitchMechanics2D({pitcherId}:{pitcherId:string}){
       setVideoDuration(video.duration)
       const canvas=canvasRef.current
       if (canvas){ canvas.width=video.videoWidth; canvas.height=video.videoHeight }
+      if (video.videoWidth&&video.videoHeight) setVideoAspect(video.videoWidth/video.videoHeight)
       if (scrubRef.current){ scrubRef.current.max=String(video.duration); scrubRef.current.step=String(1/parseFloat(fps||'30')) }
       setStatusLine({text:'Ready. Tracking runs as you play or step through frames.',kind:'ready'})
       seekAndAnalyze()
@@ -589,14 +676,14 @@ export default function PitchMechanics2D({pitcherId}:{pitcherId:string}){
   }
 
   return (
-    <div style={{color:C.text,fontSize:13}}>
+    <div ref={rootRef} style={{color:C.text,fontSize:13,minWidth:0,paddingLeft:'env(safe-area-inset-left)',paddingRight:'env(safe-area-inset-right)',paddingBottom:'env(safe-area-inset-bottom)'}}>
       <div style={{fontSize:16,fontWeight:700,color:C.gold,marginBottom:2}}>2D Delivery Analysis</div>
       <div style={{fontSize:11,color:C.textMuted,marginBottom:16}}>Pose-tracking runs entirely in the browser — nothing is uploaded anywhere except the frames you choose to log.</div>
 
       {scriptError&&<div style={{color:C.red,fontSize:13,marginBottom:12,padding:10,background:'rgba(248,81,73,0.1)',borderRadius:8}}>{scriptError}</div>}
 
-      <div style={{display:'grid',gridTemplateColumns:'1.4fr 1fr',gap:16}}>
-        <div>
+      <div style={{display:'grid',gridTemplateColumns:wide?'1.4fr 1fr':'minmax(0,1fr)',gap:16}}>
+        <div style={{minWidth:0}}>
           {/* Tips panel */}
           <div style={{background:C.bg2,border:`1px solid ${C.border}`,borderRadius:8,marginBottom:14,overflow:'hidden'}}>
             <div onClick={()=>setPrepOpen(o=>!o)} style={{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'10px 14px',cursor:'pointer'}}>
@@ -620,32 +707,37 @@ export default function PitchMechanics2D({pitcherId}:{pitcherId:string}){
             )}
           </div>
 
+          {/* Video box. Before a clip is loaded it is a plain upload card (min-height, so the Choose Video
+              button can never be clipped by a fixed 16:9 shape on a narrow phone). Once a clip is loaded
+              the box takes the clip's own shape, fills the available width, and is capped to the visible
+              screen height with dvh (the iPhone's *dynamic* viewport, which shrinks and grows with
+              Safari's toolbar, unlike vh) so a tall portrait clip never pushes the controls off-screen. */}
           <div
             onDrop={onDrop} onDragOver={onDragOver} onDragLeave={onDragLeave}
-            style={{position:'relative' as const,aspectRatio:'16/9',background:'#000',border:`1px solid ${dragOver?C.gold:C.border}`,borderRadius:8,overflow:'hidden',display:'flex',alignItems:'center',justifyContent:'center'}}
+            style={{position:'relative' as const,...(videoLoaded?{width:`min(100%, calc((100dvh - 96px) * ${videoAspect}))`,aspectRatio:`${videoAspect}`,margin:'0 auto'}:{width:'100%',minHeight:200}),background:'#000',border:`1px solid ${dragOver?C.gold:C.border}`,borderRadius:8,overflow:'hidden',display:'flex',alignItems:'center',justifyContent:'center'}}
           >
             {!videoLoaded&&(
               <div style={{color:C.textMuted,textAlign:'center' as const,fontSize:13,padding:20,zIndex:2}}>
-                <b style={{color:C.text}}>Drop a pitching video</b> or click below to upload<br/>
-                Analysis happens on this device — nothing is uploaded anywhere.
+                <b style={{color:C.text}}>Drop a pitching video</b> or tap below to choose one<br/>
+                Analysis happens on this device — the video itself is never uploaded; only the measurements you log are saved.
                 <div>
                   <input ref={fileInputRef} type="file" accept="video/*" style={{display:'none'}} onChange={onFileChange}/>
-                  <button onClick={()=>fileInputRef.current?.click()} style={{marginTop:10,padding:'9px 18px',background:C.gold,color:C.bg,border:'none',borderRadius:6,fontSize:13,fontWeight:700,cursor:'pointer'}}>Choose Video</button>
+                  <button onClick={()=>fileInputRef.current?.click()} style={{marginTop:10,padding:'12px 22px',minHeight:44,background:C.gold,color:C.bg,border:'none',borderRadius:8,fontSize:15,fontWeight:700,cursor:'pointer'}}>Choose Video</button>
                 </div>
               </div>
             )}
-            <video ref={videoRef} playsInline muted style={{display:videoLoaded?'block':'none',position:'absolute' as const,top:0,left:0,width:'100%',height:'100%',objectFit:'contain' as const}}/>
+            <video ref={videoRef} playsInline muted preload="auto" style={{display:videoLoaded?'block':'none',position:'absolute' as const,top:0,left:0,width:'100%',height:'100%',objectFit:'contain' as const}}/>
             <canvas
               ref={canvasRef}
-              onMouseDown={onCanvasPointerDown} onMouseMove={onCanvasPointerMove} onMouseUp={onCanvasPointerUp} onMouseLeave={onCanvasPointerUp}
-              style={{display:videoLoaded?'block':'none',position:'absolute' as const,top:0,left:0,width:'100%',height:'100%',objectFit:'contain' as const,cursor:videoLoaded?'crosshair':'default'}}
+              onPointerDown={onCanvasPointerDown} onPointerMove={onCanvasPointerMove} onPointerUp={endDrag} onPointerCancel={endDrag}
+              style={{display:videoLoaded?'block':'none',position:'absolute' as const,top:0,left:0,width:'100%',height:'100%',objectFit:'contain' as const,cursor:videoLoaded?'crosshair':'default',touchAction:'none',WebkitTouchCallout:'none',WebkitUserSelect:'none',userSelect:'none'}}
             />
           </div>
 
           {videoLoaded&&(
             <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',gap:8,marginTop:8,flexWrap:'wrap' as const}}>
-              <span style={{fontSize:10,color:C.textDim}}>Drag any joint marker to correct MediaPipe's tracking for this frame — corrections reset when you move to a new frame.</span>
-              <button onClick={resetCorrections} style={{...btnStyle(),fontSize:10,padding:'4px 8px',flexShrink:0}}>Reset corrections</button>
+              <span style={{fontSize:10,color:C.textDim}}>Press and drag any joint marker to correct MediaPipe&apos;s tracking for this frame — a tag above the marker names it while you drag. Corrections reset when you move to a new frame.</span>
+              <button onClick={resetCorrections} style={{...btnStyle(),fontSize:11,padding:'8px 12px',minHeight:40,flexShrink:0}}>Reset corrections</button>
             </div>
           )}
 
@@ -852,8 +944,9 @@ export default function PitchMechanics2D({pitcherId}:{pitcherId:string}){
   )
 }
 
+// minHeight 40: Apple's guidance is ~44pt for a touch target; 12px text with 8px padding was ~32px tall.
 function btnStyle(primary?:boolean):React.CSSProperties{
   return primary
-    ? {background:C.gold,border:`1px solid ${C.gold}`,color:C.bg,padding:'8px 14px',borderRadius:6,fontSize:12,fontWeight:700,cursor:'pointer'}
-    : {background:C.bg3,border:`1px solid ${C.border}`,color:C.text,padding:'8px 12px',borderRadius:6,fontSize:12,cursor:'pointer'}
+    ? {background:C.gold,border:`1px solid ${C.gold}`,color:C.bg,padding:'8px 14px',minHeight:40,borderRadius:6,fontSize:13,fontWeight:700,cursor:'pointer',touchAction:'manipulation'}
+    : {background:C.bg3,border:`1px solid ${C.border}`,color:C.text,padding:'8px 12px',minHeight:40,borderRadius:6,fontSize:13,cursor:'pointer',touchAction:'manipulation'}
 }
