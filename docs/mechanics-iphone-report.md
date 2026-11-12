@@ -140,3 +140,26 @@ Push of the branch creates a Vercel preview; open it from the Vercel dashboard (
 **Nothing is required.** The app works without any change. Optional, written but **not run**, in `docs/mechanics-save-sql.md`:
 1. `capture_fps` column (adds one nullable number column so a reopened session remembers its slow-motion rate).
 2. Read-only checks of the table's permission rules and columns, plus a targeted `INSERT` rule for athletes, only if the checks show it missing. Use these if the preview shows a code `42501` or a "null value in column" error.
+
+## 9. Update — "Bottom of Back Leg Loading" and flexible event order
+
+Requested after the first report. Commit: see `git log` on this branch.
+
+- **New event, "Bottom of Back Leg Loading"** (pink "Leg load" pin and **Mark Leg load** button; also in the Key Event list).
+  Mark the frame where the pitcher has sunk lowest into the back leg. Because every mark already records the joint angles on
+  that frame, this doubles as a metric: a **"Bottom of Back Leg Loading — NN° back knee"** card under Phase Durations shows the
+  back-knee angle at the mark (180° = straight leg; smaller = deeper sink). It is estimated from a single camera view, so compare
+  it between pitches filmed from the same angle.
+- **The "events are out of order" message no longer fires for leg lift, hand break, or leg loading.** Those three can be marked in
+  any order; the timeline and the Phase Durations list now follow the order they actually happened (e.g. Hand Break → Leg Load →
+  Peak Leg Lift → Foot Plant). The message is kept for genuine mistakes elsewhere (for example Release marked before Foot Plant),
+  where it still tells you to re-mark.
+- **Skipped events no longer hide durations.** Phase Durations now chains the events you actually marked instead of requiring every
+  neighbouring event. Without this, adding the new optional mark would have removed the Hand Break → Foot Plant time for pitchers who
+  don't use it. (The helper text under Phase Durations was reworded to match.)
+- **Verified** in the same emulated-iPhone setup: hand break marked before peak leg lift raises no message and is listed in real
+  order; the usual order without the new mark still shows Hand Break → Foot Plant; Release before Foot Plant still warns; the back-knee
+  card appears. 9/9 checks. Not run: a before/after comparison against the old timeline code.
+- **Files:** `app/components/PitchMechanics2D.tsx` (event, order logic, card, text) and `app/components/DeliveryTimeline.tsx`
+  (new optional `interchangeable` setting; no other screen uses this component). No database change is needed; one read-only check is
+  in `docs/mechanics-save-sql.md` §1b in case a rule on `key_event` rejects the new name.

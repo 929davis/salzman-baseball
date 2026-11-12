@@ -27,6 +27,23 @@ comment on column mechanics_frame_logs.capture_fps is
 **Safe either way.** If this column is missing, the app saves the row without it (it detects the
 database's "column does not exist" reply and re-sends). You can run this before or after deploying.
 
+## 1b. Only if marking "Bottom of Back Leg Loading" fails: check the event-name rule (read-only)
+
+**Plain English.** The new mark is saved as the text `Bottom of Back Leg Loading` in the `key_event`
+column, like the other seven events. That works unless the table has a rule limiting that column to a fixed
+list of names. Nothing in the repo defines such a rule, so this is most likely fine; run this only if marking
+that one event shows a red error mentioning a "check constraint" (code `23514`) while the other events save.
+
+```sql
+-- Read-only: lists every rule (constraint) on the table.
+select conname, pg_get_constraintdef(oid) as definition
+from pg_constraint
+where conrelid = 'public.mechanics_frame_logs'::regclass;
+```
+
+If a rule on `key_event` lists the old event names, send me its definition and I'll write the one-line change
+to add the new name. Do not edit it by hand.
+
 ## 2. Only if saving still fails: check what the database is rejecting
 
 The new preview shows the real Supabase error text and code under the Log Frame button. If it is a

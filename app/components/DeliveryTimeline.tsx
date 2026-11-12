@@ -29,11 +29,16 @@ type Props = {
   markHint: string
   busy: boolean
   references?: PhaseReference[]
+  // Groups of event names that can legitimately happen in either order (it depends on the pitcher,
+  // e.g. some break their hands before peak leg lift). Within a group, events are placed by the time
+  // they were marked instead of by their fixed list position, and their order is never reported as an
+  // error. Events not in any group keep the fixed order.
+  interchangeable?: string[][]
 }
 
 const ms = (s: number) => `${Math.round(s * 1000)} ms`
 
-export default function DeliveryTimeline({ events, marked, duration, currentTime, onSeek, onMark, canMark, markHint, busy, references }: Props) {
+export default function DeliveryTimeline({ events, marked, duration, currentTime, onSeek, onMark, canMark, markHint, busy, references, interchangeable }: Props) {
   const scrollRef = useRef<HTMLDivElement>(null)
   const draggingRef = useRef(false)
   const [zoom, setZoom] = useState(1)
@@ -55,12 +60,17 @@ export default function DeliveryTimeline({ events, marked, duration, currentTime
 
   const defByName = useMemo(() => new Map(events.map((e, i) => [e.name, { ...e, index: i }])), [events])
 
-  // Marked events in canonical order, dropping any that fall outside this video.
+  // Marked events in canonical order, dropping any that fall outside this video. Two events in the same
+  // `interchangeable` group are ordered by their marked time instead. (The group's members sit next to
+  // each other in the list, so this comparison stays consistent with the fixed order for everything else.)
   const ordered = useMemo(
     () => marked
       .filter(m => defByName.has(m.name) && m.time >= 0 && m.time <= duration)
-      .sort((a, b) => defByName.get(a.name)!.index - defByName.get(b.name)!.index),
-    [marked, defByName, duration],
+      .sort((a, b) => {
+        const sameGroup = (interchangeable ?? []).some(g => g.includes(a.name) && g.includes(b.name))
+        return sameGroup ? a.time - b.time : defByName.get(a.name)!.index - defByName.get(b.name)!.index
+      }),
+    [marked, defByName, duration, interchangeable],
   )
 
   const phases = useMemo(() => {

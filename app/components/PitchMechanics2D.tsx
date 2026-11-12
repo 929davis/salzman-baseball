@@ -21,17 +21,25 @@ const KEY_EVENTS = [
   'Front Foot Off Ground',
   'Peak Leg Lift',
   'Hand Break',
+  'Bottom of Back Leg Loading',
   'Foot Plant (Weight-Bearing)',
   'Hip Rotation Stop',
   'Max External Rotation (MER)',
   'Release',
 ]
 
+// Events that can happen in either order depending on the pitcher (some break their hands before peak
+// leg lift; the bottom of the back-leg load can come before or after the hand break). Within this group
+// the order is whatever the marked times say; it is never treated as a mistake.
+const LEG_LOAD_EVENT = 'Bottom of Back Leg Loading'
+const INTERCHANGEABLE_EVENTS:string[][] = [['Peak Leg Lift','Hand Break',LEG_LOAD_EVENT]]
+
 // Timeline presentation for each key event: short pin label + colour. Order must match KEY_EVENTS.
 const EVENT_DEFS:DeliveryEventDef[] = [
   {name:'Front Foot Off Ground',short:'Foot off',color:'#58a6ff'},
   {name:'Peak Leg Lift',short:'Peak lift',color:'#39d3c3'},
   {name:'Hand Break',short:'Hand break',color:'#39d353'},
+  {name:LEG_LOAD_EVENT,short:'Leg load',color:'#f778ba'},
   {name:'Foot Plant (Weight-Bearing)',short:'Foot plant',color:'#e8b84b'},
   {name:'Hip Rotation Stop',short:'Hips stop',color:'#f0883e'},
   {name:'Max External Rotation (MER)',short:'MER',color:'#f85149'},
@@ -71,10 +79,20 @@ function computePhaseDurations(entries:LogEntry[], sessionLabel:string, captureF
     if (!a||!b||a.time==null||b.time==null) return null
     return videoToRealSec(b.time-a.time,captureFps)
   }
+  // The chain runs over the events that were actually marked, in the order they happened: fixed list order
+  // for most events, marked-time order inside an interchangeable group (leg lift / hand break / leg load).
+  // Skipping unmarked events also means the new optional "bottom of back leg loading" mark does not break
+  // the durations for pitchers who don't use it (it used to require every neighbouring event to be marked).
+  const marked = KEY_EVENTS.map(k=>byEvent.get(k)).filter((e):e is LogEntry=>!!e&&e.time!=null)
+  marked.sort((a,b)=>{
+    const sameGroup=INTERCHANGEABLE_EVENTS.some(g=>g.includes(a.keyEvent as string)&&g.includes(b.keyEvent as string))
+    return sameGroup ? (a.time as number)-(b.time as number) : KEY_EVENTS.indexOf(a.keyEvent as string)-KEY_EVENTS.indexOf(b.keyEvent as string)
+  })
   const consecutive:PhaseDuration[] = []
-  for (let i=0;i<KEY_EVENTS.length-1;i++){
-    const d=gap(KEY_EVENTS[i],KEY_EVENTS[i+1])
-    if (d!=null) consecutive.push({fromEvent:KEY_EVENTS[i],toEvent:KEY_EVENTS[i+1],durationSec:d})
+  for (let i=0;i<marked.length-1;i++){
+    const from=marked[i].keyEvent as string, to=marked[i+1].keyEvent as string
+    const d=gap(from,to)
+    if (d!=null) consecutive.push({fromEvent:from,toEvent:to,durationSec:d})
   }
   return {
     consecutive,
@@ -790,6 +808,7 @@ export default function PitchMechanics2D({pitcherId}:{pitcherId:string}){
   const entryB=logEntries.find(e=>e.id===rowB)
   const speedLabel=computeSpeedLabel(entryA,entryB,pxPerInch,captureFps)
   const phaseDurations=computePhaseDurations(logEntries,sessionLabel,captureFps)
+  const legLoad=latestEventEntries(logEntries,sessionLabel).get(LEG_LOAD_EVENT)
   // The delivery timeline works entirely in REAL seconds (axis, marks, playhead, durations), so what it
   // shows is how long the delivery actually took. Stored marks are video time; they are converted here
   // and converted back when the timeline asks to seek the video.
@@ -909,7 +928,7 @@ export default function PitchMechanics2D({pitcherId}:{pitcherId:string}){
 
           <DeliveryTimeline
             events={EVENT_DEFS} marked={markedEvents} duration={toReal(videoDuration)} currentTime={toReal(currentTime)}
-            onSeek={seekToReal} onMark={name=>logFrame(name)}
+            onSeek={seekToReal} onMark={name=>logFrame(name)} interchangeable={INTERCHANGEABLE_EVENTS}
             canMark={videoLoaded&&!!latestMetrics&&!!sessionLabel.trim()}
             markHint={blockedReason||(!sessionLabel.trim()?'Enter a Session Label below so the marks group into one pitch.':'Step or play a frame so pose tracking has a reading, then mark.')}
             busy={saving}
@@ -1055,7 +1074,7 @@ export default function PitchMechanics2D({pitcherId}:{pitcherId:string}){
 
           <div>
             <div style={{fontSize:11,fontWeight:700,color:C.textMuted,textTransform:'uppercase' as const,letterSpacing:'0.5px',marginBottom:4,paddingBottom:8,borderBottom:`1px solid ${C.border}`}}>Phase Durations — This Session</div>
-            <div style={{fontSize:10,color:C.textDim,marginBottom:10}}>Needs every phase tagged via Key Event under the SAME Session Label above, each only once. Matched by that label as plain text — relabeling or reusing a label will mix sessions. Durations are in <b style={{color:C.textMuted}}>real seconds</b> (video time ÷ {captureFps/30}, from the Capture Frame Rate above).</div>
+            <div style={{fontSize:10,color:C.textDim,marginBottom:10}}>Shows the time between each pair of events you tagged via Key Event (or the timeline) under the SAME Session Label above, in the order they happened. Leg lift, hand break and bottom of back leg loading can be marked in any order. Skip any event that doesn&apos;t apply. Matched by that label as plain text — relabeling or reusing a label will mix sessions. Durations are in <b style={{color:C.textMuted}}>real seconds</b> (video time ÷ {captureFps/30}, from the Capture Frame Rate above).</div>
             {sessionLabel==='' ? (
               <div style={{padding:16,textAlign:'center' as const,color:C.textDim,fontSize:12,background:C.bg2,border:`1px solid ${C.border}`,borderRadius:8}}>Enter a Session Label above to compute phase durations for this pitch.</div>
             ) : phaseDurations.consecutive.length===0 ? (
@@ -1068,6 +1087,15 @@ export default function PitchMechanics2D({pitcherId}:{pitcherId:string}){
                     <span style={{fontFamily:'monospace',fontSize:13,fontWeight:700,color:C.white}}>{d.durationSec.toFixed(3)}s</span>
                   </div>
                 ))}
+              </div>
+            )}
+            {legLoad&&legLoad.backKnee!=null&&(
+              <div style={{marginTop:10,background:'rgba(247,120,186,0.08)',border:'1px solid rgba(247,120,186,0.4)',borderRadius:8,padding:'8px 10px'}}>
+                <div style={{display:'flex',justifyContent:'space-between'}}>
+                  <span style={{fontSize:11,color:'#f778ba'}}>Bottom of Back Leg Loading</span>
+                  <span style={{fontFamily:'monospace',fontSize:13,fontWeight:700,color:C.white}}>{legLoad.backKnee.toFixed(0)}° back knee</span>
+                </div>
+                <div style={{fontSize:9,color:C.textDim,marginTop:3}}>Back-knee angle on the frame you marked as the bottom of the load. 180° is a straight leg; a smaller number is a deeper sink into the back leg. Estimated from one camera angle, so compare it between pitches from the same view.</div>
               </div>
             )}
             {(phaseDurations.footPlantToRelease!=null||phaseDurations.merToRelease!=null) && (
