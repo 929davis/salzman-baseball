@@ -104,7 +104,41 @@ type LogEntry = {
   sessionLabel:string|null
   hipPx:{x:number,y:number}|null // only populated for entries logged this session — not persisted in the DB schema
   savedAt?:string
+  // The capture frame rate selected when this mark was saved (needs the optional `capture_fps`
+  // column; see docs/mechanics-save-sql.md). null for records saved before it existed.
+  captureFps?:number|null
 }
+
+// The exact row sent to Supabase for one logged frame. Kept as a type so a failed save can be held
+// and re-sent unchanged.
+type FramePayload = {
+  pitcher_id:string, session_label:string|null, camera_view:string, video_timestamp_sec:number|null,
+  front_knee_deg:number|null, back_knee_deg:number|null, trunk_tilt_deg:number|null, elbow_deg:number|null,
+  stride_pct_ht:number|null, stride_inches:number|null, hip_shoulder_sep_deg:number|null,
+  key_event:string|null, notes:string|null, capture_fps:number,
+}
+
+// A mechanics_frame_logs row as returned by Supabase (only the columns this tool reads).
+type FrameRow = {
+  id:string, video_timestamp_sec:number|null, front_knee_deg:number|null, back_knee_deg:number|null,
+  trunk_tilt_deg:number|null, elbow_deg:number|null, stride_pct_ht:number|null, stride_inches:number|null,
+  hip_shoulder_sep_deg:number|null, notes:string|null, camera_view:string|null, key_event:string|null,
+  session_label:string|null, created_at?:string, capture_fps?:number|null,
+}
+
+function rowToEntry(r:FrameRow):LogEntry{
+  return {
+    id:r.id, time:r.video_timestamp_sec, frontKnee:r.front_knee_deg, backKnee:r.back_knee_deg,
+    trunkTilt:r.trunk_tilt_deg, elbow:r.elbow_deg, stridePctHt:r.stride_pct_ht, strideInches:r.stride_inches,
+    hipShoulderSep:r.hip_shoulder_sep_deg, notes:r.notes, cameraView:r.camera_view, keyEvent:r.key_event,
+    sessionLabel:r.session_label, hipPx:null, savedAt:r.created_at, captureFps:r.capture_fps??null,
+  }
+}
+
+// Postgres / PostgREST codes for "that column does not exist": the optional capture_fps column has
+// not been added yet, so the row is saved without it instead of failing.
+const MISSING_COLUMN_CODES = ['PGRST204','42703']
+const finiteOrNull = (v:number|null|undefined):number|null => (typeof v==='number'&&Number.isFinite(v)) ? v : null
 
 const LM = {
   nose:0, lShoulder:11, rShoulder:12, lElbow:13, rElbow:14, lWrist:15, rWrist:16,
@@ -310,6 +344,11 @@ export default function PitchMechanics2D({pitcherId}:{pitcherId:string}){
   const [frameNotes,setFrameNotes]=useState('')
   const [keyEvent,setKeyEvent]=useState('')
   const [saving,setSaving]=useState(false)
+  // Visible result of the last save attempt (a green confirmation or the real error), and any marks
+  // that failed to save and are waiting to be retried. Previously a failed save did nothing at all.
+  const [saveNotice,setSaveNotice]=useState<{kind:'ok'|'error',text:string}|null>(null)
+  const [pending,setPending]=useState<FramePayload[]>([])
+  const [poseError,setPoseError]=useState('')
   const [currentTime,setCurrentTime]=useState(0)
   const [videoDuration,setVideoDuration]=useState(0)
 
@@ -340,6 +379,7 @@ export default function PitchMechanics2D({pitcherId}:{pitcherId:string}){
   const lastFailedFileRef=useRef<File|null>(null)
   const objectUrlRef=useRef<string|null>(null)
   const isPlayingRef=useRef(false)
+  const captureFpsColumnMissingRef=useRef(false)
   // Manual per-frame marker corrections — pixel-space, reset whenever new MediaPipe
   // landmarks arrive (i.e. whenever the video moves to a different frame).
   const markerOverridesRef=useRef<Record<number,{x:number,y:number}>>({})
@@ -423,10 +463,11 @@ export default function PitchMechanics2D({pitcherId}:{pitcherId:string}){
     // resolves to whatever the latest npm release is at request time, which can silently
     // change the exposed API shape. Pin both the script and locateFile to the same version.
     const POSE_VERSION='0.5.1675469404'
-    Promise.all([
-      loadScript(`https://cdn.jsdelivr.net/npm/@mediapipe/pose@${POSE_VERSION}/pose.js`).then(()=>waitForGlobal('Pose')),
-      loadScript('https://unpkg.com/@ffmpeg/ffmpeg@0.11.6/dist/ffmpeg.min.js'),
-    ]).then(([PoseCtor])=>{
+    // The in-browser video converter is optional (only used for unplayable files). It used to be part of
+    // the same Promise.all, so if its CDN was blocked or slow the pose library was reported as failed
+    // and nothing could be analysed or saved. Load it on its own and ignore a failure.
+    loadScript('https://unpkg.com/@ffmpeg/ffmpeg@0.11.6/dist/ffmpeg.min.js').catch(err=>console.warn('converter script failed to load (optional):',err))
+    loadScript(`https://cdn.jsdelivr.net/npm/@mediapipe/pose@${POSE_VERSION}/pose.js`).then(()=>waitForGlobal('Pose')).then((PoseCtor)=>{
       if (cancelled) return
       const pose=new PoseCtor({locateFile:(f:string)=>`https://cdn.jsdelivr.net/npm/@mediapipe/pose@${POSE_VERSION}/${f}`})
       pose.setOptions({modelComplexity:1,smoothLandmarks:true,minDetectionConfidence:0.5,minTrackingConfidence:0.5})
@@ -445,12 +486,7 @@ export default function PitchMechanics2D({pitcherId}:{pitcherId:string}){
   const fetchLogs=useCallback(async()=>{
     setLogsLoading(true)
     const {data}=await supabase.from('mechanics_frame_logs').select('*').eq('pitcher_id',pitcherId).order('created_at',{ascending:false}).limit(100)
-    const rows:LogEntry[]=(data||[]).map((r:any)=>({
-      id:r.id, time:r.video_timestamp_sec, frontKnee:r.front_knee_deg, backKnee:r.back_knee_deg,
-      trunkTilt:r.trunk_tilt_deg, elbow:r.elbow_deg, stridePctHt:r.stride_pct_ht, strideInches:r.stride_inches,
-      hipShoulderSep:r.hip_shoulder_sep_deg, notes:r.notes, cameraView:r.camera_view, keyEvent:r.key_event,
-      sessionLabel:r.session_label, hipPx:null, savedAt:r.created_at,
-    }))
+    const rows:LogEntry[]=(data||[]).map(rowToEntry)
     setLogEntries(rows)
     setLogsLoading(false)
   },[pitcherId,supabase])
@@ -465,8 +501,23 @@ export default function PitchMechanics2D({pitcherId}:{pitcherId:string}){
   const analyzeCurrentFrame=useCallback(async()=>{
     const pose=poseRef.current, video=videoRef.current
     if (!pose||!video) return
-    await pose.send({image:video})
+    // A thrown error here used to vanish (an unhandled rejection), leaving the skeleton blank and
+    // Log Frame silently disabled. Surface it so it is clear why nothing can be saved.
+    try{
+      await pose.send({image:video})
+      setPoseError('')
+    }catch(err:unknown){
+      console.error('pose.send failed',err)
+      setPoseError(`Pose tracking couldn't read this frame on this device (${err instanceof Error?err.message:String(err)}).`)
+    }
   },[])
+
+  // If the pose library finishes loading after the clip, read the first frame then. Otherwise the
+  // skeleton never appears until the user happens to step or play, and nothing can be logged.
+  useEffect(()=>{
+    const video=videoRef.current
+    if (scriptsReady&&videoLoaded&&video&&video.readyState>=2&&!latestLandmarksRef.current) analyzeCurrentFrame()
+  },[scriptsReady,videoLoaded,analyzeCurrentFrame])
 
   const seekAndAnalyze=useCallback(()=>{
     const video=videoRef.current; if (!video) return
@@ -512,8 +563,13 @@ export default function PitchMechanics2D({pitcherId}:{pitcherId:string}){
       if (scrubRef.current){ scrubRef.current.max=String(video.duration); scrubRef.current.step=String(1/parseFloat(fps||'30')) }
       setStatusLine({text:'Ready. Tracking runs as you play or step through frames.',kind:'ready'})
       seekAndAnalyze()
+      // iOS Safari does not decode a frame until the video is played or seeked, and seekAndAnalyze only
+      // reads a frame after a seek happens, so nothing was analysed on load. A tiny seek forces the first
+      // frame to decode and fires the 'seeked' event; the timer is a fallback if iOS never fires it.
+      if (video.duration>0.01) video.currentTime=0.001
+      setTimeout(()=>{ if (!latestLandmarksRef.current) analyzeCurrentFrame() },2500)
     }
-  },[fps,seekAndAnalyze])
+  },[fps,seekAndAnalyze,analyzeCurrentFrame])
 
   const onFileChange=(e:React.ChangeEvent<HTMLInputElement>)=>{ if (e.target.files?.[0]) loadVideoFile(e.target.files[0]) }
   const onDrop=(e:React.DragEvent)=>{ e.preventDefault(); setDragOver(false); if (e.dataTransfer.files?.[0]) loadVideoFile(e.dataTransfer.files[0]) }
@@ -603,36 +659,82 @@ export default function PitchMechanics2D({pitcherId}:{pitcherId:string}){
     }
   }
 
+  // One place that talks to Supabase for a frame log. The optional capture_fps column (so a reopened
+  // session knows its slow-motion rate; see docs/mechanics-save-sql.md) may not exist yet: if the
+  // database says the column is missing, the same row is re-sent without it so saving still works
+  // before and after that column is added.
+  const insertFrame=async(payload:FramePayload)=>{
+    const send=(p:Record<string,unknown>)=>supabase.from('mechanics_frame_logs').insert(p).select().single()
+    const withoutFps:Record<string,unknown>={...payload}; delete withoutFps.capture_fps
+    if (captureFpsColumnMissingRef.current) return send(withoutFps)
+    const first=await send({...payload})
+    if (first.error&&(MISSING_COLUMN_CODES.includes(first.error.code)||/capture_fps/i.test(first.error.message||''))){
+      const second=await send(withoutFps)
+      if (!second.error) captureFpsColumnMissingRef.current=true
+      return second
+    }
+    return first
+  }
+  const describeSaveError=(error:{message?:string,code?:string}|null|undefined)=>
+    `${error?.message||'no response from the server'}${error?.code?` (code ${error.code})`:''}`
+  const commitSaved=(row:FrameRow, payload:FramePayload, hipPx:{x:number,y:number}|null)=>{
+    setLogEntries(prev=>[{...rowToEntry(row),hipPx,captureFps:payload.capture_fps},...prev])
+  }
+
   const logFrame=async(eventOverride?:string)=>{
     const m=latestMetricsRef.current
-    if (!m) return
+    if (!m){
+      setSaveNotice({kind:'error',text:'Nothing to save yet: pose tracking has no reading for this frame. Step or scrub the video until the skeleton appears on the athlete.'})
+      return
+    }
     const eventToLog=eventOverride??keyEvent
-    setSaving(true)
-    const {data,error}=await supabase.from('mechanics_frame_logs').insert({
+    const capture=parseFloat(fps)||30
+    // NaN/Infinity from a degenerate joint reading would be sent as null and could break a NOT NULL column; send null on purpose.
+    const payload:FramePayload={
       pitcher_id:pitcherId,
       session_label:sessionLabel||null,
       camera_view:view,
-      video_timestamp_sec:m.time,
-      front_knee_deg:m.frontKnee,
-      back_knee_deg:m.backKnee,
-      trunk_tilt_deg:m.trunkTilt,
-      elbow_deg:m.elbow,
-      stride_pct_ht:m.stridePctHt,
-      stride_inches:m.strideInches,
-      hip_shoulder_sep_deg:m.hipShoulderSep,
+      video_timestamp_sec:finiteOrNull(m.time),
+      front_knee_deg:finiteOrNull(m.frontKnee),
+      back_knee_deg:finiteOrNull(m.backKnee),
+      trunk_tilt_deg:finiteOrNull(m.trunkTilt),
+      elbow_deg:finiteOrNull(m.elbow),
+      stride_pct_ht:finiteOrNull(m.stridePctHt),
+      stride_inches:finiteOrNull(m.strideInches),
+      hip_shoulder_sep_deg:finiteOrNull(m.hipShoulderSep),
       key_event:eventToLog||null,
       notes:frameNotes||null,
-    }).select().single()
-    setSaving(false)
-    if (!error && data){
-      setLogEntries(prev=>[{
-        id:data.id, time:m.time, frontKnee:m.frontKnee, backKnee:m.backKnee, trunkTilt:m.trunkTilt, elbow:m.elbow,
-        stridePctHt:m.stridePctHt, strideInches:m.strideInches, hipShoulderSep:m.hipShoulderSep,
-        notes:frameNotes||null, cameraView:view, keyEvent:eventToLog||null, sessionLabel:sessionLabel||null, hipPx:m.hipPx, savedAt:data.created_at,
-      }, ...prev])
-      setFrameNotes('')
-      if (!eventOverride) setKeyEvent('')
+      capture_fps:capture,
     }
+    setSaving(true); setSaveNotice(null)
+    const {data,error}=await insertFrame(payload)
+    setSaving(false)
+    if (error||!data){
+      console.error('mechanics: failed to save frame log',error)
+      setPending(p=>[...p,payload])
+      setSaveNotice({kind:'error',text:`Couldn't save: ${describeSaveError(error)}. Your mark is held on this screen. Tap Retry save, and keep this page open until it saves.`})
+      return
+    }
+    commitSaved(data,payload,m.hipPx)
+    setFrameNotes('')
+    if (!eventOverride) setKeyEvent('')
+    setSaveNotice({kind:'ok',text:`Saved ${eventToLog||'frame'} at ${videoToRealSec(m.time,capture).toFixed(3)} s (real time).`})
+  }
+
+  const retryPending=async()=>{
+    if (!pending.length||saving) return
+    setSaving(true); setSaveNotice(null)
+    const stillFailing:FramePayload[]=[]
+    let lastError=''
+    for (const p of pending){
+      const {data,error}=await insertFrame(p)
+      if (error||!data){ stillFailing.push(p); lastError=describeSaveError(error) }
+      else commitSaved(data,p,null)
+    }
+    setPending(stillFailing); setSaving(false)
+    setSaveNotice(stillFailing.length
+      ? {kind:'error',text:`Still couldn't save ${stillFailing.length} mark${stillFailing.length!==1?'s':''}: ${lastError}`}
+      : {kind:'ok',text:'All held marks are saved.'})
   }
 
   const exportCsv=()=>{
@@ -651,6 +753,13 @@ export default function PitchMechanics2D({pitcherId}:{pitcherId:string}){
     a.click()
   }
 
+  // Why Log Frame / Mark cannot be used right now, in plain words (empty when saving is available).
+  const blockedReason=!videoLoaded?'Load a video first.'
+    :scriptError?'The pose-tracking library did not load, so nothing can be measured. Check your connection and reload this tab.'
+    :!scriptsReady?'Pose tracking is still loading. This can take a few seconds the first time.'
+    :poseError?poseError
+    :!latestMetrics?'Waiting for a pose reading. Step or scrub to a frame until the gold skeleton appears on the athlete; then you can log it.'
+    :''
   const entryA=logEntries.find(e=>e.id===rowA)
   const entryB=logEntries.find(e=>e.id===rowB)
   const speedLabel=computeSpeedLabel(entryA,entryB,pxPerInch)
@@ -750,11 +859,22 @@ export default function PitchMechanics2D({pitcherId}:{pitcherId:string}){
             <button onClick={()=>logFrame()} disabled={!videoLoaded||!latestMetrics||saving} style={{...btnStyle(true),opacity:(videoLoaded&&latestMetrics&&!saving)?1:0.35}}>{saving?'Saving...':'Log Frame'}</button>
           </div>
 
+          {/* Save feedback. Saving used to give no sign of success or failure; the real error text and code now show here. */}
+          {saveNotice&&(
+            <div role="status" style={{marginTop:8,padding:'9px 11px',borderRadius:8,fontSize:12,lineHeight:1.5,background:saveNotice.kind==='ok'?'rgba(57,211,83,0.10)':'rgba(248,81,73,0.10)',border:`1px solid ${saveNotice.kind==='ok'?'rgba(57,211,83,0.35)':'rgba(248,81,73,0.4)'}`,color:saveNotice.kind==='ok'?C.teal:C.red}}>{saveNotice.text}</div>
+          )}
+          {pending.length>0&&(
+            <button onClick={retryPending} disabled={saving} style={{...btnStyle(true),marginTop:8,width:'100%',opacity:saving?0.5:1}}>{saving?'Saving…':`Retry save (${pending.length} held mark${pending.length!==1?'s':''})`}</button>
+          )}
+          {blockedReason&&!saveNotice&&(
+            <div style={{marginTop:8,fontSize:11,color:C.textMuted,lineHeight:1.5}}>{blockedReason}</div>
+          )}
+
           <DeliveryTimeline
             events={EVENT_DEFS} marked={markedEvents} duration={videoDuration} currentTime={currentTime}
             onSeek={seekTo} onMark={name=>logFrame(name)}
             canMark={videoLoaded&&!!latestMetrics&&!!sessionLabel.trim()}
-            markHint={!videoLoaded?'Load a video first.':!sessionLabel.trim()?'Enter a Session Label below so the marks group into one pitch.':'Step or play a frame so pose tracking has a reading, then mark.'}
+            markHint={blockedReason||(!sessionLabel.trim()?'Enter a Session Label below so the marks group into one pitch.':'Step or play a frame so pose tracking has a reading, then mark.')}
             busy={saving}
             references={[
               {from:'Foot Plant (Weight-Bearing)',to:'Release',low:FOOT_PLANT_TO_RELEASE_ASSOC_SEC[0],high:FOOT_PLANT_TO_RELEASE_ASSOC_SEC[1],note:`Published association for this phase: ${FOOT_PLANT_TO_RELEASE_ASSOC_SEC[0]}–${FOOT_PLANT_TO_RELEASE_ASSOC_SEC[1]}s. Context from other research, not a verified ceiling or target.`},
