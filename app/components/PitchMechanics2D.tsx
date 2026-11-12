@@ -814,7 +814,7 @@ export default function PitchMechanics2D({pitcherId}:{pitcherId:string}){
     return (
       <div key={`${label}-${unit}`} style={{background:C.bg3,border:`1px solid ${C.border}`,borderRadius:8,padding:'12px 14px',position:'relative' as const}}>
         <span style={{position:'absolute' as const,top:10,right:10,fontSize:9,padding:'2px 6px',borderRadius:3,textTransform:'uppercase' as const,letterSpacing:'0.4px',fontWeight:600,background:badge==='reliable'?'rgba(57,211,83,0.15)':'rgba(224,164,56,0.15)',color:badge==='reliable'?C.teal:C.gold,border:`1px solid ${badge==='reliable'?'rgba(57,211,83,0.3)':'rgba(224,164,56,0.3)'}`}}>{badge==='reliable'?'Reliable':'Est.'}</span>
-        <div style={{fontSize:11,color:C.textMuted,textTransform:'uppercase' as const,letterSpacing:'0.4px',marginBottom:6}}>{label}</div>
+        <div style={{fontSize:11,color:C.textMuted,textTransform:'uppercase' as const,letterSpacing:'0.4px',marginBottom:6,paddingRight:52}}>{label}</div>
         <div style={{fontFamily:'monospace',fontSize:24,fontWeight:700,color:C.white,lineHeight:1}}>{value}<span style={{fontSize:12,color:C.textMuted,fontWeight:400,marginLeft:2}}>{unit}</span></div>
         {target&&<div style={{fontSize:10,color:C.textDim,marginTop:6}}>Target: {target}</div>}
       </div>
