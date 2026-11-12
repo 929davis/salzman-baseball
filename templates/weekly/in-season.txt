@@ -1,0 +1,84 @@
+# In-season -- default week for a once-a-week starter. Two high-demand days only (bullpen and
+# the game); three short lifts; arm care after every throwing session; power kept as a small
+# dose of med-ball work. Move days around the real start; keep the heavy lift 3+ days before
+# the start and never the day before. Lowering tempo 3-8 s on strength reps.
+
+MONDAY
+Pre-Throwing | BC Standing Posture | 1x1
+Pre-Throwing | BC Straw Breathing | 2x10
+Pre-Throwing | BC Feet Primer | 1x5
+Pre-Throwing | Worlds Greatest Stretch | 1x5
+Pre-Throwing | Band Pull-Apart | 2x15
+Throwing | Catch Play | 25 @ I2
+Post-Throwing | Side Lying ER Slow Lowering | 2x8
+Main Exercises | Med Ball Scoop Toss | 2x3
+Main Exercises | Trap Bar Deadlift | 2x3 @ RPE 8
+Main Exercises | Rear Foot Elevated Split Squat | 2x4 @ RPE 7
+Accessory | Half-Kneeling Pallof Press | 2x6
+Accessory | Copenhagen Plank | 2x20
+
+TUESDAY
+Pre-Throwing | BC Standing Posture | 1x1
+Pre-Throwing | BC Straw Breathing | 2x10
+Pre-Throwing | BC Board Balance | 2x5
+Pre-Throwing | Arm Swings | 1x10
+Pre-Throwing | Scapular Wall Slide | 2x10
+Pre-Throwing | Band Face Pull Arm Prep | 2x15
+Pre-Throwing | Dry Rep | 1x8
+Throwing | Bullpen | 25 @ I4
+Post-Throwing | Diaphragmatic Breathing | 1x10
+Post-Throwing | External Rotation at 90 | 2x12
+Post-Throwing | Dumbbell Pronation | 2x10
+Post-Throwing | Dumbbell Wrist Extension | 2x10
+
+WEDNESDAY
+Pre-Throwing | BC Standing Posture | 1x1
+Pre-Throwing | BC Straw Breathing | 2x10
+Pre-Throwing | BC Bowl Pelvic Control | 2x8
+Pre-Throwing | Scapular Wall Slide | 2x10
+Throwing | Moderate Long Toss | 25 @ I3
+Post-Throwing | Rear Delt Fly | 2x12
+Main Exercises | Alternating SA DB Bench Press | 2x5 @ RPE 7
+Main Exercises | Pull-Up | 2x5 @ RPE 7
+Accessory | DB External Rotation at 90° | 2x10 @ RPE 8
+Accessory | Wrist Flexion Ulnar Deviation | 2x10 @ RPE 8
+Accessory | Pinch Hold | 2x15
+
+THURSDAY
+Pre-Throwing | BC Standing Posture | 1x1
+Pre-Throwing | BC Straw Breathing | 2x10
+Pre-Throwing | BC Bridge | 1x5
+Pre-Throwing | Single Leg Pitching Stance Hold | 2x3
+Throwing | Catch Play | 20 @ I2
+Recovery | Zone 2 Bike | 1x1
+Recovery | Hip 90/90 Stretch | 2x5
+Recovery | Thoracic Spine Rotation | 2x8
+Recovery | Progressive Muscular Relaxation | 1x1
+
+FRIDAY
+Pre-Throwing | BC Standing Posture | 1x1
+Pre-Throwing | BC Straw Breathing | 2x10
+Pre-Throwing | Worlds Greatest Stretch | 1x5
+Pre-Throwing | Arm Swings | 1x10
+Pre-Throwing | Band Pull-Apart | 2x15
+Pre-Throwing | Dry Rep | 1x8
+Throwing | Competition | 85 @ I5
+Post-Throwing | Diaphragmatic Breathing | 1x10
+Post-Throwing | Side Lying ER Slow Lowering | 2x8
+Post-Throwing | Dumbbell Supination | 2x10
+
+SATURDAY
+Pre-Throwing | BC Standing Posture | 1x1
+Pre-Throwing | BC Straw Breathing | 2x10
+Pre-Throwing | BC Bar Series | 1x8
+Pre-Throwing | Scapular Wall Slide | 2x10
+Speed/Power | Pogo Hops | 2x10
+Throwing | Catch Play | 20 @ I2
+Post-Throwing | External Rotation at 90 | 2x12
+Main Exercises | MB Rotational Pass | 2x3
+Main Exercises | Romanian Deadlift | 2x5 @ RPE 7
+Main Exercises | Landmine Press | 2x5 @ RPE 7
+Accessory | Single Arm DB Row | 2x8 @ RPE 8
+Accessory | Ramp Up Isometric ER Layback | 1x6
+Accessory | Rapid Reversal ER IR Tennis Ball | 2x12
+Accessory | Finger Curls | 2x10 @ RPE 8

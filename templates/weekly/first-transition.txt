@@ -1,0 +1,92 @@
+# First Transition (power block) -- default week. Converts strength into speed: weighted and
+# reactive jumps, rotational med ball work, acceleration, one heavy lift kept at RPE 8 for
+# maintenance, forearm and scapular capacity. High-demand days: Monday, Thursday, Saturday.
+# Stop any jump or throw set when output visibly drops. Lowering tempo 3-8 s on strength reps.
+
+MONDAY
+Pre-Throwing | BC Standing Posture | 1x1
+Pre-Throwing | BC Straw Breathing | 2x10
+Pre-Throwing | BC Feet Primer | 1x5
+Pre-Throwing | Worlds Greatest Stretch | 1x5
+Pre-Throwing | Spiderman Crawl | 2x8
+Speed/Power | DB Squat Jump | 3x3
+Speed/Power | Step In Rotational Med Ball Throw | 3x3
+Speed/Power | 10-Yard Sprint | 4x1
+Main Exercises | Trap Bar Deadlift | 3x3 @ RPE 8
+Main Exercises | Rear Foot Elevated Split Squat | 2x4 @ RPE 7
+Accessory | Half-Kneeling Pallof Press | 3x6
+Accessory | Copenhagen Plank | 2x20
+
+TUESDAY
+Pre-Throwing | BC Standing Posture | 1x1
+Pre-Throwing | BC Straw Breathing | 2x10
+Pre-Throwing | BC Board Balance | 2x5
+Pre-Throwing | Arm Swings | 1x10
+Pre-Throwing | Scapular Wall Slide | 2x10
+Pre-Throwing | Band Face Pull Arm Prep | 2x15
+Throwing | On-Line Flat Ground | 30 @ I3
+Post-Throwing | Diaphragmatic Breathing | 1x10
+Post-Throwing | Side Lying ER Slow Lowering | 3x8
+Main Exercises | MB Seated Chest Pass | 4x3
+Main Exercises | Barbell Bench Press | 3x3 @ 45%
+Main Exercises | Barbell Row | 3x5 @ 60%
+Accessory | Kneeling Plus Pushups | 2x10
+Accessory | Prone T Raise | 2x10
+Accessory | DB External Rotation at 90° | 2x10 @ RPE 8
+Accessory | Dumbbell Hammer Curl | 2x8 @ RPE 8
+
+WEDNESDAY
+Pre-Throwing | BC Standing Posture | 1x1
+Pre-Throwing | BC Straw Breathing | 2x10
+Pre-Throwing | BC Bowl Pelvic Control | 2x8
+Pre-Throwing | BC Bridge | 1x5
+Recovery | Zone 2 Bike | 1x1
+Recovery | Hip 90/90 Stretch | 2x5
+Recovery | Thoracic Spine Rotation | 2x8
+Recovery | Progressive Muscular Relaxation | 1x1
+
+THURSDAY
+Pre-Throwing | BC Standing Posture | 1x1
+Pre-Throwing | BC Straw Breathing | 2x10
+Pre-Throwing | BC Feet Primer | 1x5
+Pre-Throwing | Worlds Greatest Stretch | 1x5
+Pre-Throwing | Lateral Ape Crawl | 2x8
+Pre-Throwing | Band Pull-Apart | 2x15
+Speed/Power | Altitude Landing | 3x4
+Speed/Power | Trap Bar Jump | 3x3
+Speed/Power | Med Ball Rotational Chest Pass | 3x3
+Throwing | High Intent Long Toss | 25 @ I4
+Post-Throwing | External Rotation at 90 | 3x10
+Post-Throwing | Dumbbell Pronation | 2x10
+Main Exercises | Front Squat | 2x3 @ 70%
+Accessory | Band Diagonal Chop | 3x6
+Accessory | Sliding Lateral Lunge | 2x4 @ RPE 8
+
+FRIDAY
+Pre-Throwing | BC Standing Posture | 1x1
+Pre-Throwing | BC Straw Breathing | 2x10
+Pre-Throwing | BC Bar Series | 1x8
+Pre-Throwing | Single Leg Pitching Stance Hold | 2x3
+Accessory | Rapid Reversal Trunk Rotation | 2x15
+Accessory | Rapid Reversal ER IR Tennis Ball | 2x15
+Accessory | Wrist Flexion Ulnar Deviation | 2x10 @ RPE 8
+Accessory | Finger Curls | 2x10 @ RPE 8
+Accessory | Prone Y Raise | 2x12
+Recovery | Zone 2 Row | 1x1
+Recovery | Couch Stretch | 2x5
+
+SATURDAY
+Pre-Throwing | BC Standing Posture | 1x1
+Pre-Throwing | BC Straw Breathing | 2x10
+Pre-Throwing | Worlds Greatest Stretch | 1x5
+Pre-Throwing | Arm Swings | 1x10
+Pre-Throwing | Band Pull-Apart | 2x15
+Speed/Power | 10-Yard Sprint | 4x1
+Throwing | Catch Play | 25 @ I2
+Main Exercises | Rear Foot Elevated Split Squat | 2x5 @ RPE 7
+Main Exercises | Pull-Up | 3x5 @ RPE 7
+Accessory | Single Arm DB Row | 2x8 @ RPE 8
+Accessory | Ramp Up Isometric ER Layback | 1x6
+Accessory | Dumbbell Wrist Extension | 2x10
+Accessory | Fast Pinch Efforts | 2x5
+Accessory | Pinch Hold | 2x15
