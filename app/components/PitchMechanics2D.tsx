@@ -46,12 +46,6 @@ const EVENT_DEFS:DeliveryEventDef[] = [
   {name:'Release',short:'Release',color:'#a371f7'},
 ]
 
-// Published research associations — NOT verified ceilings, and NOT verified at 95+ mph
-// specifically. Shown next to the athlete's own measured duration as context, never as a
-// pass/fail target.
-const FOOT_PLANT_TO_RELEASE_ASSOC_SEC:[number,number] = [0.14,0.15]
-const MER_TO_RELEASE_ASSOC_SEC:[number,number] = [0,0.05]
-
 type PhaseDuration = { fromEvent:string, toEvent:string, durationSec:number }
 type PhaseDurationResult = { consecutive:PhaseDuration[], footPlantToRelease:number|null, merToRelease:number|null }
 
@@ -321,6 +315,10 @@ function waitForGlobal(name:string, timeoutMs=15000):Promise<any>{
   })
 }
 
+// Settings that rarely change between clips are remembered per athlete on this device (not the capture
+// rate: a wrong remembered rate would silently scale every duration).
+const settingsKey=(pitcherId:string)=>`mechanics-settings:${pitcherId}`
+
 function computeSpeedLabel(a:LogEntry|undefined, b:LogEntry|undefined, pxPerInch:number|null, captureFps:number):string{
   if (!a||!b||a.id===b.id) return '—'
   if (!a.hipPx||!b.hipPx) return 'Pixel position only available for entries logged this session'
@@ -361,12 +359,11 @@ export default function PitchMechanics2D({pitcherId}:{pitcherId:string}){
   const [rowA,setRowA]=useState('')
   const [rowB,setRowB]=useState('')
   const [prepOpen,setPrepOpen]=useState(true)
-  const [convertVisible,setConvertVisible]=useState(false)
-  const [convertBusy,setConvertBusy]=useState(false)
-  const [convertLabel,setConvertLabel]=useState('Convert video in-browser & retry')
   const [sessionLabel,setSessionLabel]=useState('')
   const [frameNotes,setFrameNotes]=useState('')
-  const [keyEvent,setKeyEvent]=useState('')
+  const [showNotes,setShowNotes]=useState(false)
+  // Frame Log scope: marks of the session named above (default) or every saved mark.
+  const [logScope,setLogScope]=useState<'session'|'all'>('session')
   const [saving,setSaving]=useState(false)
   // Visible result of the last save attempt (a green confirmation or the real error), and any marks
   // that failed to save and are waiting to be retried. Previously a failed save did nothing at all.
@@ -399,10 +396,8 @@ export default function PitchMechanics2D({pitcherId}:{pitcherId:string}){
   const timecodeRef=useRef<HTMLSpanElement>(null)
   const fileInputRef=useRef<HTMLInputElement>(null)
   const poseRef=useRef<any>(null)
-  const ffmpegRef=useRef<any>(null)
   const latestLandmarksRef=useRef<any>(null)
   const latestMetricsRef=useRef<Metrics|null>(null)
-  const lastFailedFileRef=useRef<File|null>(null)
   const objectUrlRef=useRef<string|null>(null)
   const isPlayingRef=useRef(false)
   const captureFpsColumnMissingRef=useRef(false)
@@ -494,10 +489,6 @@ export default function PitchMechanics2D({pitcherId}:{pitcherId:string}){
     // resolves to whatever the latest npm release is at request time, which can silently
     // change the exposed API shape. Pin both the script and locateFile to the same version.
     const POSE_VERSION='0.5.1675469404'
-    // The in-browser video converter is optional (only used for unplayable files). It used to be part of
-    // the same Promise.all, so if its CDN was blocked or slow the pose library was reported as failed
-    // and nothing could be analysed or saved. Load it on its own and ignore a failure.
-    loadScript('https://unpkg.com/@ffmpeg/ffmpeg@0.11.6/dist/ffmpeg.min.js').catch(err=>console.warn('converter script failed to load (optional):',err))
     loadScript(`https://cdn.jsdelivr.net/npm/@mediapipe/pose@${POSE_VERSION}/pose.js`).then(()=>waitForGlobal('Pose')).then((PoseCtor)=>{
       if (cancelled) return
       const pose=new PoseCtor({locateFile:(f:string)=>`https://cdn.jsdelivr.net/npm/@mediapipe/pose@${POSE_VERSION}/${f}`})
@@ -522,10 +513,37 @@ export default function PitchMechanics2D({pitcherId}:{pitcherId:string}){
     setLogsLoading(false)
   },[pitcherId,supabase])
 
-  const clearLog=()=>{
-    if (!window.confirm('Clear the on-screen log? This only clears this view — nothing is deleted from Supabase, and Refresh will bring it back.')) return
-    setLogEntries([])
+  // Permanently deletes ONE saved mark (after a confirmation). If the database refuses (for example no
+  // delete permission), the mark stays and the real reason is shown.
+  const deleteEntry=async(entry:LogEntry)=>{
+    const what=entry.keyEvent||'frame'
+    if (!window.confirm(`Delete this ${what} mark? It is removed from the database and can't be undone.`)) return
+    const {error}=await supabase.from('mechanics_frame_logs').delete().eq('id',entry.id).eq('pitcher_id',pitcherId)
+    if (error){
+      setSaveNotice({kind:'error',text:`Couldn't delete the mark: ${describeSaveError(error)}`})
+      return
+    }
+    setLogEntries(prev=>prev.filter(e=>e.id!==entry.id))
+    setRowA(a=>a===entry.id?'':a); setRowB(b=>b===entry.id?'':b)
+    setSaveNotice({kind:'ok',text:`Deleted the ${what} mark.`})
   }
+
+  // Remember handedness / camera view / height for this athlete on this device.
+  useEffect(()=>{
+    try{
+      const raw=window.localStorage.getItem(settingsKey(pitcherId)); if (!raw) return
+      const s=JSON.parse(raw)
+      // One-time restore of saved settings after mount (reading storage during render would not match the server render).
+      /* eslint-disable react-hooks/set-state-in-effect */
+      if (s.handedness==='R'||s.handedness==='L') setHandedness(s.handedness)
+      if (['side','front','back','aerial'].includes(s.view)) setView(s.view)
+      if (typeof s.heightIn==='string') setHeightIn(s.heightIn)
+      /* eslint-enable react-hooks/set-state-in-effect */
+    }catch{ /* storage can be unavailable (private mode); the tool works without it */ }
+  },[pitcherId])
+  useEffect(()=>{
+    try{ window.localStorage.setItem(settingsKey(pitcherId),JSON.stringify({handedness,view,heightIn})) }catch{ /* optional */ }
+  },[pitcherId,handedness,view,heightIn])
 
   useEffect(()=>{ fetchLogs() },[fetchLogs])
 
@@ -559,8 +577,6 @@ export default function PitchMechanics2D({pitcherId}:{pitcherId:string}){
   },[analyzeCurrentFrame])
 
   const loadVideoFile=useCallback((file:File)=>{
-    lastFailedFileRef.current=file
-    setConvertVisible(false)
     const video=videoRef.current; if (!video) return
     if (objectUrlRef.current) URL.revokeObjectURL(objectUrlRef.current)
     const url=URL.createObjectURL(file)
@@ -573,20 +589,17 @@ export default function PitchMechanics2D({pitcherId}:{pitcherId:string}){
     setStatusLine({text:`Loading "${file.name}" (${(file.size/1024/1024).toFixed(0)}MB)…`,kind:'loading'})
 
     const loadTimeout=setTimeout(()=>{
-      setStatusLine({text:`Still not loading after 15s — this file's format/codec probably isn't supported by this browser.`,kind:'loading'})
-      setConvertVisible(true)
+      setStatusLine({text:`Still not loading after 15s — this file's format/codec probably isn't supported by this browser. Try opening this tab on the iPhone/Safari, or re-export the clip as .mp4 (H.264) and upload it again.`,kind:'loading'})
     },15000)
 
     video.onerror=()=>{
       clearTimeout(loadTimeout)
       const err=video.error
-      setStatusLine({text:`Couldn't load this video (error code ${err?err.code:'?'}) — this browser can't decode its format/codec (common with iPhone HEVC clips in Chrome on Windows). Click below to convert it automatically.`,kind:'loading'})
-      setConvertVisible(true)
+      setStatusLine({text:`Couldn't load this video (error code ${err?err.code:'?'}) — this browser can't decode its format/codec (common with iPhone HEVC clips in Chrome on Windows). Open this tab on the iPhone/Safari, or re-export the clip as .mp4 (H.264) and upload it again.`,kind:'loading'})
     }
 
     video.onloadedmetadata=()=>{
       clearTimeout(loadTimeout)
-      setConvertVisible(false)
       setVideoDuration(video.duration)
       const canvas=canvasRef.current
       if (canvas){ canvas.width=video.videoWidth; canvas.height=video.videoHeight }
@@ -659,44 +672,6 @@ export default function PitchMechanics2D({pitcherId}:{pitcherId:string}){
     setCalibStatus({text:`Calibrated at t=${video?video.currentTime.toFixed(2):'0'}s — ${ratio.toFixed(2)} px/in. Re-calibrate if the pitcher moves toward/away from the camera.`,calibrated:true})
   }
 
-  const convertVideo=async()=>{
-    const file=lastFailedFileRef.current
-    if (!file) return
-    const FFmpegGlobal=(window as any).FFmpeg
-    if (!FFmpegGlobal){
-      setStatusLine({text:`The in-browser converter couldn't load. This usually happens when the page is opened directly as a local file (file://) instead of through a web address — the converter needs a real page address to work. Easiest fix for now: convert the clip manually to .mp4 (H.264) using QuickTime or a free online converter, then re-upload. This should work fine once used on the deployed site (http/https).`,kind:'loading'})
-      return
-    }
-    setConvertBusy(true)
-    setConvertLabel('Loading converter (first time only, ~25MB)…')
-    setStatusLine({text:'Setting up in-browser converter…',kind:'loading'})
-    try{
-      if (!ffmpegRef.current){
-        const {createFFmpeg}=FFmpegGlobal
-        const ffmpeg=createFFmpeg({log:false})
-        ffmpeg.setProgress(({ratio}:{ratio:number})=>{
-          if (ratio>=0) setStatusLine({text:`Converting… ${Math.min(100,Math.round(ratio*100))}%`,kind:'loading'})
-        })
-        await ffmpeg.load()
-        ffmpegRef.current=ffmpeg
-      }
-      const ffmpeg=ffmpegRef.current
-      setConvertLabel('Converting…')
-      const inName='in_'+file.name.replace(/[^a-zA-Z0-9.]/g,'_')
-      ffmpeg.FS('writeFile', inName, await FFmpegGlobal.fetchFile(file))
-      await ffmpeg.run('-i',inName,'-c:v','libx264','-preset','ultrafast','-crf','23','-c:a','aac','out.mp4')
-      const data=ffmpeg.FS('readFile','out.mp4')
-      ffmpeg.FS('unlink',inName); ffmpeg.FS('unlink','out.mp4')
-      const blob=new Blob([data.buffer],{type:'video/mp4'})
-      const convertedFile=new File([blob], file.name.replace(/\.\w+$/,'_converted.mp4'), {type:'video/mp4'})
-      setConvertVisible(false); setConvertBusy(false); setConvertLabel('Convert video in-browser & retry')
-      loadVideoFile(convertedFile)
-    }catch(err:any){
-      setStatusLine({text:`Conversion failed: ${err.message||err}. Try re-exporting the clip manually as .mp4 (H.264) instead.`,kind:'loading'})
-      setConvertBusy(false); setConvertLabel('Convert video in-browser & retry')
-    }
-  }
-
   // One place that talks to Supabase for a frame log. The optional capture_fps column (so a reopened
   // session knows its slow-motion rate; see docs/mechanics-save-sql.md) may not exist yet: if the
   // database says the column is missing, the same row is re-sent without it so saving still works
@@ -725,7 +700,7 @@ export default function PitchMechanics2D({pitcherId}:{pitcherId:string}){
       setSaveNotice({kind:'error',text:'Nothing to save yet: pose tracking has no reading for this frame. Step or scrub the video until the skeleton appears on the athlete.'})
       return
     }
-    const eventToLog=eventOverride??keyEvent
+    const eventToLog=eventOverride??''
     const capture=parseFloat(fps)||30
     // NaN/Infinity from a degenerate joint reading would be sent as null and could break a NOT NULL column; send null on purpose.
     const payload:FramePayload={
@@ -755,7 +730,6 @@ export default function PitchMechanics2D({pitcherId}:{pitcherId:string}){
     }
     commitSaved(data,payload,m.hipPx)
     setFrameNotes('')
-    if (!eventOverride) setKeyEvent('')
     setSaveNotice({kind:'ok',text:`Saved ${eventToLog||'frame'} at ${videoToRealSec(m.time,capture).toFixed(3)} s (real time).`})
   }
 
@@ -804,9 +778,13 @@ export default function PitchMechanics2D({pitcherId}:{pitcherId:string}){
     :poseError?poseError
     :!latestMetrics?'Waiting for a pose reading. Step or scrub to a frame until the gold skeleton appears on the athlete; then you can log it.'
     :''
+  // Each saved mark is shown in real time using the rate it was saved with (falling back to the rate
+  // selected above for older marks that have none), so changing the selector never rewrites old rows.
+  const rowRealSec=(e:LogEntry)=>e.time!=null?videoToRealSec(e.time,e.captureFps||captureFps):null
+  const visibleEntries=logScope==='session'&&sessionLabel.trim()?logEntries.filter(e=>e.sessionLabel===sessionLabel):logEntries
   const entryA=logEntries.find(e=>e.id===rowA)
   const entryB=logEntries.find(e=>e.id===rowB)
-  const speedLabel=computeSpeedLabel(entryA,entryB,pxPerInch,captureFps)
+  const speedLabel=computeSpeedLabel(entryA,entryB,pxPerInch,entryA?.captureFps||captureFps)
   const phaseDurations=computePhaseDurations(logEntries,sessionLabel,captureFps)
   const legLoad=latestEventEntries(logEntries,sessionLabel).get(LEG_LOAD_EVENT)
   // The delivery timeline works entirely in REAL seconds (axis, marks, playhead, durations), so what it
@@ -860,14 +838,10 @@ export default function PitchMechanics2D({pitcherId}:{pitcherId:string}){
             </div>
             {prepOpen&&(
               <ol style={{margin:0,padding:'0 14px 14px 30px',fontSize:12,color:C.textMuted,lineHeight:1.7}}>
-                <li><b style={{color:C.text}}>Film in landscape</b>, not portrait — the tool needs the full body wide in frame.</li>
-                <li><b style={{color:C.text}}>Get the whole body in shot</b> from at least a step before leg lift through follow-through. If feet or hands leave the frame, tracking breaks.</li>
-                <li><b style={{color:C.text}}>Use a tripod or steady surface.</b> A shaky, handheld clip makes the joint tracking jump around and throws off angles.</li>
-                <li><b style={{color:C.text}}>Stand back far enough</b> that the pitcher's whole body stays in frame during the stride — don't zoom in tight.</li>
-                <li><b style={{color:C.text}}>Plain background helps.</b> Avoid other people or moving objects behind the pitcher if possible.</li>
-                <li><b style={{color:C.text}}>Good, even lighting</b> — outdoor daylight or well-lit indoor turf works best. Avoid backlighting.</li>
-                <li><b style={{color:C.text}}>Pick the right angle</b> for what you're measuring: face-on to the mound for side view, or straight down the base line for front/back — and set the matching Camera View option below.</li>
-                <li><b style={{color:C.text}}>Include a moment standing tall</b> (leg lift or standstill) — you'll use this frame to calibrate real-world measurements.</li>
+                <li><b style={{color:C.text}}>Film in landscape</b> from the side (or down the base line), with the <b style={{color:C.text}}>whole body in frame</b> from a step before leg lift through follow-through. If feet or hands leave the frame, tracking breaks.</li>
+                <li><b style={{color:C.text}}>Keep the phone steady</b> (tripod or a fixed surface) and stand back so the stride never leaves the picture.</li>
+                <li><b style={{color:C.text}}>Plain background and even light</b> help. Avoid other people behind the pitcher and avoid backlighting.</li>
+                <li><b style={{color:C.text}}>Include a moment standing tall</b> (leg lift or standstill) to calibrate real-world measurements, and set the matching Camera View below.</li>
               </ol>
             )}
           </div>
@@ -932,10 +906,6 @@ export default function PitchMechanics2D({pitcherId}:{pitcherId:string}){
             canMark={videoLoaded&&!!latestMetrics&&!!sessionLabel.trim()}
             markHint={blockedReason||(!sessionLabel.trim()?'Enter a Session Label below so the marks group into one pitch.':'Step or play a frame so pose tracking has a reading, then mark.')}
             busy={saving}
-            references={[
-              {from:'Foot Plant (Weight-Bearing)',to:'Release',low:FOOT_PLANT_TO_RELEASE_ASSOC_SEC[0],high:FOOT_PLANT_TO_RELEASE_ASSOC_SEC[1],note:`Published association for this phase: ${FOOT_PLANT_TO_RELEASE_ASSOC_SEC[0]}–${FOOT_PLANT_TO_RELEASE_ASSOC_SEC[1]}s. Context from other research, not a verified ceiling or target.`},
-              {from:'Max External Rotation (MER)',to:'Release',low:MER_TO_RELEASE_ASSOC_SEC[0],high:MER_TO_RELEASE_ASSOC_SEC[1],note:`Published association for arm acceleration: ~${MER_TO_RELEASE_ASSOC_SEC[1]}s. Not verified at 95+ mph specifically.`},
-            ]}
           />
 
           <div style={{background:C.bg2,border:`1px solid ${C.border}`,borderRadius:8,padding:14,marginTop:14,display:'grid',gridTemplateColumns:'1fr 1fr',gap:12}}>
@@ -980,22 +950,18 @@ export default function PitchMechanics2D({pitcherId}:{pitcherId:string}){
               <div style={{fontSize:12,color:calibStatus.calibrated?C.teal:C.textMuted}}>{calibStatus.text}</div>
             </div>
             <div style={{gridColumn:'1/-1'}}>
-              <label style={lbl}>Key Event <span style={{color:C.textDim,fontWeight:400}}>(optional)</span></label>
-              <select value={keyEvent} onChange={e=>setKeyEvent(e.target.value)} style={inp}>
-                <option value="">— None / Other —</option>
-                {KEY_EVENTS.map(k=><option key={k} value={k}>{k}</option>)}
-              </select>
-            </div>
-            <div style={{gridColumn:'1/-1'}}>
-              <label style={lbl}>Notes for next logged frame <span style={{color:C.textDim,fontWeight:400}}>(optional)</span></label>
-              <input type="text" placeholder="e.g. front foot open at strike" value={frameNotes} onChange={e=>setFrameNotes(e.target.value)} style={inp}/>
+              {showNotes?(
+                <>
+                  <label style={lbl}>Note for the next logged mark</label>
+                  <input type="text" placeholder="e.g. front foot open at strike" value={frameNotes} onChange={e=>setFrameNotes(e.target.value)} style={inp}/>
+                </>
+              ):(
+                <button onClick={()=>setShowNotes(true)} style={{...btnStyle(),fontSize:12}}>+ Add a note to the next mark</button>
+              )}
             </div>
           </div>
 
           <div style={{fontSize:12,fontFamily:'monospace',color:statusLine.kind==='loading'?C.gold:statusLine.kind==='ready'?C.teal:C.textMuted,marginTop:10}}>{statusLine.text}</div>
-          {convertVisible&&(
-            <button onClick={convertVideo} disabled={convertBusy} style={{marginTop:8,padding:'9px 16px',background:C.goldDim,color:C.bg,border:'none',borderRadius:6,fontWeight:700,fontSize:12,cursor:'pointer',opacity:convertBusy?0.6:1}}>{convertLabel}</button>
-          )}
         </div>
 
         <div style={{display:'flex',flexDirection:'column' as const,gap:16}}>
@@ -1007,8 +973,8 @@ export default function PitchMechanics2D({pitcherId}:{pitcherId:string}){
                 statCard('Back Knee', latestMetrics.backKnee.toFixed(0), '°', 'backKnee'),
                 statCard('Trunk Tilt', latestMetrics.trunkTilt.toFixed(0), '° fwd', 'trunkTilt'),
                 statCard('Elbow', latestMetrics.elbow.toFixed(0), '°', 'elbow'),
-                statCard('Stride Length', latestMetrics.stridePctHt?latestMetrics.stridePctHt.toFixed(0):'—', '%ht', 'stridePctHt', `${STRIDE_TARGET_PCT_HT[0]}–${STRIDE_TARGET_PCT_HT[1]}% ht`),
-                statCard('Stride Length', latestMetrics.strideInches?latestMetrics.strideInches.toFixed(1):'—', 'in', 'stridePctHt'),
+                // Stride is just the horizontal gap between the ankles, so it only means something from the side.
+                ...(view==='side'?[statCard('Stride Length', latestMetrics.stridePctHt?latestMetrics.stridePctHt.toFixed(0):'—', '%ht', 'stridePctHt', `${STRIDE_TARGET_PCT_HT[0]}–${STRIDE_TARGET_PCT_HT[1]}% ht`)]:[]),
                 statCard('Hip-Shoulder Sep', latestMetrics.hipShoulderSep.toFixed(0), '° (est)', 'hipShoulderSep', `${HIP_SHOULDER_SEP_TARGET_DEG[0]}–${HIP_SHOULDER_SEP_TARGET_DEG[1]}°`),
               ]:(
                 <div style={{gridColumn:'1/-1',color:C.textDim,fontSize:12,padding:20,textAlign:'center' as const}}>Play or step through a frame to see live joint angles.</div>
@@ -1019,25 +985,31 @@ export default function PitchMechanics2D({pitcherId}:{pitcherId:string}){
           <div>
             <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:10,paddingBottom:8,borderBottom:`1px solid ${C.border}`}}>
               <div style={{fontSize:11,fontWeight:700,color:C.textMuted,textTransform:'uppercase' as const,letterSpacing:'0.5px'}}>Frame Log</div>
-              <span style={{fontSize:11,color:C.textMuted}}>{logsLoading?'Loading…':`${logEntries.length} frame${logEntries.length!==1?'s':''}`}</span>
+              <span style={{fontSize:11,color:C.textMuted}}>{logsLoading?'Loading…':`${visibleEntries.length} frame${visibleEntries.length!==1?'s':''}`}</span>
             </div>
+            {sessionLabel.trim()&&(
+              <div style={{display:'flex',gap:6,marginBottom:10}}>
+                {(['session','all'] as const).map(k=>(
+                  <button key={k} onClick={()=>setLogScope(k)} style={{...btnStyle(logScope===k),flex:1,fontSize:12}}>{k==='session'?'This session':'All sessions'}</button>
+                ))}
+              </div>
+            )}
             <div style={{display:'flex',gap:8,marginBottom:10,flexWrap:'wrap' as const}}>
               <button onClick={fetchLogs} style={{...btnStyle(),flex:1}}>Refresh</button>
-              <button onClick={clearLog} style={{...btnStyle(),flex:1}}>Clear Log</button>
               <button onClick={exportCsv} style={{...btnStyle(),flex:1}}>Export CSV</button>
             </div>
             <div style={{maxHeight:240,overflowY:'auto' as const,overflowX:'auto' as const,border:`1px solid ${C.border}`,borderRadius:8,background:C.bg2}}>
-              {logEntries.length===0?(
-                <div style={{padding:20,textAlign:'center' as const,color:C.textDim,fontSize:12}}>No frames logged yet. Play or step to a key position (foot strike, release) and hit "Log Frame."</div>
+              {visibleEntries.length===0?(
+                <div style={{padding:20,textAlign:'center' as const,color:C.textDim,fontSize:12}}>{logEntries.length&&logScope==='session'?'No marks saved for this session label yet.':'Nothing logged yet. Use the Mark buttons on the timeline above, or Log Frame for a single position.'}</div>
               ):(
                 <table style={{width:'100%',minWidth:640,borderCollapse:'collapse' as const,fontSize:11,fontFamily:'monospace'}}>
                   <thead><tr style={{borderBottom:`1px solid ${C.border}`}}>
-                    {['t (real s)','Fr Knee','Bk Knee','Trunk','Elbow','Stride%','Hip-Shd','Event'].map(h=><th key={h} style={{padding:'6px 8px',textAlign:'left' as const,color:C.textMuted,fontSize:9,textTransform:'uppercase' as const,whiteSpace:'nowrap' as const}}>{h}</th>)}
+                    {['t (real s)','Fr Knee','Bk Knee','Trunk','Elbow','Stride%','Hip-Shd','Event',''].map(h=><th key={h} style={{padding:'6px 8px',textAlign:'left' as const,color:C.textMuted,fontSize:9,textTransform:'uppercase' as const,whiteSpace:'nowrap' as const}}>{h}</th>)}
                   </tr></thead>
                   <tbody>
-                    {logEntries.map(e=>(
+                    {visibleEntries.map(e=>(
                       <tr key={e.id} onClick={()=>{setRowA(rowA===e.id?'':rowA||e.id); if(rowA&&rowA!==e.id) setRowB(e.id)}} style={{borderBottom:'1px solid #1a1f28',cursor:'pointer',background:(rowA===e.id||rowB===e.id)?C.bg3:'transparent'}}>
-                        <td style={{padding:'6px 8px',color:C.text}}>{e.time!=null?videoToRealSec(e.time,captureFps).toFixed(3):'—'}</td>
+                        <td style={{padding:'6px 8px',color:C.text}}>{rowRealSec(e)?.toFixed(3)??'—'}</td>
                         <td style={{padding:'6px 8px',color:C.text}}>{e.frontKnee?.toFixed(0)??'—'}</td>
                         <td style={{padding:'6px 8px',color:C.text}}>{e.backKnee?.toFixed(0)??'—'}</td>
                         <td style={{padding:'6px 8px',color:C.text}}>{e.trunkTilt?.toFixed(0)??'—'}</td>
@@ -1045,36 +1017,37 @@ export default function PitchMechanics2D({pitcherId}:{pitcherId:string}){
                         <td style={{padding:'6px 8px',color:C.text}}>{e.stridePctHt?e.stridePctHt.toFixed(0):'—'}</td>
                         <td style={{padding:'6px 8px',color:C.text}}>{e.hipShoulderSep?.toFixed(0)??'—'}</td>
                         <td style={{padding:'6px 8px',color:C.gold,whiteSpace:'nowrap' as const}}>{e.keyEvent||'—'}</td>
+                        <td style={{padding:'2px 4px'}}><button aria-label="Delete this mark" onClick={ev=>{ev.stopPropagation();deleteEntry(e)}} style={{background:'transparent',border:'none',color:C.red,fontSize:16,minHeight:36,minWidth:36,cursor:'pointer'}}>×</button></td>
                       </tr>
                     ))}
                   </tbody>
                 </table>
               )}
             </div>
-            <div style={{fontSize:10,color:C.textDim,marginTop:6}}>Click two rows to select them for the speed comparison below.</div>
+            <div style={{fontSize:10,color:C.textDim,marginTop:6}}>Tap two rows to compare hip travel speed (shown once the video is calibrated). × deletes a mark.</div>
           </div>
 
-          <div>
+          {pxPerInch&&(<div>
             <div style={{fontSize:11,fontWeight:700,color:C.textMuted,textTransform:'uppercase' as const,letterSpacing:'0.5px',marginBottom:10,paddingBottom:8,borderBottom:`1px solid ${C.border}`}}>Speed Between Logged Frames</div>
             <div style={{display:'flex',gap:8,marginBottom:10}}>
               <select value={rowA} onChange={e=>setRowA(e.target.value)} style={{...inp,flex:1}}>
                 <option value="">—</option>
-                {logEntries.map(e=><option key={e.id} value={e.id}>{e.time!=null?videoToRealSec(e.time,captureFps).toFixed(3):'—'}s</option>)}
+                {visibleEntries.map(e=><option key={e.id} value={e.id}>{rowRealSec(e)?.toFixed(3)??'—'}s</option>)}
               </select>
               <select value={rowB} onChange={e=>setRowB(e.target.value)} style={{...inp,flex:1}}>
                 <option value="">—</option>
-                {logEntries.map(e=><option key={e.id} value={e.id}>{e.time!=null?videoToRealSec(e.time,captureFps).toFixed(3):'—'}s</option>)}
+                {visibleEntries.map(e=><option key={e.id} value={e.id}>{rowRealSec(e)?.toFixed(3)??'—'}s</option>)}
               </select>
             </div>
             <div style={{background:C.bg3,border:`1px solid ${C.border}`,borderRadius:8,padding:'12px 14px'}}>
               <div style={{fontSize:11,color:C.textMuted,textTransform:'uppercase' as const,letterSpacing:'0.4px',marginBottom:6}}>Hip Travel Speed</div>
               <div style={{fontFamily:'monospace',fontSize:20,fontWeight:700,color:C.white}}>{speedLabel}</div>
             </div>
-          </div>
+          </div>)}
 
           <div>
             <div style={{fontSize:11,fontWeight:700,color:C.textMuted,textTransform:'uppercase' as const,letterSpacing:'0.5px',marginBottom:4,paddingBottom:8,borderBottom:`1px solid ${C.border}`}}>Phase Durations — This Session</div>
-            <div style={{fontSize:10,color:C.textDim,marginBottom:10}}>Shows the time between each pair of events you tagged via Key Event (or the timeline) under the SAME Session Label above, in the order they happened. Leg lift, hand break and bottom of back leg loading can be marked in any order. Skip any event that doesn&apos;t apply. Matched by that label as plain text — relabeling or reusing a label will mix sessions. Durations are in <b style={{color:C.textMuted}}>real seconds</b> (video time ÷ {captureFps/30}, from the Capture Frame Rate above).</div>
+            <div style={{fontSize:10,color:C.textDim,marginBottom:10}}>Shows the time between each pair of events you marked on the timeline under the SAME Session Label above, in the order they happened. Leg lift, hand break and bottom of back leg loading can be marked in any order. Skip any event that doesn&apos;t apply. Matched by that label as plain text — relabeling or reusing a label will mix sessions. Durations are in <b style={{color:C.textMuted}}>real seconds</b> (video time ÷ {captureFps/30}, from the Capture Frame Rate above).</div>
             {sessionLabel==='' ? (
               <div style={{padding:16,textAlign:'center' as const,color:C.textDim,fontSize:12,background:C.bg2,border:`1px solid ${C.border}`,borderRadius:8}}>Enter a Session Label above to compute phase durations for this pitch.</div>
             ) : phaseDurations.consecutive.length===0 ? (
@@ -1099,23 +1072,17 @@ export default function PitchMechanics2D({pitcherId}:{pitcherId:string}){
               </div>
             )}
             {(phaseDurations.footPlantToRelease!=null||phaseDurations.merToRelease!=null) && (
-              <div style={{marginTop:10,display:'flex',flexDirection:'column' as const,gap:8}}>
+              <div style={{marginTop:10,background:C.goldBg,border:`1px solid ${C.goldDim}`,borderRadius:8,padding:'8px 10px',display:'flex',flexDirection:'column' as const,gap:6}}>
                 {phaseDurations.footPlantToRelease!=null && (
-                  <div style={{background:C.goldBg,border:`1px solid ${C.goldDim}`,borderRadius:8,padding:'8px 10px'}}>
-                    <div style={{display:'flex',justifyContent:'space-between'}}>
-                      <span style={{fontSize:11,color:C.gold}}>Foot Plant → Release</span>
-                      <span style={{fontFamily:'monospace',fontSize:13,fontWeight:700,color:C.white}}>{phaseDurations.footPlantToRelease.toFixed(3)}s</span>
-                    </div>
-                    <div style={{fontSize:9,color:C.textDim,marginTop:3}}>Published association for this phase: {FOOT_PLANT_TO_RELEASE_ASSOC_SEC[0]}–{FOOT_PLANT_TO_RELEASE_ASSOC_SEC[1]}s. An association seen in other research, not a verified ceiling and not specific to this athlete.</div>
+                  <div style={{display:'flex',justifyContent:'space-between'}}>
+                    <span style={{fontSize:11,color:C.gold}}>Foot Plant → Release</span>
+                    <span style={{fontFamily:'monospace',fontSize:13,fontWeight:700,color:C.white}}>{phaseDurations.footPlantToRelease.toFixed(3)}s</span>
                   </div>
                 )}
                 {phaseDurations.merToRelease!=null && (
-                  <div style={{background:C.goldBg,border:`1px solid ${C.goldDim}`,borderRadius:8,padding:'8px 10px'}}>
-                    <div style={{display:'flex',justifyContent:'space-between'}}>
-                      <span style={{fontSize:11,color:C.gold}}>Max External Rotation → Release</span>
-                      <span style={{fontFamily:'monospace',fontSize:13,fontWeight:700,color:C.white}}>{phaseDurations.merToRelease.toFixed(3)}s</span>
-                    </div>
-                    <div style={{fontSize:9,color:C.textDim,marginTop:3}}>Published association for arm acceleration: ~{MER_TO_RELEASE_ASSOC_SEC[1]}s. Not verified at 95+ mph specifically — context, not a target.</div>
+                  <div style={{display:'flex',justifyContent:'space-between'}}>
+                    <span style={{fontSize:11,color:C.gold}}>Max External Rotation → Release</span>
+                    <span style={{fontFamily:'monospace',fontSize:13,fontWeight:700,color:C.white}}>{phaseDurations.merToRelease.toFixed(3)}s</span>
                   </div>
                 )}
               </div>

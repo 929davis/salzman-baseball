@@ -163,3 +163,20 @@ Requested after the first report. Commit: see `git log` on this branch.
 - **Files:** `app/components/PitchMechanics2D.tsx` (event, order logic, card, text) and `app/components/DeliveryTimeline.tsx`
   (new optional `interchangeable` setting; no other screen uses this component). No database change is needed; one read-only check is
   in `docs/mechanics-save-sql.md` §1b in case a rule on `key_event` rejects the new name.
+
+## 10. Update: mechanics tab cleanup
+
+Removed: Clear Log button; second (inches) Stride Length card; Key Event dropdown (the timeline Mark buttons
+replace it); the eight-item upload checklist (now four lines); the in-browser video converter (unplayable clips
+now show manual re-export advice); the published Foot Plant / MER reference ranges (durations still shown).
+Hidden until calibrated: the hip travel speed block. Stride length card only shows in side view. Notes field
+is behind an "add a note" button; handedness, camera view and height are remembered per athlete on the device
+(not the capture rate, since a wrong remembered rate would silently scale every duration).
+
+Fixed: Frame Log and speed dropdowns now convert each row with the capture rate it was saved with (older rows
+without one use the selector). Added a per-row delete (x) with confirmation; it only works if the database
+allows deletes for the athlete, otherwise the real error is shown and the mark stays. Frame Log can be limited
+to "This session" (default when a Session Label is set) or "All sessions".
+
+Not done yet: compare-with-previous-pitch, pinch-to-zoom, pose-assisted event suggestions, auto-collapsing the
+settings block. Not tested in a browser after this change (typecheck and the 85 unit tests pass).
