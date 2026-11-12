@@ -1,38 +1,43 @@
 """
-PART D, data prep (Pitch Sequencing & Timing-Adjustment Model): the production scoring
-job. Trains the BASE ("Stage 1 alone") and FULL ("Stage 2") models on ALL pitches pulled
-so far (no held-out split -- that validation already happened in train_stage1_model.py /
-train_stage2_model.py), scores every pitch, and writes one flat CSV that
-upload_pitch_scores.mjs then upserts into Supabase for the UI to read.
+PART D, data prep (Pitch Sequencing & Timing-Adjustment Model): the production scoring job.
+Trains the BASE ("Pitch Alone") and FULL ("Pitch + Situation") models on ALL pitches pulled so
+far (the held-out validation already happened in train_stage2_model.py), scores every pitch,
+and writes one flat CSV that upload_pitch_scores.mjs then loads into Supabase for the UI.
 
-Re-run this after pulling new games (pull-recent-games.mjs), then re-run
-upload_pitch_scores.mjs -- matches the existing aggregate-base-scenario.mjs pattern
-(compute locally, upsert via the Node/Supabase side, since there's no Python runtime in
-the deployed app).
+Two things this script gets right that the previous version did not:
+
+1. SAME POPULATION FOR BOTH NUMBERS. "Change" in the UI is Stage 2 minus Stage 1. Stage 2 can
+   only be fit on pitch_num_in_pa >= 2 (no sequence exists before a PA's first pitch). The old
+   Stage 1 was fit on every pitch, including first pitches, which get swung at far less often
+   (~33% vs ~53%). That baked a constant ~+5 point offset into every swing "Change" that had
+   nothing to do with sequencing. Now the BASE model shown next to Stage 2 is fit on the same
+   pitch >= 2 population; first pitches get their own BASE model fit on first pitches.
+
+2. PRIOR-PITCHES-ONLY BASELINES. A pitcher's release-point "norm" for a pitch is the mean of
+   his EARLIER pitches of that type/side (earlier games and earlier in the same game), never the
+   pitch itself or later ones -- the same definition the validation used. Previously the
+   deployed norm averaged the whole dataset, so a Monday pitch was compared to a norm that
+   included Saturday's pitches.
+
+The deployed feature list is read from lib/timing-iq-metrics.json (written by
+train_stage2_model.py) so training decides, scoring applies -- they cannot disagree.
 
 Usage: ./.venv/bin/python scripts/score_all_pitches.py
 """
-import glob
+import json
 import numpy as np
 import pandas as pd
-import xgboost as xgb
 import shap
 
-from train_stage1_model import SWING_CALLS, WHIFF_CALLS, POSITION_PLAYER_MEDIAN_SPEED_FLOOR
-from train_stage2_model import (
-    SEQ_FEATURES, BASELINE_FEATURES, BATTER_FEATURES, MIN_BASELINE_N,
-)
+import timing_iq_common as T
 
-BASE_FEATURES = [
-    'start_speed', 'release_angle_vertical_deg', 'release_angle_horizontal_deg',
-    'post_decision_break', 'decision_point_zone_mismatch',
-]
-FULL_FEATURES = BASE_FEATURES + SEQ_FEATURES + BASELINE_FEATURES + BATTER_FEATURES
+METRICS_PATH = 'lib/timing-iq-metrics.json'
+OUT_PATH = 'data/pitch-sequencing/scored_pitches.csv'
 
 FEATURE_EXPLANATIONS = {
     'start_speed': "its velocity",
-    'release_angle_vertical_deg': "where it crossed the zone vertically",
-    'release_angle_horizontal_deg': "where it crossed the zone horizontally",
+    'release_angle_vertical_deg': "its vertical release angle",
+    'release_angle_horizontal_deg': "its horizontal release angle",
     'post_decision_break': "how much it kept moving after the swing-decision point",
     'decision_point_zone_mismatch': "whether it looked like a different call than it ended up being",
     'within_pa_expectation_deviation': "how different its location was from what he'd already seen this at-bat",
@@ -41,163 +46,91 @@ FEATURE_EXPLANATIONS = {
     'recency_same_shape': "how recently he'd seen this same shape",
     'tunnel_distance_from_prior_pitch': "how close its release point was to the previous pitch",
     'release_angle_tunnel_distance_deg': "how well it tunneled with the previous pitch at release",
-    'release_deviation_from_own_baseline_ft': "whether the pitcher's release point matched his own normal spot for this pitch",
+    'release_deviation_from_own_baseline_ft': "whether the pitcher's release point matched his own usual spot for this pitch",
     'pitcher_min_tunnel_distance_deg': "how well this pitch type tunnels with the rest of his mix",
     'batter_intercept_point_range': "how much this hitter's timing shifts across pitch types",
     'batter_intercept_delta_fb_vs_breaking': "how much this hitter's timing shifts from fastballs to breaking balls",
+    'batter_adjustability_percentile': "where this hitter ranks for timing adjustability",
+    'release_extension': "how far out front the pitcher released it",
+    'spin_axis_deg': "its spin axis",
 }
 
 
-def load_all_pitches():
-    files = sorted(glob.glob('data/pitch-sequencing/game_*_pitches.csv'))
-    df = pd.concat([pd.read_csv(f) for f in files], ignore_index=True)
-    df['decision_point_zone_mismatch'] = df['decision_point_zone_mismatch'].astype(bool).astype(int)
-    df['pitch_type_is_new_this_pa'] = df['pitch_type_is_new_this_pa'].astype(bool).astype(int)
-    df['is_swing'] = df['call_description'].isin(SWING_CALLS).astype(int)
-    df['is_whiff'] = df['call_description'].isin(WHIFF_CALLS).astype(int)
-
-    # Position players occasionally pitch in blowouts -- see train_stage1_model.py for why
-    # these get excluded (real outliers found via this exact tool's own "most sequence-driven"
-    # sort surfacing them as noise, not signal).
-    median_speed = df.groupby('pitcher_id')['start_speed'].median()
-    position_players = median_speed[median_speed < POSITION_PLAYER_MEDIAN_SPEED_FLOOR].index
-    if len(position_players) > 0:
-        dropped = df[df['pitcher_id'].isin(position_players)]
-        print(f"Dropping {len(position_players)} apparent position-player-pitching outing(s), {len(dropped)} pitches: "
-              f"{sorted(dropped['pitcher_name'].unique())}")
-        df = df[~df['pitcher_id'].isin(position_players)]
-    return df
-
-
-def fit_binary(df, label_col, features, filter_fn=None):
-    d = df if filter_fn is None else filter_fn(df)
-    d = d.dropna(subset=[label_col])
-    X, y = d[features], d[label_col]
-    model = xgb.XGBClassifier(n_estimators=200, max_depth=4, learning_rate=0.05, eval_metric='logloss', random_state=42)
-    model.fit(X, y)
-    return model
-
-
-def build_pitcher_baseline_lookups(df):
-    """Same B4 logic as train_stage2_model.py, but here `df` IS all available history --
-    this is a deployed baseline, not a leakage-safe validation split."""
-    release_key = df.groupby(['pitcher_id', 'pitch_type', 'batter_side']).agg(
-        x0_mean=('x0', 'mean'), z0_mean=('z0', 'mean'), n=('x0', 'size'),
-    )
-    release_key = release_key[release_key['n'] >= MIN_BASELINE_N]
-
-    angle_key = df.groupby(['pitcher_id', 'pitch_type']).agg(
-        v_mean=('release_angle_vertical_deg', 'mean'),
-        h_mean=('release_angle_horizontal_deg', 'mean'),
-        n=('release_angle_vertical_deg', 'size'),
-    )
-    angle_key = angle_key[angle_key['n'] >= MIN_BASELINE_N]
-
-    min_tunnel = {}
-    for pitcher_id, sub in angle_key.groupby(level=0):
-        types = sub.index.get_level_values(1)
-        if len(types) < 2:
-            continue
-        for t in types:
-            v0, h0 = sub.loc[(pitcher_id, t), ['v_mean', 'h_mean']]
-            dists = [np.hypot(v0 - sub.loc[(pitcher_id, t2), 'v_mean'], h0 - sub.loc[(pitcher_id, t2), 'h_mean'])
-                     for t2 in types if t2 != t]
-            min_tunnel[(pitcher_id, t)] = min(dists)
-
-    def release_dev(row):
-        key = (row['pitcher_id'], row['pitch_type'], row['batter_side'])
-        if key not in release_key.index:
-            return np.nan
-        x0m, z0m = release_key.loc[key, ['x0_mean', 'z0_mean']]
-        return float(np.hypot(row['x0'] - x0m, row['z0'] - z0m))
-
-    def min_tunnel_lookup(row):
-        return min_tunnel.get((row['pitcher_id'], row['pitch_type']), np.nan)
-
-    return release_dev, min_tunnel_lookup
-
-
 def top_shap_matrix(explainer, X, feats):
-    """SHAP values for every row in X at once (fast) -- returns (top_feature_per_row,
-    top_value_per_row), avoiding a per-row explainer() call (which is orders of magnitude
-    slower over ~30k rows)."""
+    """SHAP values for every row in X at once -- returns (top_feature_per_row, top_value_per_row).
+    SHAP ("SHapley Additive exPlanations") splits each prediction into a push up or down from
+    each feature; the top one is the feature that moved this pitch's number the most."""
     values = explainer(X).values
     top_idx = np.argmax(np.abs(values), axis=1)
-    top_feat = np.array(feats)[top_idx]
-    top_val = values[np.arange(len(values)), top_idx]
-    return top_feat, top_val
+    return np.array(feats)[top_idx], values[np.arange(len(values)), top_idx]
 
 
 def main():
-    df = load_all_pitches()
-    print(f"Loaded {len(df)} pitches from {df['game_pk'].nunique()} games")
+    with open(METRICS_PATH) as f:
+        metrics = json.load(f)
+    full_features = metrics['deployed_features']
+    print(f"Deployed FULL feature set from {METRICS_PATH} ({len(full_features)}): {full_features}")
 
-    # -- BASE ("Stage 1 alone") models, trained on every pitch --
-    base_swing_model = fit_binary(df, 'is_swing', BASE_FEATURES)
-    base_whiff_model = fit_binary(df, 'is_whiff', BASE_FEATURES, filter_fn=lambda d: d[d['is_swing'] == 1])
-    base_swing_explainer = shap.TreeExplainer(base_swing_model)
-    base_whiff_explainer = shap.TreeExplainer(base_whiff_model)
+    df = T.load_data()
+    df = T.add_expanding_pitcher_baselines(df, min_n=T.MIN_BASELINE_N)
+    print(f"Loaded {len(df)} pitches from {df['game_pk'].nunique()} games ({df.game_date.min()} to {df.game_date.max()})")
 
-    df['stage1_swing_prob'] = base_swing_model.predict_proba(df[BASE_FEATURES])[:, 1]
-    df['stage1_whiff_prob'] = base_whiff_model.predict_proba(df[BASE_FEATURES])[:, 1]
+    first = df['pitch_num_in_pa'] == 1
+    later = ~first
+    base_feats = T.BASE_FEATURES
 
-    # -- FULL ("Stage 2") models, trained on pitch_num_in_pa >= 2 only (sequence features
-    # are structurally undefined for a PA's first pitch) --
-    full_df = df[df['pitch_num_in_pa'] >= 2].copy()
-    release_dev, min_tunnel_lookup = build_pitcher_baseline_lookups(full_df)
-    full_df['release_deviation_from_own_baseline_ft'] = full_df.apply(release_dev, axis=1)
-    full_df['pitcher_min_tunnel_distance_deg'] = full_df.apply(min_tunnel_lookup, axis=1)
+    # -- BASE ("Pitch Alone") models: one per population so Stage 1 and Stage 2 share a base rate
+    base_first_swing = T.fit_binary(df[first], 'is_swing', base_feats)
+    base_first_whiff = T.fit_binary(df[first & (df.is_swing == 1)], 'is_whiff', base_feats)
+    base_later_swing = T.fit_binary(df[later], 'is_swing', base_feats)
+    base_later_whiff = T.fit_binary(df[later & (df.is_swing == 1)], 'is_whiff', base_feats)
 
-    full_swing_model = fit_binary(full_df, 'is_swing', FULL_FEATURES)
-    full_whiff_model = fit_binary(full_df, 'is_whiff', FULL_FEATURES, filter_fn=lambda d: d[d['is_swing'] == 1])
-    full_swing_explainer = shap.TreeExplainer(full_swing_model)
-    full_whiff_explainer = shap.TreeExplainer(full_whiff_model)
+    df['stage1_swing_prob'] = np.nan
+    df['stage1_whiff_prob'] = np.nan
+    df.loc[first, 'stage1_swing_prob'] = base_first_swing.predict_proba(df.loc[first, base_feats])[:, 1]
+    df.loc[first, 'stage1_whiff_prob'] = base_first_whiff.predict_proba(df.loc[first, base_feats])[:, 1]
+    df.loc[later, 'stage1_swing_prob'] = base_later_swing.predict_proba(df.loc[later, base_feats])[:, 1]
+    df.loc[later, 'stage1_whiff_prob'] = base_later_whiff.predict_proba(df.loc[later, base_feats])[:, 1]
 
-    full_df['stage2_swing_prob'] = full_swing_model.predict_proba(full_df[FULL_FEATURES])[:, 1]
-    full_df['stage2_whiff_prob'] = full_whiff_model.predict_proba(full_df[FULL_FEATURES])[:, 1]
-
-    # Only bring back columns that don't already exist on df -- SEQ_FEATURES/BATTER_FEATURES
-    # were already present for every row from the original per-pitch extraction (B3/B5 were
-    # computed at pull time); only the B4 baseline lookups and the Stage 2 probabilities are
-    # new here.
-    df = df.merge(
-        full_df[['game_pk', 'game_date', 'at_bat_index', 'pitch_num_in_pa',
-                  'release_deviation_from_own_baseline_ft', 'pitcher_min_tunnel_distance_deg',
-                  'stage2_swing_prob', 'stage2_whiff_prob']],
-        on=['game_pk', 'game_date', 'at_bat_index', 'pitch_num_in_pa'], how='left',
-    )
+    # -- FULL ("Pitch + Situation") models, pitch_num_in_pa >= 2 only
+    full_swing = T.fit_binary(df[later], 'is_swing', full_features)
+    full_whiff = T.fit_binary(df[later & (df.is_swing == 1)], 'is_whiff', full_features)
+    df['stage2_swing_prob'] = np.nan
+    df['stage2_whiff_prob'] = np.nan
+    df.loc[later, 'stage2_swing_prob'] = full_swing.predict_proba(df.loc[later, full_features])[:, 1]
+    df.loc[later, 'stage2_whiff_prob'] = full_whiff.predict_proba(df.loc[later, full_features])[:, 1]
 
     df['swing_lift'] = df['stage2_swing_prob'] - df['stage1_swing_prob']
     df['whiff_lift'] = df['stage2_whiff_prob'] - df['stage1_whiff_prob']
+    print(f"Stage 2 scored: {int(later.sum())}/{len(df)} pitches (pitch_num_in_pa >= 2)")
+    print(f"Mean swing lift (should now sit near 0, not +5 pts): {df.swing_lift.mean():+.4f}; mean whiff lift: {df.whiff_lift.mean():+.4f}")
 
-    print(f"Stage 2 scored: {df['stage2_swing_prob'].notna().sum()}/{len(df)} pitches (pitch_num_in_pa >= 2)")
-
-    # -- per-pitch insight text: explain whichever model matches what actually happened --
-    # (swings get explained by the whiff model, takes by the swing model), computed as 4
-    # vectorized SHAP passes rather than one explainer() call per row.
-    has_full = df['stage2_swing_prob'].notna()
-
-    base_swing_feat, base_swing_val = top_shap_matrix(base_swing_explainer, df[BASE_FEATURES], BASE_FEATURES)
-    base_whiff_feat, base_whiff_val = top_shap_matrix(base_whiff_explainer, df[BASE_FEATURES], BASE_FEATURES)
-    full_swing_feat, full_swing_val = top_shap_matrix(full_swing_explainer, df.loc[has_full, FULL_FEATURES], FULL_FEATURES)
-    full_whiff_feat, full_whiff_val = top_shap_matrix(full_whiff_explainer, df.loc[has_full, FULL_FEATURES], FULL_FEATURES)
-
-    top_feat = np.where(df['is_swing'] == 1, base_whiff_feat, base_swing_feat).astype(object)
-    top_val = np.where(df['is_swing'] == 1, base_whiff_val, base_swing_val)
-    full_idx = np.flatnonzero(has_full.values)
-    is_swing_full = df.loc[has_full, 'is_swing'].values
-    top_feat[full_idx] = np.where(is_swing_full == 1, full_whiff_feat, full_swing_feat)
-    top_val[full_idx] = np.where(is_swing_full == 1, full_whiff_val, full_swing_val)
+    # -- per-pitch "Why": the feature that moved THIS pitch's number the most, from whichever
+    # model matches what happened (swings explained by the whiff model, takes by the swing model),
+    # and from Stage 2 where it exists, else Stage 1.
+    top_feat = np.empty(len(df), dtype=object)
+    top_val = np.zeros(len(df))
+    for mask, model_swing, model_whiff, feats in [
+        (first, base_first_swing, base_first_whiff, base_feats),
+        (later, full_swing, full_whiff, full_features),
+    ]:
+        idx = np.flatnonzero(mask.values)
+        X = df.loc[mask, feats]
+        f_s, v_s = top_shap_matrix(shap.TreeExplainer(model_swing), X, feats)
+        f_w, v_w = top_shap_matrix(shap.TreeExplainer(model_whiff), X, feats)
+        swung = (df.loc[mask, 'is_swing'].values == 1)
+        top_feat[idx] = np.where(swung, f_w, f_s)
+        top_val[idx] = np.where(swung, v_w, v_s)
 
     df['top_shap_feature'] = top_feat
-    directions = np.where(top_val > 0, 'more', 'less')
+    # SHAP sign = direction the feature pushed the probability. The old wording ("more/less than
+    # typical for this matchup") described the feature's VALUE, which SHAP does not tell us.
+    directions = np.where(top_val > 0, 'raised', 'lowered')
+    outcome = np.where(df['is_swing'] == 1, 'whiff', 'swing')
     df['insight_text'] = [
-        f"Most influential factor: {FEATURE_EXPLANATIONS.get(f, f)} ({d} than typical for this matchup)."
-        for f, d in zip(top_feat, directions)
+        f"Biggest factor: {FEATURE_EXPLANATIONS.get(f, f)} -- it {d} the {o} read the most."
+        for f, d, o in zip(top_feat, directions, outcome)
     ]
-    # Which probability Stage 1/Stage 2 actually represent on this row -- takes get graded on
-    # swing likelihood, swings get graded on whiff likelihood (see module docstring). Surfaced
-    # explicitly so the UI can label it instead of leaving it ambiguous which number is shown.
     df['primary_metric'] = np.where(df['is_swing'] == 1, 'whiff', 'swing')
 
     out_cols = [
@@ -212,11 +145,19 @@ def main():
         'release_deviation_from_own_baseline_ft', 'batter_intercept_point_range',
     ]
     out = df[out_cols]
-    out_path = 'data/pitch-sequencing/scored_pitches.csv'
-    out.to_csv(out_path, index=False)
-    print(f"Wrote {out_path} ({len(out)} rows)")
 
-    print("\nSample (5 highest swing_lift -- sequence context most changed the read vs. raw physics alone):")
+    # Sanity checks before anything is written (the upload script repeats them independently).
+    assert out['stage1_swing_prob'].notna().all() and out['stage1_whiff_prob'].notna().all(), 'null Stage 1 probability'
+    assert out.loc[later, 'stage2_swing_prob'].notna().all(), 'null Stage 2 probability on a pitch >= 2'
+    assert out.loc[first, 'stage2_swing_prob'].isna().all(), 'Stage 2 probability on a first pitch'
+    for c in ['stage1_swing_prob', 'stage1_whiff_prob', 'stage2_swing_prob', 'stage2_whiff_prob']:
+        assert out[c].dropna().between(0, 1).all(), f'{c} outside [0, 1]'
+    assert not out.duplicated(['game_pk', 'at_bat_index', 'pitch_num_in_pa']).any(), 'duplicate pitch key'
+
+    out.to_csv(OUT_PATH, index=False)
+    print(f"Wrote {OUT_PATH} ({len(out)} rows)")
+
+    print("\nSample (5 largest |swing_lift| -- where context most changed the read vs. the pitch alone):")
     sample = out.dropna(subset=['swing_lift']).reindex(out['swing_lift'].abs().sort_values(ascending=False).index).head(5)
     for _, r in sample.iterrows():
         print(f"  {r['pitcher_name']} -> {r['batter_name']}: {r['pitch_type']} {r['start_speed']}mph, "

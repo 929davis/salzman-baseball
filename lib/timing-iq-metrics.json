@@ -1,0 +1,1023 @@
+{
+  "generated_at": "2026-11-11T03:35:14+00:00",
+  "metric": "AUC",
+  "metric_plain_english": "How often the model ranks a pitch where the event happened above one where it did not. 0.5 is a coin flip, 1.0 is perfect.",
+  "data": {
+    "n_games": 97,
+    "n_pitches": 28699,
+    "n_pitches_modeled": 21301,
+    "date_start": "2026-08-31",
+    "date_end": "2026-09-06",
+    "n_pitchers": 442,
+    "n_batters": 418,
+    "n_train_games": 82,
+    "n_holdout_games": 15,
+    "holdout_dates": [
+      "2026-09-06"
+    ],
+    "batter_profile_coverage": 0.6105,
+    "release_baseline_coverage": 0.2904
+  },
+  "method": {
+    "split": "by date; holdout = most recent dates until >= 15% of games",
+    "min_baseline_n": 10,
+    "baselines": "prior pitches only (earlier games and earlier in the same game), never the pitch itself or anything after it",
+    "n_bootstrap": 2000,
+    "xgb_params": {
+      "n_estimators": 200,
+      "max_depth": 4,
+      "learning_rate": 0.05,
+      "eval_metric": "logloss",
+      "random_state": 42
+    },
+    "include_batter_features": true,
+    "batter_profile": {
+      "included": true,
+      "reason": "batter profile window 2026-03-01..2026-08-30 ends before the first game (2026-08-31)",
+      "window": {
+        "date_start": "2026-03-01",
+        "date_end": "2026-08-30",
+        "fetched_at": "2026-11-11T03:30:27.074Z",
+        "groups": {
+          "FASTBALLS": [
+            "FF",
+            "SI",
+            "FC"
+          ],
+          "BREAKING": [
+            "CU",
+            "SL",
+            "ST",
+            "SV",
+            "KN"
+          ],
+          "OFFSPEED": [
+            "CH",
+            "FS",
+            "FO",
+            "SC"
+          ]
+        }
+      }
+    }
+  },
+  "deployed_features": [
+    "start_speed",
+    "release_angle_vertical_deg",
+    "release_angle_horizontal_deg",
+    "post_decision_break",
+    "decision_point_zone_mismatch",
+    "pitch_types_seen_this_pa",
+    "pitch_type_is_new_this_pa",
+    "recency_same_shape",
+    "tunnel_distance_from_prior_pitch",
+    "release_angle_tunnel_distance_deg",
+    "within_pa_expectation_deviation",
+    "release_deviation_from_own_baseline_ft",
+    "pitcher_min_tunnel_distance_deg",
+    "batter_intercept_point_range",
+    "batter_intercept_delta_fb_vs_breaking",
+    "batter_adjustability_percentile"
+  ],
+  "extra_features": {
+    "candidates": [
+      "release_extension",
+      "spin_axis_deg"
+    ],
+    "available": true,
+    "decision": "drop",
+    "reason": "Improvement over FULL did not clear the 95% CI (within noise), so they are left out of the deployed model.",
+    "deltas": {
+      "swing": {
+        "from": "FULL",
+        "to": "FULL+EXTRA",
+        "label": "Release extension + spin axis increment",
+        "delta": 0.0009,
+        "ci_low": -0.0016,
+        "ci_high": 0.0034,
+        "p_le_zero": 0.2275,
+        "reliable": false
+      },
+      "whiff": {
+        "from": "FULL",
+        "to": "FULL+EXTRA",
+        "label": "Release extension + spin axis increment",
+        "delta": 0.0027,
+        "ci_low": -0.015,
+        "ci_high": 0.0199,
+        "p_le_zero": 0.389,
+        "reliable": false
+      }
+    }
+  },
+  "targets": {
+    "swing": {
+      "n_train": 18033,
+      "n_holdout": 3268,
+      "holdout_event_rate": 0.5343,
+      "models": {
+        "BASE": {
+          "auc": 0.6964,
+          "ci_low": 0.6779,
+          "ci_high": 0.7145,
+          "features": [
+            "start_speed",
+            "release_angle_vertical_deg",
+            "release_angle_horizontal_deg",
+            "post_decision_break",
+            "decision_point_zone_mismatch"
+          ]
+        },
+        "BASE+COUNT": {
+          "auc": 0.7263,
+          "ci_low": 0.7083,
+          "ci_high": 0.7446,
+          "features": [
+            "start_speed",
+            "release_angle_vertical_deg",
+            "release_angle_horizontal_deg",
+            "post_decision_break",
+            "decision_point_zone_mismatch",
+            "balls_before",
+            "strikes_before"
+          ]
+        },
+        "BASE+SEQ": {
+          "auc": 0.7574,
+          "ci_low": 0.7404,
+          "ci_high": 0.7743,
+          "features": [
+            "start_speed",
+            "release_angle_vertical_deg",
+            "release_angle_horizontal_deg",
+            "post_decision_break",
+            "decision_point_zone_mismatch",
+            "pitch_types_seen_this_pa",
+            "pitch_type_is_new_this_pa",
+            "recency_same_shape",
+            "tunnel_distance_from_prior_pitch",
+            "release_angle_tunnel_distance_deg",
+            "within_pa_expectation_deviation"
+          ]
+        },
+        "BASE+SEQ+BASELINE": {
+          "auc": 0.7568,
+          "ci_low": 0.7394,
+          "ci_high": 0.774,
+          "features": [
+            "start_speed",
+            "release_angle_vertical_deg",
+            "release_angle_horizontal_deg",
+            "post_decision_break",
+            "decision_point_zone_mismatch",
+            "pitch_types_seen_this_pa",
+            "pitch_type_is_new_this_pa",
+            "recency_same_shape",
+            "tunnel_distance_from_prior_pitch",
+            "release_angle_tunnel_distance_deg",
+            "within_pa_expectation_deviation",
+            "release_deviation_from_own_baseline_ft",
+            "pitcher_min_tunnel_distance_deg"
+          ]
+        },
+        "FULL": {
+          "auc": 0.756,
+          "ci_low": 0.7391,
+          "ci_high": 0.7732,
+          "features": [
+            "start_speed",
+            "release_angle_vertical_deg",
+            "release_angle_horizontal_deg",
+            "post_decision_break",
+            "decision_point_zone_mismatch",
+            "pitch_types_seen_this_pa",
+            "pitch_type_is_new_this_pa",
+            "recency_same_shape",
+            "tunnel_distance_from_prior_pitch",
+            "release_angle_tunnel_distance_deg",
+            "within_pa_expectation_deviation",
+            "release_deviation_from_own_baseline_ft",
+            "pitcher_min_tunnel_distance_deg",
+            "batter_intercept_point_range",
+            "batter_intercept_delta_fb_vs_breaking",
+            "batter_adjustability_percentile"
+          ]
+        },
+        "FULL+COUNT": {
+          "auc": 0.7766,
+          "ci_low": 0.7603,
+          "ci_high": 0.793,
+          "features": [
+            "start_speed",
+            "release_angle_vertical_deg",
+            "release_angle_horizontal_deg",
+            "post_decision_break",
+            "decision_point_zone_mismatch",
+            "pitch_types_seen_this_pa",
+            "pitch_type_is_new_this_pa",
+            "recency_same_shape",
+            "tunnel_distance_from_prior_pitch",
+            "release_angle_tunnel_distance_deg",
+            "within_pa_expectation_deviation",
+            "release_deviation_from_own_baseline_ft",
+            "pitcher_min_tunnel_distance_deg",
+            "batter_intercept_point_range",
+            "batter_intercept_delta_fb_vs_breaking",
+            "batter_adjustability_percentile",
+            "balls_before",
+            "strikes_before"
+          ]
+        },
+        "FULL+EXTRA": {
+          "auc": 0.7569,
+          "ci_low": 0.7399,
+          "ci_high": 0.7743,
+          "features": [
+            "start_speed",
+            "release_angle_vertical_deg",
+            "release_angle_horizontal_deg",
+            "post_decision_break",
+            "decision_point_zone_mismatch",
+            "pitch_types_seen_this_pa",
+            "pitch_type_is_new_this_pa",
+            "recency_same_shape",
+            "tunnel_distance_from_prior_pitch",
+            "release_angle_tunnel_distance_deg",
+            "within_pa_expectation_deviation",
+            "release_deviation_from_own_baseline_ft",
+            "pitcher_min_tunnel_distance_deg",
+            "batter_intercept_point_range",
+            "batter_intercept_delta_fb_vs_breaking",
+            "batter_adjustability_percentile",
+            "release_extension",
+            "spin_axis_deg"
+          ]
+        },
+        "FULL+COUNT+EXTRA": {
+          "auc": 0.7779,
+          "ci_low": 0.7617,
+          "ci_high": 0.7943,
+          "features": [
+            "start_speed",
+            "release_angle_vertical_deg",
+            "release_angle_horizontal_deg",
+            "post_decision_break",
+            "decision_point_zone_mismatch",
+            "pitch_types_seen_this_pa",
+            "pitch_type_is_new_this_pa",
+            "recency_same_shape",
+            "tunnel_distance_from_prior_pitch",
+            "release_angle_tunnel_distance_deg",
+            "within_pa_expectation_deviation",
+            "release_deviation_from_own_baseline_ft",
+            "pitcher_min_tunnel_distance_deg",
+            "batter_intercept_point_range",
+            "batter_intercept_delta_fb_vs_breaking",
+            "batter_adjustability_percentile",
+            "balls_before",
+            "strikes_before",
+            "release_extension",
+            "spin_axis_deg"
+          ]
+        }
+      },
+      "comparisons": {
+        "headline": {
+          "from": "BASE",
+          "to": "FULL",
+          "label": "Pitch alone -> pitch + situation",
+          "delta": 0.0596,
+          "ci_low": 0.0437,
+          "ci_high": 0.0759,
+          "p_le_zero": 0.0,
+          "reliable": true
+        },
+        "count_controlled": {
+          "from": "BASE+COUNT",
+          "to": "FULL+COUNT",
+          "label": "Same, after both sides also know the count",
+          "delta": 0.0503,
+          "ci_low": 0.0368,
+          "ci_high": 0.0643,
+          "p_le_zero": 0.0,
+          "reliable": true
+        },
+        "count_alone": {
+          "from": "BASE",
+          "to": "BASE+COUNT",
+          "label": "What the count alone adds to pitch shape",
+          "delta": 0.0299,
+          "ci_low": 0.0182,
+          "ci_high": 0.0425,
+          "p_le_zero": 0.0,
+          "reliable": true
+        },
+        "sequence_only": {
+          "from": "BASE",
+          "to": "BASE+SEQ",
+          "label": "Sequence features alone",
+          "delta": 0.061,
+          "ci_low": 0.0462,
+          "ci_high": 0.0764,
+          "p_le_zero": 0.0,
+          "reliable": true
+        },
+        "pitcher_baseline": {
+          "from": "BASE+SEQ",
+          "to": "BASE+SEQ+BASELINE",
+          "label": "Pitcher release-point baseline increment",
+          "delta": -0.0006,
+          "ci_low": -0.0059,
+          "ci_high": 0.0046,
+          "p_le_zero": 0.59,
+          "reliable": false
+        },
+        "batter_profile": {
+          "from": "BASE+SEQ+BASELINE",
+          "to": "FULL",
+          "label": "Batter timing profile increment",
+          "delta": -0.0008,
+          "ci_low": -0.0034,
+          "ci_high": 0.0018,
+          "p_le_zero": 0.72,
+          "reliable": false
+        },
+        "extra_features": {
+          "from": "FULL",
+          "to": "FULL+EXTRA",
+          "label": "Release extension + spin axis increment",
+          "delta": 0.0009,
+          "ci_low": -0.0016,
+          "ci_high": 0.0034,
+          "p_le_zero": 0.2275,
+          "reliable": false
+        }
+      },
+      "calibration": {
+        "BASE": {
+          "ece": 0.0133,
+          "bins": [
+            {
+              "bin_lo": 0.0,
+              "bin_hi": 0.1,
+              "n": 85,
+              "mean_predicted": 0.0634,
+              "observed_rate": 0.0941
+            },
+            {
+              "bin_lo": 0.1,
+              "bin_hi": 0.2,
+              "n": 140,
+              "mean_predicted": 0.1502,
+              "observed_rate": 0.1429
+            },
+            {
+              "bin_lo": 0.2,
+              "bin_hi": 0.3,
+              "n": 189,
+              "mean_predicted": 0.2485,
+              "observed_rate": 0.2963
+            },
+            {
+              "bin_lo": 0.3,
+              "bin_hi": 0.4,
+              "n": 243,
+              "mean_predicted": 0.3537,
+              "observed_rate": 0.2922
+            },
+            {
+              "bin_lo": 0.4,
+              "bin_hi": 0.5,
+              "n": 393,
+              "mean_predicted": 0.4537,
+              "observed_rate": 0.4504
+            },
+            {
+              "bin_lo": 0.5,
+              "bin_hi": 0.6,
+              "n": 759,
+              "mean_predicted": 0.5537,
+              "observed_rate": 0.552
+            },
+            {
+              "bin_lo": 0.6,
+              "bin_hi": 0.7,
+              "n": 1033,
+              "mean_predicted": 0.6481,
+              "observed_rate": 0.6515
+            },
+            {
+              "bin_lo": 0.7,
+              "bin_hi": 0.8,
+              "n": 403,
+              "mean_predicted": 0.7368,
+              "observed_rate": 0.7568
+            },
+            {
+              "bin_lo": 0.8,
+              "bin_hi": 0.9,
+              "n": 23,
+              "mean_predicted": 0.8169,
+              "observed_rate": 0.7391
+            }
+          ]
+        },
+        "FULL": {
+          "ece": 0.0188,
+          "bins": [
+            {
+              "bin_lo": 0.0,
+              "bin_hi": 0.1,
+              "n": 127,
+              "mean_predicted": 0.0615,
+              "observed_rate": 0.0787
+            },
+            {
+              "bin_lo": 0.1,
+              "bin_hi": 0.2,
+              "n": 199,
+              "mean_predicted": 0.1516,
+              "observed_rate": 0.1206
+            },
+            {
+              "bin_lo": 0.2,
+              "bin_hi": 0.3,
+              "n": 226,
+              "mean_predicted": 0.2531,
+              "observed_rate": 0.2345
+            },
+            {
+              "bin_lo": 0.3,
+              "bin_hi": 0.4,
+              "n": 285,
+              "mean_predicted": 0.352,
+              "observed_rate": 0.3228
+            },
+            {
+              "bin_lo": 0.4,
+              "bin_hi": 0.5,
+              "n": 386,
+              "mean_predicted": 0.4523,
+              "observed_rate": 0.4482
+            },
+            {
+              "bin_lo": 0.5,
+              "bin_hi": 0.6,
+              "n": 513,
+              "mean_predicted": 0.5516,
+              "observed_rate": 0.5185
+            },
+            {
+              "bin_lo": 0.6,
+              "bin_hi": 0.7,
+              "n": 631,
+              "mean_predicted": 0.6525,
+              "observed_rate": 0.6719
+            },
+            {
+              "bin_lo": 0.7,
+              "bin_hi": 0.8,
+              "n": 627,
+              "mean_predicted": 0.7451,
+              "observed_rate": 0.7576
+            },
+            {
+              "bin_lo": 0.8,
+              "bin_hi": 0.9,
+              "n": 264,
+              "mean_predicted": 0.8407,
+              "observed_rate": 0.8333
+            },
+            {
+              "bin_lo": 0.9,
+              "bin_hi": 1.0,
+              "n": 10,
+              "mean_predicted": 0.9078,
+              "observed_rate": 0.9
+            }
+          ]
+        }
+      },
+      "shap_mean_abs_full": [
+        {
+          "feature": "within_pa_expectation_deviation",
+          "value": 0.5055
+        },
+        {
+          "feature": "release_angle_vertical_deg",
+          "value": 0.3327
+        },
+        {
+          "feature": "release_angle_horizontal_deg",
+          "value": 0.1865
+        },
+        {
+          "feature": "pitch_types_seen_this_pa",
+          "value": 0.1447
+        },
+        {
+          "feature": "release_deviation_from_own_baseline_ft",
+          "value": 0.1289
+        },
+        {
+          "feature": "decision_point_zone_mismatch",
+          "value": 0.0886
+        },
+        {
+          "feature": "release_angle_tunnel_distance_deg",
+          "value": 0.0827
+        },
+        {
+          "feature": "start_speed",
+          "value": 0.0696
+        },
+        {
+          "feature": "post_decision_break",
+          "value": 0.0598
+        },
+        {
+          "feature": "tunnel_distance_from_prior_pitch",
+          "value": 0.0301
+        },
+        {
+          "feature": "pitcher_min_tunnel_distance_deg",
+          "value": 0.025
+        },
+        {
+          "feature": "batter_intercept_point_range",
+          "value": 0.0203
+        },
+        {
+          "feature": "batter_intercept_delta_fb_vs_breaking",
+          "value": 0.0168
+        },
+        {
+          "feature": "recency_same_shape",
+          "value": 0.0158
+        },
+        {
+          "feature": "pitch_type_is_new_this_pa",
+          "value": 0.0003
+        },
+        {
+          "feature": "batter_adjustability_percentile",
+          "value": 0.0
+        }
+      ]
+    },
+    "whiff": {
+      "n_train": 9599,
+      "n_holdout": 1746,
+      "holdout_event_rate": 0.2222,
+      "models": {
+        "BASE": {
+          "auc": 0.6554,
+          "ci_low": 0.6233,
+          "ci_high": 0.687,
+          "features": [
+            "start_speed",
+            "release_angle_vertical_deg",
+            "release_angle_horizontal_deg",
+            "post_decision_break",
+            "decision_point_zone_mismatch"
+          ]
+        },
+        "BASE+COUNT": {
+          "auc": 0.6574,
+          "ci_low": 0.6258,
+          "ci_high": 0.6896,
+          "features": [
+            "start_speed",
+            "release_angle_vertical_deg",
+            "release_angle_horizontal_deg",
+            "post_decision_break",
+            "decision_point_zone_mismatch",
+            "balls_before",
+            "strikes_before"
+          ]
+        },
+        "BASE+SEQ": {
+          "auc": 0.6736,
+          "ci_low": 0.6426,
+          "ci_high": 0.7043,
+          "features": [
+            "start_speed",
+            "release_angle_vertical_deg",
+            "release_angle_horizontal_deg",
+            "post_decision_break",
+            "decision_point_zone_mismatch",
+            "pitch_types_seen_this_pa",
+            "pitch_type_is_new_this_pa",
+            "recency_same_shape",
+            "tunnel_distance_from_prior_pitch",
+            "release_angle_tunnel_distance_deg",
+            "within_pa_expectation_deviation"
+          ]
+        },
+        "BASE+SEQ+BASELINE": {
+          "auc": 0.6716,
+          "ci_low": 0.6415,
+          "ci_high": 0.7024,
+          "features": [
+            "start_speed",
+            "release_angle_vertical_deg",
+            "release_angle_horizontal_deg",
+            "post_decision_break",
+            "decision_point_zone_mismatch",
+            "pitch_types_seen_this_pa",
+            "pitch_type_is_new_this_pa",
+            "recency_same_shape",
+            "tunnel_distance_from_prior_pitch",
+            "release_angle_tunnel_distance_deg",
+            "within_pa_expectation_deviation",
+            "release_deviation_from_own_baseline_ft",
+            "pitcher_min_tunnel_distance_deg"
+          ]
+        },
+        "FULL": {
+          "auc": 0.6685,
+          "ci_low": 0.6374,
+          "ci_high": 0.7001,
+          "features": [
+            "start_speed",
+            "release_angle_vertical_deg",
+            "release_angle_horizontal_deg",
+            "post_decision_break",
+            "decision_point_zone_mismatch",
+            "pitch_types_seen_this_pa",
+            "pitch_type_is_new_this_pa",
+            "recency_same_shape",
+            "tunnel_distance_from_prior_pitch",
+            "release_angle_tunnel_distance_deg",
+            "within_pa_expectation_deviation",
+            "release_deviation_from_own_baseline_ft",
+            "pitcher_min_tunnel_distance_deg",
+            "batter_intercept_point_range",
+            "batter_intercept_delta_fb_vs_breaking",
+            "batter_adjustability_percentile"
+          ]
+        },
+        "FULL+COUNT": {
+          "auc": 0.6724,
+          "ci_low": 0.6422,
+          "ci_high": 0.7041,
+          "features": [
+            "start_speed",
+            "release_angle_vertical_deg",
+            "release_angle_horizontal_deg",
+            "post_decision_break",
+            "decision_point_zone_mismatch",
+            "pitch_types_seen_this_pa",
+            "pitch_type_is_new_this_pa",
+            "recency_same_shape",
+            "tunnel_distance_from_prior_pitch",
+            "release_angle_tunnel_distance_deg",
+            "within_pa_expectation_deviation",
+            "release_deviation_from_own_baseline_ft",
+            "pitcher_min_tunnel_distance_deg",
+            "batter_intercept_point_range",
+            "batter_intercept_delta_fb_vs_breaking",
+            "batter_adjustability_percentile",
+            "balls_before",
+            "strikes_before"
+          ]
+        },
+        "FULL+EXTRA": {
+          "auc": 0.6712,
+          "ci_low": 0.6398,
+          "ci_high": 0.7028,
+          "features": [
+            "start_speed",
+            "release_angle_vertical_deg",
+            "release_angle_horizontal_deg",
+            "post_decision_break",
+            "decision_point_zone_mismatch",
+            "pitch_types_seen_this_pa",
+            "pitch_type_is_new_this_pa",
+            "recency_same_shape",
+            "tunnel_distance_from_prior_pitch",
+            "release_angle_tunnel_distance_deg",
+            "within_pa_expectation_deviation",
+            "release_deviation_from_own_baseline_ft",
+            "pitcher_min_tunnel_distance_deg",
+            "batter_intercept_point_range",
+            "batter_intercept_delta_fb_vs_breaking",
+            "batter_adjustability_percentile",
+            "release_extension",
+            "spin_axis_deg"
+          ]
+        },
+        "FULL+COUNT+EXTRA": {
+          "auc": 0.6742,
+          "ci_low": 0.6447,
+          "ci_high": 0.7057,
+          "features": [
+            "start_speed",
+            "release_angle_vertical_deg",
+            "release_angle_horizontal_deg",
+            "post_decision_break",
+            "decision_point_zone_mismatch",
+            "pitch_types_seen_this_pa",
+            "pitch_type_is_new_this_pa",
+            "recency_same_shape",
+            "tunnel_distance_from_prior_pitch",
+            "release_angle_tunnel_distance_deg",
+            "within_pa_expectation_deviation",
+            "release_deviation_from_own_baseline_ft",
+            "pitcher_min_tunnel_distance_deg",
+            "batter_intercept_point_range",
+            "batter_intercept_delta_fb_vs_breaking",
+            "batter_adjustability_percentile",
+            "balls_before",
+            "strikes_before",
+            "release_extension",
+            "spin_axis_deg"
+          ]
+        }
+      },
+      "comparisons": {
+        "headline": {
+          "from": "BASE",
+          "to": "FULL",
+          "label": "Pitch alone -> pitch + situation",
+          "delta": 0.0131,
+          "ci_low": -0.0129,
+          "ci_high": 0.0409,
+          "p_le_zero": 0.1535,
+          "reliable": false
+        },
+        "count_controlled": {
+          "from": "BASE+COUNT",
+          "to": "FULL+COUNT",
+          "label": "Same, after both sides also know the count",
+          "delta": 0.015,
+          "ci_low": -0.0118,
+          "ci_high": 0.043,
+          "p_le_zero": 0.1285,
+          "reliable": false
+        },
+        "count_alone": {
+          "from": "BASE",
+          "to": "BASE+COUNT",
+          "label": "What the count alone adds to pitch shape",
+          "delta": 0.002,
+          "ci_low": -0.0075,
+          "ci_high": 0.0113,
+          "p_le_zero": 0.353,
+          "reliable": false
+        },
+        "sequence_only": {
+          "from": "BASE",
+          "to": "BASE+SEQ",
+          "label": "Sequence features alone",
+          "delta": 0.0182,
+          "ci_low": -0.0038,
+          "ci_high": 0.0424,
+          "p_le_zero": 0.057,
+          "reliable": false
+        },
+        "pitcher_baseline": {
+          "from": "BASE+SEQ",
+          "to": "BASE+SEQ+BASELINE",
+          "label": "Pitcher release-point baseline increment",
+          "delta": -0.002,
+          "ci_low": -0.015,
+          "ci_high": 0.0114,
+          "p_le_zero": 0.6125,
+          "reliable": false
+        },
+        "batter_profile": {
+          "from": "BASE+SEQ+BASELINE",
+          "to": "FULL",
+          "label": "Batter timing profile increment",
+          "delta": -0.0031,
+          "ci_low": -0.0151,
+          "ci_high": 0.0091,
+          "p_le_zero": 0.6885,
+          "reliable": false
+        },
+        "extra_features": {
+          "from": "FULL",
+          "to": "FULL+EXTRA",
+          "label": "Release extension + spin axis increment",
+          "delta": 0.0027,
+          "ci_low": -0.015,
+          "ci_high": 0.0199,
+          "p_le_zero": 0.389,
+          "reliable": false
+        }
+      },
+      "calibration": {
+        "BASE": {
+          "ece": 0.0157,
+          "bins": [
+            {
+              "bin_lo": 0.0,
+              "bin_hi": 0.1,
+              "n": 74,
+              "mean_predicted": 0.0836,
+              "observed_rate": 0.0676
+            },
+            {
+              "bin_lo": 0.1,
+              "bin_hi": 0.2,
+              "n": 989,
+              "mean_predicted": 0.1548,
+              "observed_rate": 0.1628
+            },
+            {
+              "bin_lo": 0.2,
+              "bin_hi": 0.3,
+              "n": 391,
+              "mean_predicted": 0.2398,
+              "observed_rate": 0.266
+            },
+            {
+              "bin_lo": 0.3,
+              "bin_hi": 0.4,
+              "n": 145,
+              "mean_predicted": 0.3446,
+              "observed_rate": 0.331
+            },
+            {
+              "bin_lo": 0.4,
+              "bin_hi": 0.5,
+              "n": 85,
+              "mean_predicted": 0.4457,
+              "observed_rate": 0.4
+            },
+            {
+              "bin_lo": 0.5,
+              "bin_hi": 0.6,
+              "n": 37,
+              "mean_predicted": 0.5528,
+              "observed_rate": 0.5405
+            },
+            {
+              "bin_lo": 0.6,
+              "bin_hi": 0.7,
+              "n": 16,
+              "mean_predicted": 0.6401,
+              "observed_rate": 0.625
+            },
+            {
+              "bin_lo": 0.7,
+              "bin_hi": 0.8,
+              "n": 5,
+              "mean_predicted": 0.7696,
+              "observed_rate": 0.6
+            },
+            {
+              "bin_lo": 0.8,
+              "bin_hi": 0.9,
+              "n": 3,
+              "mean_predicted": 0.8428,
+              "observed_rate": 0.6667
+            },
+            {
+              "bin_lo": 0.9,
+              "bin_hi": 1.0,
+              "n": 1,
+              "mean_predicted": 0.9043,
+              "observed_rate": 1.0
+            }
+          ]
+        },
+        "FULL": {
+          "ece": 0.024,
+          "bins": [
+            {
+              "bin_lo": 0.0,
+              "bin_hi": 0.1,
+              "n": 147,
+              "mean_predicted": 0.0805,
+              "observed_rate": 0.102
+            },
+            {
+              "bin_lo": 0.1,
+              "bin_hi": 0.2,
+              "n": 898,
+              "mean_predicted": 0.1533,
+              "observed_rate": 0.1592
+            },
+            {
+              "bin_lo": 0.2,
+              "bin_hi": 0.3,
+              "n": 418,
+              "mean_predicted": 0.2397,
+              "observed_rate": 0.2608
+            },
+            {
+              "bin_lo": 0.3,
+              "bin_hi": 0.4,
+              "n": 138,
+              "mean_predicted": 0.3423,
+              "observed_rate": 0.2971
+            },
+            {
+              "bin_lo": 0.4,
+              "bin_hi": 0.5,
+              "n": 77,
+              "mean_predicted": 0.4432,
+              "observed_rate": 0.5584
+            },
+            {
+              "bin_lo": 0.5,
+              "bin_hi": 0.6,
+              "n": 35,
+              "mean_predicted": 0.538,
+              "observed_rate": 0.4
+            },
+            {
+              "bin_lo": 0.6,
+              "bin_hi": 0.7,
+              "n": 23,
+              "mean_predicted": 0.6531,
+              "observed_rate": 0.7391
+            },
+            {
+              "bin_lo": 0.7,
+              "bin_hi": 0.8,
+              "n": 7,
+              "mean_predicted": 0.7617,
+              "observed_rate": 0.4286
+            },
+            {
+              "bin_lo": 0.8,
+              "bin_hi": 0.9,
+              "n": 3,
+              "mean_predicted": 0.8525,
+              "observed_rate": 1.0
+            }
+          ]
+        }
+      },
+      "shap_mean_abs_full": [
+        {
+          "feature": "start_speed",
+          "value": 0.3534
+        },
+        {
+          "feature": "within_pa_expectation_deviation",
+          "value": 0.2618
+        },
+        {
+          "feature": "release_angle_vertical_deg",
+          "value": 0.1891
+        },
+        {
+          "feature": "release_angle_horizontal_deg",
+          "value": 0.1268
+        },
+        {
+          "feature": "post_decision_break",
+          "value": 0.1203
+        },
+        {
+          "feature": "batter_intercept_delta_fb_vs_breaking",
+          "value": 0.0913
+        },
+        {
+          "feature": "recency_same_shape",
+          "value": 0.0668
+        },
+        {
+          "feature": "pitcher_min_tunnel_distance_deg",
+          "value": 0.0668
+        },
+        {
+          "feature": "release_deviation_from_own_baseline_ft",
+          "value": 0.0595
+        },
+        {
+          "feature": "release_angle_tunnel_distance_deg",
+          "value": 0.0532
+        },
+        {
+          "feature": "decision_point_zone_mismatch",
+          "value": 0.0513
+        },
+        {
+          "feature": "tunnel_distance_from_prior_pitch",
+          "value": 0.0371
+        },
+        {
+          "feature": "batter_intercept_point_range",
+          "value": 0.0289
+        },
+        {
+          "feature": "pitch_types_seen_this_pa",
+          "value": 0.016
+        },
+        {
+          "feature": "pitch_type_is_new_this_pa",
+          "value": 0.0025
+        },
+        {
+          "feature": "batter_adjustability_percentile",
+          "value": 0.0
+        }
+      ]
+    }
+  }
+}
