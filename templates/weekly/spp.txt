@@ -1,0 +1,89 @@
+# SPP (late off-season) -- default week. One heavy lift (Monday hinge at RPE 9), power kept
+# year-round, unilateral and rotational strength, forearm capacity. Day names are placeholders.
+# Lowering tempo 3-8 s on strength reps. Hypertrophy sets at RPE 8-9. Jump after the heavy
+# hinge only after a full rest (4-7 min) and only if jump height holds.
+
+MONDAY
+Pre-Throwing | BC Standing Posture | 1x1
+Pre-Throwing | BC Straw Breathing | 2x10
+Pre-Throwing | BC Feet Primer | 1x5
+Pre-Throwing | Worlds Greatest Stretch | 1x5
+Pre-Throwing | Spiderman Crawl | 2x8
+Pre-Throwing | Band Pull-Apart | 2x15
+Speed/Power | Band-Resisted Squat Jump | 3x3
+Main Exercises | Lead Leg Block Isometric | 3x5
+Main Exercises | Trap Bar Deadlift | 3x3 @ RPE 9
+Main Exercises | Rear Foot Elevated Split Squat | 3x5 @ RPE 7
+Accessory | Landmine Rotational Press | 3x5
+Accessory | Half-Kneeling Pallof Press | 3x8
+Accessory | Eccentric Nordic Curl | 2x5
+
+TUESDAY
+Pre-Throwing | BC Standing Posture | 1x1
+Pre-Throwing | BC Straw Breathing | 2x10
+Pre-Throwing | BC Board Balance | 2x5
+Pre-Throwing | Arm Swings | 1x10
+Pre-Throwing | Scapular Wall Slide | 2x10
+Pre-Throwing | Band Face Pull Arm Prep | 2x15
+Throwing | On-Line Flat Ground | 30 @ I3
+Post-Throwing | Diaphragmatic Breathing | 1x10
+Post-Throwing | Side Lying ER Slow Lowering | 3x8
+Main Exercises | Barbell Bench Press | 3x5 @ RPE 7
+Main Exercises | Barbell Row | 3x8 @ RPE 8
+Accessory | DB External Rotation at 90° | 3x8 @ RPE 8
+Accessory | Wrist Flexion Ulnar Deviation | 3x8 @ RPE 8
+Accessory | Dumbbell Hammer Curl | 2x8 @ RPE 8
+Accessory | Pinch Hold | 3x15
+
+WEDNESDAY
+Pre-Throwing | BC Standing Posture | 1x1
+Pre-Throwing | BC Straw Breathing | 2x10
+Pre-Throwing | BC Bowl Pelvic Control | 2x8
+Pre-Throwing | BC Bridge | 1x5
+Pre-Throwing | Single Leg Pitching Stance Hold | 2x3
+Recovery | Zone 2 Bike | 1x1
+Recovery | Hip 90/90 Stretch | 2x5
+Recovery | Thoracic Spine Rotation | 2x8
+Recovery | Progressive Muscular Relaxation | 1x1
+
+THURSDAY
+Pre-Throwing | BC Standing Posture | 1x1
+Pre-Throwing | BC Straw Breathing | 2x10
+Pre-Throwing | BC Feet Primer | 1x5
+Pre-Throwing | Worlds Greatest Stretch | 1x5
+Pre-Throwing | Lateral Ape Crawl | 2x8
+Pre-Throwing | Band Pull-Apart | 2x15
+Speed/Power | Lateral Bound | 3x3
+Speed/Power | Step In Rotational Med Ball Throw | 3x4
+Throwing | Catch Play | 25 @ I2
+Post-Throwing | Dumbbell Supination | 2x10
+Main Exercises | Front Squat | 3x4 @ RPE 7
+Accessory | Sliding Lateral Lunge | 3x3 @ RPE 8
+Accessory | Band Diagonal Chop | 3x6
+Accessory | Copenhagen Plank | 3x20
+
+FRIDAY
+Pre-Throwing | BC Standing Posture | 1x1
+Pre-Throwing | BC Straw Breathing | 2x10
+Pre-Throwing | BC Bar Series | 1x8
+Recovery | Zone 2 Row | 1x1
+Recovery | Couch Stretch | 2x5
+Recovery | Quadruped T-Spine Rotation | 2x8
+Recovery | Hang | 2x1
+
+SATURDAY
+Pre-Throwing | BC Standing Posture | 1x1
+Pre-Throwing | BC Straw Breathing | 2x10
+Pre-Throwing | Arm Swings | 1x10
+Pre-Throwing | Scapular Wall Slide | 2x10
+Pre-Throwing | Band Pull-Apart | 2x15
+Throwing | High Intent Long Toss | 25 @ I4
+Post-Throwing | External Rotation at 90 | 3x10
+Post-Throwing | Dumbbell Wrist Extension | 2x10
+Main Exercises | Pull-Up | 3x5 @ RPE 7
+Main Exercises | Landmine Press | 3x8 @ RPE 8
+Accessory | Prone Y Raise | 2x10
+Accessory | Ramp Up Isometric IR Release Point | 1x6
+Accessory | Rapid Reversal ER IR Tennis Ball | 2x15
+Accessory | Fast Pinch Efforts | 3x3
+Accessory | Finger Curls | 3x8 @ RPE 8
